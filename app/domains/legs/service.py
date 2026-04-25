@@ -69,6 +69,9 @@ class LegService:
     async def list_for_delivery_order(self, do_id: str) -> list[Leg]:
         return await self.repo.list_by_delivery_order(do_id)
 
+    async def list_for_driver(self, driver_id: str, params):
+        return await self.repo.list_by_driver(driver_id, params)
+
     async def update(self, id_: str, payload: LegUpdateRequest) -> Leg:
         leg = await self.get(id_)
         await self.repo.update(leg, **payload.model_dump(exclude_unset=True))

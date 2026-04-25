@@ -33,13 +33,20 @@ async def list_legs(
     db: DBReadOnly,
     params: Annotated[PageParams, Depends(page_params)],
     delivery_order_id: str | None = Query(None, alias="deliveryOrderId"),
+    driver_id: str | None = Query(None, alias="driverId"),
 ):
+    svc = _svc(db, tenant_id=tenant_id)
     if delivery_order_id:
-        items = await _svc(db, tenant_id=tenant_id).list_for_delivery_order(delivery_order_id)
+        items = await svc.list_for_delivery_order(delivery_order_id)
         return PagedResponse.of(
             [LegResponse.model_validate(i) for i in items], len(items), params
         )
-    items, total = await _svc(db, tenant_id=tenant_id).list_paged(params)
+    if driver_id:
+        items, total = await svc.list_for_driver(driver_id, params)
+        return PagedResponse.of(
+            [LegResponse.model_validate(i) for i in items], total, params
+        )
+    items, total = await svc.list_paged(params)
     return PagedResponse.of([LegResponse.model_validate(i) for i in items], total, params)
 
 

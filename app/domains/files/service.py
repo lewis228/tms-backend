@@ -24,6 +24,8 @@ from app.domains.files.schema import (
     FileFinalizeRequest,
     FilePresignRequest,
 )
+from app.domains.realtime.schema import RealtimeEvent
+from app.domains.realtime.service import publish
 
 
 class FileService:
@@ -78,6 +80,19 @@ class FileService:
         await self.repo.db.flush()
         await self.repo.db.commit()
         await self.repo.db.refresh(f)
+        await publish(
+            RealtimeEvent.now(
+                type="file.uploaded",
+                tenant_id=self.tenant_id,
+                payload={
+                    "fileId": f.id,
+                    "domain": f.domain,
+                    "objectId": f.object_id,
+                    "kind": f.kind,
+                    "filename": f.filename,
+                },
+            )
+        )
         return f
 
     async def get(self, id_: str) -> File:

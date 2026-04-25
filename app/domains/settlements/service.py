@@ -23,6 +23,8 @@ from app.domains.settlements.models import (
     Settlement,
     SettlementAuditLog,
 )
+from app.domains.realtime.schema import RealtimeEvent
+from app.domains.realtime.service import publish
 from app.domains.settlements.repository import SettlementRepository
 from app.domains.settlements.schema import (
     ExtraChargeRequest,
@@ -90,6 +92,7 @@ class SettlementService:
         self._log(s, "CALCULATED", actor_id, before)
         await self.repo.db.commit()
         await self.repo.db.refresh(s)
+        await self._publish(s, "settlement.calculated", actor_id)
         return s
 
     async def adjust(
@@ -121,6 +124,7 @@ class SettlementService:
         self._log(s, "ADJUSTED", actor_id, before, reason=payload.note)
         await self.repo.db.commit()
         await self.repo.db.refresh(s)
+        await self._publish(s, "settlement.adjusted", actor_id)
         return s
 
     async def approve(
@@ -152,6 +156,7 @@ class SettlementService:
         self._log(s, "APPROVED", actor_id, before)
         await self.repo.db.commit()
         await self.repo.db.refresh(s)
+        await self._publish(s, "settlement.approved", actor_id)
         return s
 
     async def unapprove(
@@ -173,7 +178,23 @@ class SettlementService:
         self._log(s, "UNAPPROVED", actor_id, before, reason=payload.reason)
         await self.repo.db.commit()
         await self.repo.db.refresh(s)
+        await self._publish(s, "settlement.unapproved", actor_id)
         return s
+
+    async def _publish(self, s: Settlement, event_type: str, actor_id: str) -> None:
+        await publish(
+            RealtimeEvent.now(
+                type=event_type,
+                tenant_id=self.tenant_id,
+                actor_id=actor_id,
+                payload={
+                    "settlementId": s.id,
+                    "legId": s.leg_id,
+                    "status": s.settlement_status.value,
+                    "isSettled": s.is_settled,
+                },
+            )
+        )
 
     async def _set_extras(
         self, s: Settlement, extras: list[ExtraChargeRequest]

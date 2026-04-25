@@ -212,7 +212,7 @@ def _svc(db: AsyncSession, tenant_id: str) -> XxxService:
 | `settlements/` | `/api/v1/settlements` | `Settlement`, `ExtraCharge`, `SettlementAuditLog` | DISPATCHER+ (조회/계산/수정), ADMIN+ (Unapprove) |
 | `files/` | `/api/v1/files` | `File` (폴리모픽: domain + object_id) | 인증 사용자 |
 | `notifications/` | `/api/v1/notifications` | `Notification` | 인증 사용자 |
-| `realtime/` | `/api/v1/realtime` | (SSE, no model) | 인증 사용자 |
+| `realtime/` | `/api/v1/ws` (WebSocket) | (no model) | 인증 사용자 |
 | `ai_intake/` | `/api/v1/ai-intake` | (Claude API 통합) | DISPATCHER+ |
 | `driver/` | `/api/v1/driver` | (모바일 전용 엔드포인트 묶음 — 위 도메인에서 driver 시점 export) | DRIVER |
 
@@ -269,11 +269,27 @@ PATCH /api/v1/driver/me/password             # 첫 로그인 비밀번호 변경
 
 ---
 
-## 🔄 실시간 (`realtime/`) — SSE
+## 🔄 실시간 (`realtime/`) — WebSocket
 
-- `GET /api/v1/realtime/events` (SSE)
-- 인증 필요. 이벤트 채널은 tenant 별 격리 (Redis Pub/Sub key: `tms:tenant:{tenant_id}:events`)
-- 이벤트 타입: `presence.joined/left/editing`, `do.status_changed`, `leg.status_changed`, `pod.uploaded`
+- 엔드포인트: `WS /api/v1/ws?token=<accessJWT>&tenant_id=<id>`
+- `tenant_id` 쿼리는 SUPER_ADMIN 만 의미 있음 (일반 사용자는 JWT.tenant_id 사용; query 와 mismatch 면 4003)
+- Close codes (4xxx 일반 범위 — 4401 같은 표준 외 코드 금지):
+  - `4001 EXPIRED` — 토큰 만료. 클라는 `/api/v1/auth/refresh` 로 새 토큰 받고 재연결
+  - `4002 INVALID` — 토큰 해독 실패 / 잘못된 type / role 없음
+  - `4003 NO_TENANT` — tenant 미해결 (SUPER_ADMIN 인데 헤더 미지정 등)
+  - `4004 IDLE_TIMEOUT` — 60초 내 클라 메시지 없음 (좀비 연결 정리)
+- Heartbeat: 서버가 30초마다 `{"type":"ping"}` 전송. 클라도 `{"type":"ping"}` 보내면 서버가 `{"type":"pong"}` 응답.
+- 클라 메시지: 현재 `ping` 만 처리. 다른 type 은 무시 (envelope 통일, 미래 확장).
+- 서버 envelope: `{"type": "<event>", "tenantId": ..., "actorId": ..., "payload": {...}, "occurredAt": "..."}`
+- 채널 격리: tenant 별 (Redis Pub/Sub key: `tms:tenant:{tenant_id}:events`).
+- Backpressure: 연결당 outbound 큐 1000개. 폭주 시 oldest drop + 경고 로그.
+- 발행 흐름: 도메인 service 가 `app.domains.realtime.service.publish(RealtimeEvent.now(...))` 호출 → Redis PUBLISH → 워커별 ConnectionManager 가 fan-out.
+- 이벤트 타입 (현재 wired):
+  - `do.created`, `do.status_changed`
+  - `leg.created`, `leg.status_changed`
+  - `file.uploaded`
+  - `settlement.calculated/adjusted/approved/unapproved`
+  - 향후: `presence.joined/left/editing`, `notification.created`
 
 ---
 

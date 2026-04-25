@@ -17,6 +17,8 @@ from app.core.exceptions import InvalidStateTransitionError, NotFoundError, Vali
 from app.domains.legs.models import Leg
 from app.domains.legs.repository import LegRepository
 from app.domains.legs.schema import LegCreateRequest, LegUpdateRequest
+from app.domains.realtime.schema import RealtimeEvent
+from app.domains.realtime.service import publish
 from app.domains.settlements.models import Settlement
 from app.models.enums import LegStatus, SettlementStatus
 
@@ -42,6 +44,17 @@ class LegService:
         await self.repo.create(leg)
         await self.repo.db.commit()
         await self.repo.db.refresh(leg)
+        await publish(
+            RealtimeEvent.now(
+                type="leg.created",
+                tenant_id=self.tenant_id,
+                payload={
+                    "legId": leg.id,
+                    "deliveryOrderId": leg.delivery_order_id,
+                    "driverId": leg.driver_id,
+                },
+            )
+        )
         return leg
 
     async def get(self, id_: str) -> Leg:
@@ -72,6 +85,7 @@ class LegService:
         self, id_: str, target: LegStatus, *, failure_reason: str | None = None
     ) -> Leg:
         leg = await self.get(id_)
+        previous = leg.status
         if target not in _ALLOWED.get(leg.status, set()):
             raise InvalidStateTransitionError(
                 f"Cannot transition leg {leg.status.value} → {target.value}",
@@ -92,6 +106,20 @@ class LegService:
         await self.repo.db.flush()
         await self.repo.db.commit()
         await self.repo.db.refresh(leg)
+        await publish(
+            RealtimeEvent.now(
+                type="leg.status_changed",
+                tenant_id=self.tenant_id,
+                payload={
+                    "legId": leg.id,
+                    "deliveryOrderId": leg.delivery_order_id,
+                    "driverId": leg.driver_id,
+                    "from": previous.value,
+                    "to": target.value,
+                    "settlementId": leg.settlement_id,
+                },
+            )
+        )
         return leg
 
     async def _ensure_settlement(self, leg: Leg) -> None:

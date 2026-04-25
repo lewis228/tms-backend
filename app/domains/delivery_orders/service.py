@@ -19,6 +19,8 @@ from app.domains.delivery_orders.state_machine import (
 )
 from app.domains.legs.models import Leg
 from app.domains.locations.models import Location
+from app.domains.realtime.schema import RealtimeEvent
+from app.domains.realtime.service import publish
 from app.models.enums import DeliveryStatus
 
 
@@ -36,6 +38,13 @@ class DeliveryOrderService:
         await self.repo.create(do)
         await self.repo.db.commit()
         await self.repo.db.refresh(do)
+        await publish(
+            RealtimeEvent.now(
+                type="do.created",
+                tenant_id=self.tenant_id,
+                payload={"deliveryOrderId": do.id, "status": do.status.value},
+            )
+        )
         return do
 
     async def get(self, id_: str) -> DeliveryOrder:
@@ -61,12 +70,24 @@ class DeliveryOrderService:
 
     async def transition(self, id_: str, target: DeliveryStatus) -> DeliveryOrder:
         do = await self.get(id_)
+        previous = do.status
         ctx = await self._build_context(do)
         assert_can_transition(ctx, target)
         do.status = target
         await self.repo.db.flush()
         await self.repo.db.commit()
         await self.repo.db.refresh(do)
+        await publish(
+            RealtimeEvent.now(
+                type="do.status_changed",
+                tenant_id=self.tenant_id,
+                payload={
+                    "deliveryOrderId": do.id,
+                    "from": previous.value,
+                    "to": target.value,
+                },
+            )
+        )
         return do
 
     async def _build_context(self, do: DeliveryOrder) -> TransitionContext:

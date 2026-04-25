@@ -1,0 +1,7 @@
+ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico"}
+ALLOWED_DOCUMENT_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "txt", "zip"}
+ALLOWED_EXTENSIONS = ALLOWED_IMAGE_EXTENSIONS | ALLOWED_DOCUMENT_EXTENSIONS
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_FILES_PER_REQUEST = 20
+IMAGE_RESIZE_THRESHOLD_BYTES = 2 * 1024 * 1024  # 2MB
+IMAGE_RESIZE_MAX_DIMENSION = 2000  # px

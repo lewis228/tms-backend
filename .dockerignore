@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+.git
+.gitignore
+.env
+mysql-data
+minio-data
+uploads
+logs
+.idea
+.vscode
+venv
+.venv

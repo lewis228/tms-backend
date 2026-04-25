@@ -33,6 +33,16 @@ router = APIRouter(
     dependencies=[require_role("DRIVER")],
 )
 
+# 모바일 documents 업로드 한도. POD/RECEIPT 사진+PDF 가정.
+MAX_DOCUMENT_BYTES = 10 * 1024 * 1024  # 10MB
+ALLOWED_DOCUMENT_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "application/pdf",
+}
+
 
 def _svc(db, *, tenant_id: str) -> DriverMobileService:
     return DriverMobileService(
@@ -100,16 +110,32 @@ async def upload_leg_document(
     file: Annotated[UploadFile, File()],
     kind: Annotated[str, Form()],
 ):
-    """POD / RECEIPT 등 leg 첨부 — Driver 가 모바일에서 직접 멀티파트 업로드."""
+    """POD / RECEIPT 등 leg 첨부 — Driver 가 모바일에서 직접 멀티파트 업로드.
+
+    검증:
+    - content_type 화이트리스트 (image/* + pdf). 임의 실행파일/HTML 차단.
+    - 본문 크기 ≤ MAX_DOCUMENT_BYTES (10MB). OOM 방지.
+    """
+    content_type = file.content_type or "application/octet-stream"
+    if content_type not in ALLOWED_DOCUMENT_TYPES:
+        raise ValidationError(
+            f"Unsupported content_type: {content_type}",
+            code="ERR_FILE_TYPE",
+        )
     body = await file.read()
     if not body:
         raise ValidationError("Empty file", code="ERR_FILE_EMPTY")
+    if len(body) > MAX_DOCUMENT_BYTES:
+        raise ValidationError(
+            f"File too large: {len(body)} bytes (max {MAX_DOCUMENT_BYTES})",
+            code="ERR_FILE_TOO_LARGE",
+        )
     f = await _svc(db, tenant_id=tenant_id).attach_leg_document(
         leg_id=leg_id,
         user_id=user.user_id,
         kind=kind,
         filename=file.filename or "document",
-        content_type=file.content_type or "application/octet-stream",
+        content_type=content_type,
         body=body,
     )
     return FileResponse.model_validate(f)

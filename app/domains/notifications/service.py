@@ -17,7 +17,6 @@ from app.domains.realtime.schema import RealtimeEvent
 from app.domains.users.models import User
 from app.models.enums import NotificationChannel, UserRole
 
-
 # 이벤트 type → (title, body) 매핑. 알 수 없는 type 은 fan-out 대상 아님.
 _EVENT_TITLES: dict[str, str] = {
     "do.created": "새 D/O 가 생성되었습니다",
@@ -55,11 +54,18 @@ def _format_body(event: RealtimeEvent) -> str | None:
 
 
 async def fan_out_event(db: AsyncSession, event: RealtimeEvent) -> int:
-    """RealtimeEvent 를 tenant 의 web 사용자 inbox 에 fan-out.
+    """RealtimeEvent 를 tenant 의 web 사용자 inbox 에 fan-out (add + flush only).
 
-    대상: tenant 의 ADMIN + DISPATCHER (active, not deleted). actor 본인 제외.
-    DRIVER 는 모바일 푸시가 별도라 inbox 대상에서 제외.
-    알 수 없는 event type 은 무시 (return 0).
+    대상:
+    - tenant 의 ADMIN + DISPATCHER (active, not deleted)
+    - actor 본인 제외 (자기가 한 일을 자기가 알림 받지 않도록)
+    - DRIVER 는 모바일 푸시가 별도라 inbox 대상에서 제외
+    - SUPER_ADMIN 은 user.tenant_id 가 NULL 이라 자동 제외 (운영자, inbox 대상 아님)
+
+    트랜잭션 책임:
+    - 이 함수는 Notification row 를 add + flush 만 한다. **commit 은 호출처가** 한다.
+      (기존 도메인 트랜잭션과 분리해서 inbox 만 별도로 commit 하기 위함)
+    - 알 수 없는 event type 은 무시 (return 0).
     """
     if event.type not in _EVENT_TITLES:
         return 0
@@ -92,7 +98,6 @@ async def fan_out_event(db: AsyncSession, event: RealtimeEvent) -> int:
             )
         )
     await db.flush()
-    await db.commit()
     return len(user_ids)
 
 

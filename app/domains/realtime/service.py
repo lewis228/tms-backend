@@ -21,11 +21,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import Any
+from typing import TYPE_CHECKING, Any  # noqa: F401  (Any used in stats() return)
 
 from app.core.logging import get_logger
 from app.core.redis import get_redis
 from app.domains.realtime.schema import RealtimeEvent
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 log = get_logger("realtime")
 
@@ -37,20 +40,30 @@ def channel_for(tenant_id: str) -> str:
     return f"tms:tenant:{tenant_id}:events"
 
 
-async def publish(event: RealtimeEvent, *, db: Any | None = None) -> int:
+async def publish(
+    event: RealtimeEvent, *, db: AsyncSession | None = None
+) -> int:
     """도메인 → Redis (실시간) + 옵션으로 inbox fan-out.
 
-    db 가 주어지면 notifications 도메인의 fan_out_event 를 호출해 tenant 의
-    ADMIN+DISPATCHER 의 inbox 에 row 를 생성한다. actor_id 본인은 제외.
-    Redis 미설정 / 다운 시 예외 흡수 (도메인 비즈니스 로직 보호).
+    호출 규약:
+    - 도메인 service 는 자신의 트랜잭션을 **commit 한 뒤** publish 를 호출한다.
+      (예: do.created 는 DeliveryOrder INSERT/COMMIT 후)
+    - db 가 주어지면 fan_out_event 를 통해 Notification row 를 add + flush 후
+      여기서 한 번 더 commit 한다. 도메인 commit 과 별개의 트랜잭션.
+    - fan-out 실패는 redis publish 를 막지 않는다 (best-effort).
+    - Redis 미설정 / 다운 시도 예외 흡수 (도메인 비즈니스 로직 보호).
     """
     if db is not None:
         # 순환 import 회피 — realtime 모듈 로드 시점에 notifications 가 아직 미초기화일 수 있음.
         from app.domains.notifications.service import fan_out_event
         try:
-            await fan_out_event(db, event)
+            n = await fan_out_event(db, event)
+            if n > 0:
+                await db.commit()
         except Exception as e:  # noqa: BLE001
             log.warning("realtime.fanout_failed", error=str(e), type=event.type)
+            with contextlib.suppress(Exception):
+                await db.rollback()
     try:
         r = get_redis()
         return await r.publish(channel_for(event.tenant_id), event.model_dump_json(by_alias=True))

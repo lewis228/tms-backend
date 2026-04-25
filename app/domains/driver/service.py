@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from app.core.exceptions import NotFoundError, ValidationError
-from app.core.storage import build_key, put_object_bytes
+from app.core.storage import build_key, delete_object, put_object_bytes
 from app.domains.driver.repository import DriverMobileRepository
 from app.domains.drivers.models import Driver
 from app.domains.files.constants import FILE_KINDS
@@ -117,25 +117,33 @@ class DriverMobileService:
         )
         size = put_object_bytes(key, body, content_type)
 
-        file_repo = FileRepository(self.repo.db, tenant_id=self.tenant_id)
-        f = File(
-            tenant_id=self.tenant_id,
-            domain="legs",
-            object_id=leg_id,
-            kind=kind,
-            storage_key=key,
-            filename=filename,
-            content_type=content_type,
-            size_bytes=size,
-            uploaded_by=user_id,
-        )
-        await file_repo.create(f)
-        await self.repo.db.commit()
-        await self.repo.db.refresh(f)
+        # S3 put 후 DB 인서트가 실패하면 객체스토어에 orphan 이 남는다.
+        # 실패 시 best-effort 로 객체 제거 → DB 와 storage 정합 유지.
+        try:
+            file_repo = FileRepository(self.repo.db, tenant_id=self.tenant_id)
+            f = File(
+                tenant_id=self.tenant_id,
+                domain="legs",
+                object_id=leg_id,
+                kind=kind,
+                storage_key=key,
+                filename=filename,
+                content_type=content_type,
+                size_bytes=size,
+                uploaded_by=user_id,
+            )
+            await file_repo.create(f)
+            await self.repo.db.commit()
+            await self.repo.db.refresh(f)
+        except Exception:
+            delete_object(key)
+            raise
+
         await publish(
             RealtimeEvent.now(
                 type="file.uploaded",
                 tenant_id=self.tenant_id,
+                actor_id=user_id,
                 payload={
                     "fileId": f.id,
                     "domain": f.domain,

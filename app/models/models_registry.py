@@ -5,9 +5,12 @@
 # ruff: noqa: F401
 from app.domains.customers.models import Customer
 from app.domains.delivery_orders.models import DeliveryOrder
+from app.domains.driver.models import DriverLocationPing, DriverPushToken
 from app.domains.drivers.models import Driver
+from app.domains.files.models import File
 from app.domains.legs.models import Leg
 from app.domains.locations.models import Location
+from app.domains.notifications.models import Notification
 from app.domains.rate_settings.models import RateSetting
 from app.domains.settlements.models import (
     ExtraCharge,

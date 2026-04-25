@@ -6,10 +6,94 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.domains.notifications.models import Notification
 from app.domains.notifications.repository import NotificationRepository
 from app.domains.notifications.schema import NotificationCreateRequest
+from app.domains.realtime.schema import RealtimeEvent
+from app.domains.users.models import User
+from app.models.enums import NotificationChannel, UserRole
+
+
+# 이벤트 type → (title, body) 매핑. 알 수 없는 type 은 fan-out 대상 아님.
+_EVENT_TITLES: dict[str, str] = {
+    "do.created": "새 D/O 가 생성되었습니다",
+    "do.status_changed": "D/O 상태가 변경되었습니다",
+    "leg.created": "새 Leg 이 생성되었습니다",
+    "leg.status_changed": "Leg 상태가 변경되었습니다",
+    "settlement.calculated": "정산이 계산되었습니다",
+    "settlement.adjusted": "정산이 조정되었습니다",
+    "settlement.approved": "정산이 승인되었습니다",
+    "settlement.unapproved": "정산 승인이 취소되었습니다",
+}
+
+
+def _format_body(event: RealtimeEvent) -> str | None:
+    """payload 에서 사람이 읽을 수 있는 보조 텍스트 추출."""
+    p = event.payload or {}
+    if event.type == "do.status_changed":
+        from_ = p.get("from")
+        to = p.get("to")
+        if from_ and to:
+            return f"{from_} → {to}"
+    if event.type == "leg.status_changed":
+        st = p.get("status")
+        if st:
+            return f"→ {st}"
+    if event.type == "do.created":
+        do_id = p.get("deliveryOrderId")
+        if do_id:
+            return f"D/O {do_id}"
+    if event.type == "leg.created":
+        do_id = p.get("deliveryOrderId")
+        if do_id:
+            return f"D/O {do_id}"
+    return None
+
+
+async def fan_out_event(db: AsyncSession, event: RealtimeEvent) -> int:
+    """RealtimeEvent 를 tenant 의 web 사용자 inbox 에 fan-out.
+
+    대상: tenant 의 ADMIN + DISPATCHER (active, not deleted). actor 본인 제외.
+    DRIVER 는 모바일 푸시가 별도라 inbox 대상에서 제외.
+    알 수 없는 event type 은 무시 (return 0).
+    """
+    if event.type not in _EVENT_TITLES:
+        return 0
+    title = _EVENT_TITLES[event.type]
+    body = _format_body(event)
+
+    stmt = select(User.id).where(
+        User.tenant_id == event.tenant_id,
+        User.role.in_([UserRole.ADMIN, UserRole.DISPATCHER]),
+        User.is_deleted.is_(False),
+        User.is_active.is_(True),
+    )
+    if event.actor_id:
+        stmt = stmt.where(User.id != event.actor_id)
+    user_ids = list((await db.execute(stmt)).scalars().all())
+
+    if not user_ids:
+        return 0
+
+    for uid in user_ids:
+        db.add(
+            Notification(
+                tenant_id=event.tenant_id,
+                user_id=uid,
+                channel=NotificationChannel.PUSH,
+                event_type=event.type,
+                title=title,
+                body=body,
+                payload=event.payload,
+            )
+        )
+    await db.flush()
+    await db.commit()
+    return len(user_ids)
 
 
 class NotificationService:

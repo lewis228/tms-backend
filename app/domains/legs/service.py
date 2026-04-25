@@ -53,7 +53,8 @@ class LegService:
                     "deliveryOrderId": leg.delivery_order_id,
                     "driverId": leg.driver_id,
                 },
-            )
+            ),
+            db=self.repo.db,
         )
         return leg
 
@@ -121,7 +122,8 @@ class LegService:
                     "to": target.value,
                     "settlementId": leg.settlement_id,
                 },
-            )
+            ),
+            db=self.repo.db,
         )
         return leg
 

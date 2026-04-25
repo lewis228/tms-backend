@@ -193,7 +193,8 @@ class SettlementService:
                     "status": s.settlement_status.value,
                     "isSettled": s.is_settled,
                 },
-            )
+            ),
+            db=self.repo.db,
         )
 
     async def _set_extras(

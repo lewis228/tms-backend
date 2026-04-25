@@ -43,7 +43,8 @@ class DeliveryOrderService:
                 type="do.created",
                 tenant_id=self.tenant_id,
                 payload={"deliveryOrderId": do.id, "status": do.status.value},
-            )
+            ),
+            db=self.repo.db,
         )
         return do
 
@@ -86,7 +87,8 @@ class DeliveryOrderService:
                     "from": previous.value,
                     "to": target.value,
                 },
-            )
+            ),
+            db=self.repo.db,
         )
         return do
 

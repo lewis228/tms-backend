@@ -37,11 +37,20 @@ def channel_for(tenant_id: str) -> str:
     return f"tms:tenant:{tenant_id}:events"
 
 
-async def publish(event: RealtimeEvent) -> int:
-    """도메인 → Redis. 워커 어디서나 호출 가능.
+async def publish(event: RealtimeEvent, *, db: Any | None = None) -> int:
+    """도메인 → Redis (실시간) + 옵션으로 inbox fan-out.
 
+    db 가 주어지면 notifications 도메인의 fan_out_event 를 호출해 tenant 의
+    ADMIN+DISPATCHER 의 inbox 에 row 를 생성한다. actor_id 본인은 제외.
     Redis 미설정 / 다운 시 예외 흡수 (도메인 비즈니스 로직 보호).
     """
+    if db is not None:
+        # 순환 import 회피 — realtime 모듈 로드 시점에 notifications 가 아직 미초기화일 수 있음.
+        from app.domains.notifications.service import fan_out_event
+        try:
+            await fan_out_event(db, event)
+        except Exception as e:  # noqa: BLE001
+            log.warning("realtime.fanout_failed", error=str(e), type=event.type)
     try:
         r = get_redis()
         return await r.publish(channel_for(event.tenant_id), event.model_dump_json(by_alias=True))

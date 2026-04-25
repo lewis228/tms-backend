@@ -8,12 +8,18 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ValidationError
+from app.core.storage import build_key, put_object_bytes
 from app.domains.driver.repository import DriverMobileRepository
 from app.domains.drivers.models import Driver
+from app.domains.files.constants import FILE_KINDS
+from app.domains.files.models import File
+from app.domains.files.repository import FileRepository
 from app.domains.legs.models import Leg
 from app.domains.legs.repository import LegRepository
 from app.domains.legs.service import LegService
+from app.domains.realtime.schema import RealtimeEvent
+from app.domains.realtime.service import publish
 
 
 class DriverMobileService:
@@ -79,3 +85,64 @@ class DriverMobileService:
         n = await self.repo.add_pings(driver_id=driver_id, pings=pings)
         await self.repo.db.commit()
         return n
+
+    async def attach_leg_document(
+        self,
+        *,
+        leg_id: str,
+        user_id: str,
+        kind: str,
+        filename: str,
+        content_type: str,
+        body: bytes,
+    ) -> File:
+        """Driver 가 자기 leg 에 POD/RECEIPT 등 첨부 파일 업로드.
+
+        presign/finalize 2단계 없이 멀티파트 한 번으로 처리 — 모바일 친화.
+        본인 leg 검증 후 객체스토어 put + File row 생성 + file.uploaded 발행.
+        """
+        if kind not in FILE_KINDS:
+            raise ValidationError(f"kind '{kind}' invalid")
+
+        driver_id = await self.resolve_driver_id(user_id)
+        leg = await self.leg_repo.get_by_id(leg_id)
+        if not leg or leg.driver_id != driver_id:
+            raise NotFoundError("Leg not assigned to current driver")
+
+        key = build_key(
+            tenant_id=self.tenant_id,
+            domain="legs",
+            object_id=leg_id,
+            filename=filename,
+        )
+        size = put_object_bytes(key, body, content_type)
+
+        file_repo = FileRepository(self.repo.db, tenant_id=self.tenant_id)
+        f = File(
+            tenant_id=self.tenant_id,
+            domain="legs",
+            object_id=leg_id,
+            kind=kind,
+            storage_key=key,
+            filename=filename,
+            content_type=content_type,
+            size_bytes=size,
+            uploaded_by=user_id,
+        )
+        await file_repo.create(f)
+        await self.repo.db.commit()
+        await self.repo.db.refresh(f)
+        await publish(
+            RealtimeEvent.now(
+                type="file.uploaded",
+                tenant_id=self.tenant_id,
+                payload={
+                    "fileId": f.id,
+                    "domain": f.domain,
+                    "objectId": f.object_id,
+                    "kind": f.kind,
+                    "filename": f.filename,
+                },
+            )
+        )
+        return f

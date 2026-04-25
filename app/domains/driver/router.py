@@ -4,9 +4,11 @@
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Annotated
 
-from app.core.dependencies import CurrentUser, DB, DBReadOnly, TenantID, require_role
+from fastapi import APIRouter, File, Form, UploadFile
+
+from app.core.dependencies import DB, CurrentUser, DBReadOnly, TenantID, require_role
 from app.core.exceptions import ValidationError
 from app.domains.driver.repository import DriverMobileRepository
 from app.domains.driver.schema import (
@@ -18,6 +20,7 @@ from app.domains.driver.schema import (
     TodayTasksResponse,
 )
 from app.domains.driver.service import DriverMobileService
+from app.domains.files.schema import FileResponse
 from app.domains.legs.repository import LegRepository
 from app.domains.legs.schema import LegResponse
 from app.domains.users.repository import UserRepository
@@ -82,6 +85,34 @@ async def upsert_push_token(
         user_id=user.user_id, platform=payload.platform, token=payload.token
     )
     return PushTokenResponse.model_validate(row)
+
+
+@router.post(
+    "/legs/{leg_id}/documents",
+    response_model=FileResponse,
+    status_code=201,
+)
+async def upload_leg_document(
+    leg_id: str,
+    user: CurrentUser,
+    tenant_id: TenantID,
+    db: DB,
+    file: Annotated[UploadFile, File()],
+    kind: Annotated[str, Form()],
+):
+    """POD / RECEIPT 등 leg 첨부 — Driver 가 모바일에서 직접 멀티파트 업로드."""
+    body = await file.read()
+    if not body:
+        raise ValidationError("Empty file", code="ERR_FILE_EMPTY")
+    f = await _svc(db, tenant_id=tenant_id).attach_leg_document(
+        leg_id=leg_id,
+        user_id=user.user_id,
+        kind=kind,
+        filename=file.filename or "document",
+        content_type=file.content_type or "application/octet-stream",
+        body=body,
+    )
+    return FileResponse.model_validate(f)
 
 
 @router.patch("/me/password", response_model=UserResponse)

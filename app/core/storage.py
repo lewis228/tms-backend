@@ -57,6 +57,21 @@ def presign_get(key: str, ttl: int) -> str:
     )
 
 
+def put_object_bytes(key: str, body: bytes, content_type: str) -> int:
+    """객체스토어에 직접 업로드. 모바일 driver 의 멀티파트 업로드용.
+
+    presign 흐름과 달리 클라이언트가 한 번의 multipart 요청으로 업로드하면
+    백엔드가 이를 받아 그대로 객체스토어에 put 한다. 반환값은 저장된 바이트 수.
+    """
+    get_s3().put_object(
+        Bucket=settings.minio_bucket,
+        Key=key,
+        Body=body,
+        ContentType=content_type,
+    )
+    return len(body)
+
+
 def head_object(key: str) -> dict | None:
     try:
         return get_s3().head_object(Bucket=settings.minio_bucket, Key=key)

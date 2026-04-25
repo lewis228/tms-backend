@@ -1,32 +1,30 @@
-FROM python:3.11-slim-bookworm
+FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app \
     APP_LOG_DIR=/app/logs
 
 WORKDIR /app
 
 RUN apt-get update \
  && apt-get -y upgrade \
- && apt-get install -y --no-install-recommends ca-certificates curl wget tini \
+ && apt-get install -y --no-install-recommends ca-certificates curl wget tini build-essential \
  && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 10001 appuser \
- && mkdir -p /app/logs /app/static/uploads \
+ && mkdir -p /app/logs \
  && chown -R appuser:appuser /app
 
-COPY --chown=appuser:appuser requirements.txt /app/requirements.txt
+COPY --chown=appuser:appuser pyproject.toml /app/pyproject.toml
 RUN pip install --upgrade pip \
- && pip install --no-cache-dir -r /app/requirements.txt
+ && pip install --no-cache-dir .
 
 COPY --chown=appuser:appuser . /app
-
-COPY --chown=appuser:appuser entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
 EXPOSE 8080
 
 USER appuser
-ENTRYPOINT ["/usr/bin/tini","--"]
-CMD ["/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

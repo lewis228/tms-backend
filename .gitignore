@@ -25,3 +25,9 @@ logs/
 *~
 .DS_Store
 Thumbs.db
+_archive_ste/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage

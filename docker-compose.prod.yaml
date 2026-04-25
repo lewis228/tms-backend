@@ -2,56 +2,50 @@
 # EC2 배포 전용 docker-compose.
 #
 # 사용:
-#   # EC2 dev 서버에서
 #   docker-compose -f docker-compose.prod.yaml up -d --build
 #
 # 특징:
-#   - .env 파일 없음. APP_ENV=dev 한 줄만 environment 로 주입.
-#   - config_bootstrap.load_env() 가 APP_ENV=dev 를 감지해
-#     AWS Parameter Store (/omniq/dev/shipmenttrackingengine/) 에서 전체 환경변수 로드.
-#   - EC2 에 부착된 IAM Role 이 자동 인증 → AWS access key 불필요.
+#   - .env 파일 없음. 환경변수는 EC2 환경(IAM Role + Parameter Store)에서 주입.
 #   - RDS / ElastiCache / S3 사용 → 로컬 MySQL / Redis / MinIO 없음.
-#   - host.docker.internal override 없음 (prod AWS 엔드포인트 그대로 사용).
 # ============================================================================
 
 services:
   app:
     build: .
-    container_name: tracking-api-app
+    container_name: tms-api
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      APP_ENV: dev
-      AWS_REGION: us-west-1
-      # PARAM_STORE_PREFIX 는 APP_ENV=dev 기본값(/omniq/dev/.../) 사용 — 오버라이드 필요 시만 명시.
+      APP_ENV: prod
+      AWS_REGION: ap-northeast-2
 
   celery-worker:
     build: .
-    container_name: tracking-api-celery-worker
+    container_name: tms-celery-worker
     restart: unless-stopped
     entrypoint: ["/usr/bin/tini", "--"]
-    working_dir: /app/src
+    working_dir: /app
     command: >
       sh -c "
-      export PYTHONPATH=/app/src &&
-      celery -A celery_app worker --loglevel=info -Q celery
+      export PYTHONPATH=/app &&
+      celery -A app.workers.celery_app worker --loglevel=info -Q celery
       "
     environment:
-      APP_ENV: dev
-      AWS_REGION: us-west-1
+      APP_ENV: prod
+      AWS_REGION: ap-northeast-2
 
   celery-beat:
     build: .
-    container_name: tracking-api-celery-beat
+    container_name: tms-celery-beat
     restart: unless-stopped
     entrypoint: ["/usr/bin/tini", "--"]
-    working_dir: /app/src
+    working_dir: /app
     command: >
       sh -c "
-      export PYTHONPATH=/app/src &&
-      celery -A celery_app beat --loglevel=info
+      export PYTHONPATH=/app &&
+      celery -A app.workers.celery_app beat --loglevel=info
       "
     environment:
-      APP_ENV: dev
-      AWS_REGION: us-west-1
+      APP_ENV: prod
+      AWS_REGION: ap-northeast-2

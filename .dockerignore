@@ -11,3 +11,8 @@ logs
 .vscode
 venv
 .venv
+_archive_ste
+tests
+.pytest_cache
+.mypy_cache
+.ruff_cache

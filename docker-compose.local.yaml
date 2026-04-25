@@ -2,20 +2,22 @@
 #
 # MySQL / Redis / MinIO 까지 전부 로컬 컨테이너로 띄운다.
 # app / celery-worker / celery-beat 는 EC2 구성과 동일하지만,
-# depends_on / DB_HOST / REDIS_HOST / MINIO_ENDPOINT 만 override 한다.
+# DB_HOST / REDIS_HOST / MINIO_ENDPOINT 만 override.
 #
 # 사용: docker-compose -f docker-compose.local.yaml up -d
+#
+# 주의: ste 프로젝트와 컨테이너 이름이 충돌하면 한쪽 정리 필요.
 services:
   mysql:
-    image: mysql:8.0
-    container_name: app-mysql
+    image: mysql:8.4
+    container_name: tms-mysql
     restart: always
     volumes:
       - ./mysql-data:/var/lib/mysql
     ports:
       - "3306:3306"
     environment:
-      MYSQL_DATABASE: my_app
+      MYSQL_DATABASE: tms
       MYSQL_ROOT_PASSWORD: rootpassword
     command: --wait_timeout=28800 --interactive_timeout=28800
     healthcheck:
@@ -26,7 +28,7 @@ services:
 
   redis:
     image: redis:7.2
-    container_name: app-redis
+    container_name: tms-redis
     restart: always
     ports:
       - "6379:6379"
@@ -38,7 +40,7 @@ services:
 
   minio:
     image: minio/minio
-    container_name: app-minio
+    container_name: tms-minio
     restart: always
     ports:
       - "9000:9000"
@@ -52,21 +54,21 @@ services:
 
   minio-init:
     image: minio/mc
-    container_name: app-minio-init
+    container_name: tms-minio-init
     depends_on:
       - minio
     entrypoint: >
       /bin/sh -c "
       sleep 3;
       mc alias set myminio http://minio:9000 minioadmin minioadmin;
-      mc mb --ignore-existing myminio/my-app;
-      mc anonymous set download myminio/my-app/public;
+      mc mb --ignore-existing myminio/tms-app;
+      mc anonymous set download myminio/tms-app/public;
       echo 'MinIO init done';
       "
 
   app:
     build: .
-    container_name: app-api
+    container_name: tms-api
     restart: always
     ports:
       - "8080:8080"
@@ -77,6 +79,7 @@ services:
       DB_HOST: mysql
       REDIS_HOST: redis
       MINIO_ENDPOINT: http://minio:9000
+      PYTHONPATH: /app
     depends_on:
       mysql:
         condition: service_healthy
@@ -87,14 +90,14 @@ services:
 
   celery-worker:
     build: .
-    container_name: app-celery-worker
+    container_name: tms-celery-worker
     restart: always
     entrypoint: ["/usr/bin/tini", "--"]
-    working_dir: /app/src
+    working_dir: /app
     command: >
       sh -c "
-      export PYTHONPATH=/app/src &&
-      celery -A celery_app worker --loglevel=info -Q celery
+      export PYTHONPATH=/app &&
+      celery -A app.workers.celery_app worker --loglevel=info -Q celery
       "
     env_file:
       - path: .env
@@ -110,14 +113,14 @@ services:
 
   celery-beat:
     build: .
-    container_name: app-celery-beat
+    container_name: tms-celery-beat
     restart: always
     entrypoint: ["/usr/bin/tini", "--"]
-    working_dir: /app/src
+    working_dir: /app
     command: >
       sh -c "
-      export PYTHONPATH=/app/src &&
-      celery -A celery_app beat --loglevel=info
+      export PYTHONPATH=/app &&
+      celery -A app.workers.celery_app beat --loglevel=info
       "
     env_file:
       - path: .env

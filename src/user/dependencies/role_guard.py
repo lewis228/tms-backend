@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException
 from starlette.status import HTTP_403_FORBIDDEN
 from user.dependencies.current_user import get_current_user
 from user.const.roles import RolesEnum

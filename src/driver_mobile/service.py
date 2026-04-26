@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from common.exceptions.base import NotFoundException, BadRequestException, AppException
+from common.exceptions.base import NotFoundException, AppException
 from driver.model import DriverModel
 from leg.const.status import LegStatus
 from leg.model import LegModel

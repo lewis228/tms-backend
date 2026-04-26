@@ -5,7 +5,6 @@ from datetime import datetime
 
 from common.schemas.base import ResponseSchema
 from common.schemas.nested import (
-    UserNestedSchema,
     UserNestedWithFilesSchema,
     PermissionGroupNestedSchema,
     FileNestedSchema,

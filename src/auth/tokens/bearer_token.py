@@ -1,5 +1,5 @@
 # auth/tokens/bearer_token.py
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis

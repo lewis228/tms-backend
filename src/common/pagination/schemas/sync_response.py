@@ -1,7 +1,6 @@
 # common/pagination/schemas/sync_response.py
 from __future__ import annotations
 from typing import Generic, TypeVar, List
-from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 T = TypeVar("T")

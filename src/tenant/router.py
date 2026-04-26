@@ -7,7 +7,7 @@ from redis.asyncio import Redis
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from common.pagination.schemas.sync_response import SyncWithAllIdsResponse
 from database.dependencies import get_read_db, get_write_db
-from cache.dependencies import get_read_redis, get_write_redis
+from cache.dependencies import get_write_redis
 
 from auth.tokens.access_token import access_token
 from user.dependencies.current_user import get_current_user
@@ -45,7 +45,6 @@ from tenant.schemas.response import (
     TeamMemberRemoveResponseSchema,
     TeamMemberPermissionResponseSchema,
     OnboardingUpdateResponseSchema,
-    TeamSettingsUpdateResponseSchema,
     TeamUsageStatsResponseSchema,
     TimezoneItemSchema,
 )

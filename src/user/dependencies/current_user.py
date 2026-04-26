@@ -1,6 +1,5 @@
 # user/dependencies/current_user.py
-from fastapi import Depends, Request, HTTPException, status
-from auth.tokens.access_token import access_token
+from fastapi import Request, HTTPException, status
 from user.schemas.response import UserResponseSchema  
 import logging
 logger = logging.getLogger(__name__)

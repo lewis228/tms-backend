@@ -1,6 +1,6 @@
 # common/pagination/service.py
 from __future__ import annotations
-from typing import Type, Callable, Any, Optional, List
+from typing import Type, Callable, Any, Optional
 from urllib.parse import urlencode
 
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -11,7 +11,6 @@ from common.pagination.service import CommonService
 from tenant.model import TenantModel, UserTenantModel
 from user.model import UserModel
 from user.schemas.request import PaginateUserRequestSchema
-from user.schemas.response import UserResponseSchema
 from auth.const.providers import AuthProviderEnum
 from file.model import FileAssetModel
 

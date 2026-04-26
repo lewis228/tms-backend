@@ -3,8 +3,6 @@
 SQLAlchemy 이벤트 훅 (디버깅용)
 (write_engine 사용으로 변경)
 """
-from sqlalchemy import event
-from database.mysql_connection import write_engine, read_engine
 from common.const.settings import settings
 
 

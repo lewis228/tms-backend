@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy import select
 
-from common.exceptions.base import NotFoundException, BadRequestException
+from common.exceptions.base import NotFoundException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from delivery_order.const.status import DeliveryStatus
 from delivery_order.model import DeliveryOrderModel

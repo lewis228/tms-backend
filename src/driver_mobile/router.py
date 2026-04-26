@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.tokens.access_token import access_token
-from common.exceptions.base import AppException, NotFoundException
+from common.exceptions.base import NotFoundException
 from common.const.settings import settings
 from database.dependencies import get_read_db, get_write_db
 from tenant.dependencies.get_tenant_scope import get_tenant_scope

@@ -20,11 +20,10 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Optional, Tuple
+from typing import Optional
 import logging
 
 from file.const.validation import (
-    ALLOWED_IMAGE_EXTENSIONS,
     IMAGE_AUTO_RESIZE_THRESHOLD_SIZE,
     IMAGE_AUTO_RESIZE_THRESHOLD_PIXELS,
     IMAGE_TARGET_MAX_PIXELS,

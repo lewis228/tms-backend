@@ -4,7 +4,7 @@ from typing import List
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from common.exceptions.base import NotFoundException, BadRequestException
+from common.exceptions.base import NotFoundException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from settlement.repository import SettlementRepository
 from settlement.schemas.request import (
@@ -298,7 +298,6 @@ class SettlementService:
         actor_user_id: int | None = None,
     ):
         """PENDING/CALCULATED → CALCULATED. system_total + extras."""
-        from datetime import datetime, timezone
         from sqlalchemy import select, delete
         from common.exceptions.base import AppException
         from settlement.model import (

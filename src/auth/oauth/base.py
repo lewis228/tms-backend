@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 import secrets
-import time
 
 from redis.asyncio import Redis
 from auth.const.providers import AuthProviderEnum

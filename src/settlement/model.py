@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    String, Integer, Boolean, Text, ForeignKey, DateTime, Numeric, JSON,
+    String, Boolean, Text, ForeignKey, DateTime, Numeric, JSON,
     Index, UniqueConstraint, Enum as SAEnum,
 )
 

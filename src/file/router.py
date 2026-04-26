@@ -32,7 +32,6 @@ from database.dependencies import get_read_db, get_write_db
 from user.dependencies.current_user import get_current_user
 from user.schemas.response import UserResponseSchema
 
-from file.const.domains import FileDomain
 from file.schemas.request import (
     FileCommitRequestSchema,
     PaginateFileListRequestSchema,

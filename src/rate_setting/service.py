@@ -4,7 +4,7 @@ from typing import List
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from common.exceptions.base import NotFoundException, BadRequestException
+from common.exceptions.base import NotFoundException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from rate_setting.repository import RateSettingRepository
 from rate_setting.schemas.request import (

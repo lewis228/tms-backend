@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import structlog
-from fastapi import APIRouter, Query, WebSocket, status
+from fastapi import APIRouter, Query, WebSocket
 
 from realtime.service import _Connection, manager
 

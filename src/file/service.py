@@ -34,7 +34,6 @@ import secrets
 import mimetypes
 import logging
 from typing import Optional, List, Any
-from io import BytesIO
 from sqlalchemy.ext.asyncio import AsyncSession
 from botocore.exceptions import ClientError
 
@@ -46,7 +45,6 @@ from file.const.consts import (
     PRESIGNED_DOWNLOAD_TTL,
     ObjectKeyBuilder,
     temp_key,
-    temp_prefix,
     rewrite_presigned_url,
     public_direct_url,
 )

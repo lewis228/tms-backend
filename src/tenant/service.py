@@ -32,7 +32,6 @@ from tenant.schemas.response import (
     TeamMemberRemoveResponseSchema,
     TeamMemberPermissionResponseSchema,
     OnboardingUpdateResponseSchema,
-    TeamSettingsUpdateResponseSchema,
     TeamUsageStatsResponseSchema,
     TimezoneItemSchema,
 )

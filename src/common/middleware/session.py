@@ -1,5 +1,5 @@
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi import Request, Response, FastAPI
+from fastapi import Request, FastAPI
 import uuid, json, logging
 from redis.asyncio import Redis 
 from common.const.settings import settings

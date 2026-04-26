@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import Optional, List, Iterable
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, func, asc, desc
+from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import load_only
 
 from common.repository.tenant_scoped import TeamScopedRepoMixin
 from common.pagination.service import CommonService
-from common.pagination.schemas.pagination_response import CursorPaginationMeta, CursorPaginationResult
+from common.pagination.schemas.pagination_response import CursorPaginationResult
 from terminal.model import TerminalModel
 from terminal.schemas.request import PaginateTerminalRequest
 from terminal.schemas.response import TerminalResponseSchema

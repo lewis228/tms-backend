@@ -1,8 +1,6 @@
 # src/common/schemas/base.py
 from __future__ import annotations
 from typing import Any
-from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
 from pydantic import BaseModel, ConfigDict, model_serializer
 from pydantic.alias_generators import to_camel
 

@@ -30,6 +30,9 @@ SETTLEMENT_UNAPPROVE  = "SETTLEMENT_UNAPPROVE"   # 승인 취소 (사유 필수,
 RATE_SETTING_WRITE    = "RATE_SETTING_WRITE"     # 요율 등록/수정 (rate_setting alias)
 RATE_WRITE            = "RATE_WRITE"             # 요율 등록/수정 (legacy alias)
 
+# ===== Notification =====
+NOTIFICATION_WRITE    = "NOTIFICATION_WRITE"     # 알림 mark_read 등 본인 inbox 액션
+
 # ===== Analytics =====
 ANALYTICS_DASH_VIEW   = "ANALYTICS_DASH_VIEW"    # 대시보드 조회
 
@@ -60,6 +63,8 @@ ALL_PERMISSION_CODES = _unique([
     # Settlement / Rate
     SETTLEMENT_WRITE, SETTLEMENT_CALCULATE, SETTLEMENT_ADJUST, SETTLEMENT_APPROVE,
     SETTLEMENT_UNAPPROVE, RATE_SETTING_WRITE, RATE_WRITE,
+    # Notification
+    NOTIFICATION_WRITE,
     # Analytics
     ANALYTICS_DASH_VIEW,
     # Tenant / Members
@@ -79,6 +84,8 @@ DEFAULT_MEMBER_CODES = [
     DO_WRITE, DO_TRANSITION, LEG_WRITE, LEG_TRANSITION, STREET_TURN_WRITE,
     # Settlement — 계산/조정만 (승인/취소는 ADMIN)
     SETTLEMENT_CALCULATE, SETTLEMENT_ADJUST,
+    # Notification
+    NOTIFICATION_WRITE,
     # Analytics
     ANALYTICS_DASH_VIEW,
 ]

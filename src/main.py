@@ -60,11 +60,11 @@ from leg.router import router as leg_router
 from street_turn.router import router as street_turn_router
 from settlement.router import router as settlement_router
 
-# TMS Phase D 도메인 routers (placeholder)
-# from notification.router import router as notification_router
-# from realtime.router import router as realtime_router
-# from ai_intake.router import router as ai_intake_router
-# from driver_mobile.router import router as driver_mobile_router
+# ── TMS Phase D routers (Notification / Realtime / AI Intake / Driver Mobile) ──
+from notification.router import router as notification_router
+from realtime.router import router as realtime_router
+from ai_intake.router import router as ai_intake_router
+from driver_mobile.router import router as driver_mobile_router
 
 
 app = FastAPI(lifespan=lifespan, root_path=settings.ROOT_PATH)
@@ -119,6 +119,12 @@ app.include_router(delivery_order_router)
 app.include_router(leg_router)
 app.include_router(street_turn_router)
 app.include_router(settlement_router)
+
+# ── TMS Phase D router 등록 ──────────────────────────────────
+app.include_router(notification_router)
+app.include_router(realtime_router)
+app.include_router(ai_intake_router)
+app.include_router(driver_mobile_router)
 
 
 @app.get("/", include_in_schema=False)

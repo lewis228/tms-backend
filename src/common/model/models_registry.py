@@ -36,4 +36,6 @@ from settlement.model import (  # noqa: F401
     ExtraChargeModel,
     SettlementAuditLogModel,
 )
-# from notification.model import NotificationModel  # noqa: F401
+
+# ── TMS Phase D — Notification ──────────────────────────────
+from notification.model import NotificationModel  # noqa: F401

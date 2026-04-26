@@ -72,6 +72,7 @@ async def list_files(
 async def get_upload_urls(
     body: UploadUrlRequestSchema,
     _1: None = Depends(access_token),
+    _tenant_id: int = Depends(get_tenant_scope),  # tenant 멤버십 검증 (cross-tenant 차단)
     db: AsyncSession = Depends(get_read_db),
 ):
     """

@@ -134,5 +134,22 @@ class ConnectionManager:
             "connections": sum(len(s) for s in self._by_tenant.values()),
         }
 
+    async def shutdown(self) -> None:
+        """앱 종료 시: 모든 subscriber task 취소 + 등록부 정리.
+
+        활성 WS 자체는 endpoint 의 finally 가 unregister 함.
+        여기서는 워커 내부 background task 만 정리.
+        """
+        async with self._lock:
+            tasks = list(self._subscriber_tasks.values())
+            self._subscriber_tasks.clear()
+            self._by_tenant.clear()
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        for t in tasks:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await t
+
 
 manager = ConnectionManager()

@@ -29,6 +29,11 @@ from database.mysql_connection import build_mysql_dsn
 from common.const.settings import settings
 
 
+# prod 데이터 보호 — 화이트리스트에 있는 DB 이름만 TRUNCATE 허용.
+# 신규 DB 추가 시 명시적으로 여기 등록해야 통과.
+_TEST_DB_ALLOWLIST = frozenset({"tms", "tms_test"})
+
+
 def _make_test_engine():
     dsn = build_mysql_dsn(settings.DB_HOST)
     return create_async_engine(dsn, echo=False, poolclass=NullPool)
@@ -37,6 +42,13 @@ def _make_test_engine():
 @pytest_asyncio.fixture
 async def db_session() -> AsyncIterator[AsyncSession]:
     """함수 스코프 — 테스트마다 신규 엔진 + 테이블 truncate."""
+    if settings.DB_DATABASE not in _TEST_DB_ALLOWLIST:
+        raise RuntimeError(
+            f"통합 테스트 DB 화이트리스트 위반: '{settings.DB_DATABASE}'. "
+            f"허용 목록 = {sorted(_TEST_DB_ALLOWLIST)}. "
+            f"실수로 prod DB 를 truncate 하지 않게 차단됨. "
+            f"테스트 의도면 conftest.py 의 _TEST_DB_ALLOWLIST 에 추가."
+        )
     engine = _make_test_engine()
     try:
         async with engine.begin() as conn:

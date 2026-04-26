@@ -53,8 +53,6 @@ async def realtime_ws(
     role = claims.get("role")
 
     # tenant_id 는 항상 query 로 받는다 (N:M 모델 — 토큰에 박지 않음).
-    # SUPER_ADMIN/일반 사용자 모두 query 필수.
-    # TODO: 일반 사용자의 경우 user_tenants 멤버십 EXISTS 검증 (현재는 미검증).
     if tenant_id is None:
         await websocket.accept()
         await websocket.close(code=4003)
@@ -63,6 +61,25 @@ async def realtime_ws(
         await websocket.accept()
         await websocket.close(code=4002)
         return
+
+    # 일반 사용자는 user_tenants 멤버십 EXISTS 검증 (cross-tenant data leak 방지).
+    # SUPER_ADMIN 만 멤버십 없이도 cross-tenant 가능.
+    if role != "SUPER_ADMIN":
+        from sqlalchemy import select
+        from database.mysql_connection import write_session_maker
+        from tenant.model import UserTenantModel
+
+        async with write_session_maker() as db:
+            stmt = select(UserTenantModel.id).where(
+                UserTenantModel.user_id == user_id,
+                UserTenantModel.tenant_id == tenant_id,
+                UserTenantModel.is_active.is_(True),
+            ).limit(1)
+            row = (await db.execute(stmt)).scalar_one_or_none()
+        if row is None:
+            await websocket.accept()
+            await websocket.close(code=4003)
+            return
 
     await websocket.accept()
     conn = _Connection(websocket, int(tenant_id), user_id)

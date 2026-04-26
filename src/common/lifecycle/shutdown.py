@@ -1,28 +1,43 @@
 # src/common/lifecycle/shutdown.py
+"""앱 종료 시 정리 작업 — engine pool / redis pool / WS 매니저 dispose."""
 import structlog
 
 logger = structlog.get_logger(__name__)
 
+
 async def graceful_shutdown_tasks():
     logger.info("graceful_shutdown_start")
 
-    # TODO: 여기에 실제 종료 전 정리할 작업 추가
-    # 예: 
-    # - 백그라운드 작업 큐 종료 (예: Celery Worker / TaskQueue 중단)
-    # - 외부 API 세션 닫기
-    # - 파일 쓰기 정리
-    # - 로그 전송 대기
-    # - WebSocket 닫기 등
+    # WebSocket: 활성 연결 모두 종료 + manager 큐 정리
+    try:
+        from realtime.service import manager
+        await manager.shutdown()
+        logger.info("graceful_shutdown.ws_manager_closed")
+    except Exception as e:
+        logger.warning("graceful_shutdown.ws_manager_failed", error=str(e))
 
-    # 예: 백그라운드 작업 취소
-    # if background_task:
-    #     background_task.cancel()
+    # Redis pool dispose
+    try:
+        from cache.redis_connection import write_redis, read_redis
+        try: await write_redis.aclose()
+        except Exception: pass
+        if read_redis is not write_redis:
+            try: await read_redis.aclose()
+            except Exception: pass
+        logger.info("graceful_shutdown.redis_closed")
+    except Exception as e:
+        logger.warning("graceful_shutdown.redis_failed", error=str(e))
 
-    # 예: Redis에 저장된 임시 세션 키 삭제
-    # await redis.delete("some:session:key")
-
-    # 예: 외부 API 세션 닫기
-    # await external_api_session.close()
-
+    # SQLAlchemy engine pool dispose
+    try:
+        from database.mysql_connection import write_engine, read_engine
+        try: await write_engine.dispose()
+        except Exception: pass
+        if read_engine is not write_engine:
+            try: await read_engine.dispose()
+            except Exception: pass
+        logger.info("graceful_shutdown.db_engine_disposed")
+    except Exception as e:
+        logger.warning("graceful_shutdown.db_engine_failed", error=str(e))
 
     logger.info("graceful_shutdown_completed")

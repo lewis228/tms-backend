@@ -46,12 +46,14 @@ from tenant.router import router as tenant_router
 from rbac.router import router as rbac_router
 from file.router import router as file_router
 
-# TMS 도메인 routers — Phase B 이후 import (placeholder)
-# from customer.router import router as customer_router
-# from terminal.router import router as terminal_router
-# from vessel.router import router as vessel_router
-# from location.router import router as location_router
-# from driver.router import router as driver_router
+# ── TMS Master Data routers (Phase B) ────────────────────────
+from customer.router import router as customer_router
+from terminal.router import router as terminal_router
+from vessel.router import router as vessel_router
+from location.router import router as location_router
+from driver.router import router as driver_router
+
+# TMS 도메인 routers — Phase C 이후 import (placeholder)
 # from delivery_order.router import router as delivery_order_router
 # from leg.router import router as leg_router
 # from street_turn.router import router as street_turn_router
@@ -102,9 +104,12 @@ app.include_router(tenant_router)
 app.include_router(rbac_router)
 app.include_router(file_router)
 
-# ── TMS 도메인 router 등록 (Phase B+) ────────────────────────
-# app.include_router(customer_router)
-# ... 등
+# ── TMS Master Data router 등록 (Phase B) ────────────────────
+app.include_router(customer_router)
+app.include_router(terminal_router)
+app.include_router(vessel_router)
+app.include_router(location_router)
+app.include_router(driver_router)
 
 
 @app.get("/", include_in_schema=False)

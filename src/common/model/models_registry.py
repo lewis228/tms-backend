@@ -19,12 +19,12 @@ from rbac.model import (  # noqa: F401
 )
 from file.model import FileAssetModel  # noqa: F401
 
-# ── TMS 도메인 (Phase B+) ────────────────────────────────────
-# from customer.model import CustomerModel  # noqa: F401
-# from terminal.model import TerminalModel  # noqa: F401
-# from vessel.model import VesselModel  # noqa: F401
-# from location.model import LocationModel  # noqa: F401
-# from driver.model import DriverModel  # noqa: F401
+# ── TMS Master Data (Phase B) ────────────────────────────────
+from customer.model import CustomerModel  # noqa: F401
+from terminal.model import TerminalModel  # noqa: F401
+from vessel.model import VesselModel  # noqa: F401
+from location.model import LocationModel  # noqa: F401
+from driver.model import DriverModel  # noqa: F401
 # from delivery_order.model import DeliveryOrderModel  # noqa: F401
 # from leg.model import LegModel  # noqa: F401
 # from street_turn.model import StreetTurnModel  # noqa: F401

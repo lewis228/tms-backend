@@ -53,12 +53,14 @@ from vessel.router import router as vessel_router
 from location.router import router as location_router
 from driver.router import router as driver_router
 
-# TMS 도메인 routers — Phase C 이후 import (placeholder)
-# from delivery_order.router import router as delivery_order_router
-# from leg.router import router as leg_router
-# from street_turn.router import router as street_turn_router
-# from rate_setting.router import router as rate_setting_router
-# from settlement.router import router as settlement_router
+# ── TMS D/O / Leg / Settlement routers (Phase C) ─────────────
+from rate_setting.router import router as rate_setting_router
+from delivery_order.router import router as delivery_order_router
+from leg.router import router as leg_router
+from street_turn.router import router as street_turn_router
+from settlement.router import router as settlement_router
+
+# TMS Phase D 도메인 routers (placeholder)
 # from notification.router import router as notification_router
 # from realtime.router import router as realtime_router
 # from ai_intake.router import router as ai_intake_router
@@ -110,6 +112,13 @@ app.include_router(terminal_router)
 app.include_router(vessel_router)
 app.include_router(location_router)
 app.include_router(driver_router)
+
+# ── TMS D/O / Leg / Settlement router 등록 (Phase C) ─────────
+app.include_router(rate_setting_router)
+app.include_router(delivery_order_router)
+app.include_router(leg_router)
+app.include_router(street_turn_router)
+app.include_router(settlement_router)
 
 
 @app.get("/", include_in_schema=False)

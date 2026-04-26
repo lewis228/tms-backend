@@ -22,11 +22,13 @@ LEG_TRANSITION   = "LEG_TRANSITION"    # Leg 상태 전이 (PENDING → IN_TRANS
 STREET_TURN_WRITE = "STREET_TURN_WRITE" # Street turn 생성/취소
 
 # ===== Settlement / Rate =====
+SETTLEMENT_WRITE      = "SETTLEMENT_WRITE"       # 등록/수정/삭제 (lifecycle 외)
 SETTLEMENT_CALCULATE  = "SETTLEMENT_CALCULATE"   # 계산
 SETTLEMENT_ADJUST     = "SETTLEMENT_ADJUST"      # 조정 (사유 필수)
 SETTLEMENT_APPROVE    = "SETTLEMENT_APPROVE"     # 승인 (잠금)
 SETTLEMENT_UNAPPROVE  = "SETTLEMENT_UNAPPROVE"   # 승인 취소 (사유 필수, 감사 로그)
-RATE_WRITE            = "RATE_WRITE"             # 요율 등록/수정
+RATE_SETTING_WRITE    = "RATE_SETTING_WRITE"     # 요율 등록/수정 (rate_setting alias)
+RATE_WRITE            = "RATE_WRITE"             # 요율 등록/수정 (legacy alias)
 
 # ===== Analytics =====
 ANALYTICS_DASH_VIEW   = "ANALYTICS_DASH_VIEW"    # 대시보드 조회
@@ -56,8 +58,8 @@ ALL_PERMISSION_CODES = _unique([
     # D/O / Leg / StreetTurn
     DO_WRITE, DO_TRANSITION, LEG_WRITE, LEG_TRANSITION, STREET_TURN_WRITE,
     # Settlement / Rate
-    SETTLEMENT_CALCULATE, SETTLEMENT_ADJUST, SETTLEMENT_APPROVE,
-    SETTLEMENT_UNAPPROVE, RATE_WRITE,
+    SETTLEMENT_WRITE, SETTLEMENT_CALCULATE, SETTLEMENT_ADJUST, SETTLEMENT_APPROVE,
+    SETTLEMENT_UNAPPROVE, RATE_SETTING_WRITE, RATE_WRITE,
     # Analytics
     ANALYTICS_DASH_VIEW,
     # Tenant / Members

@@ -285,3 +285,300 @@ class SettlementService:
                 failed=0,
             ),
         )
+
+    # ═══════════════════════════════════════════════════════════════
+    # 라이프사이클 — calculate / adjust / approve / unapprove
+    # ═══════════════════════════════════════════════════════════════
+
+    async def calculate(
+        self,
+        settlement_id: int,
+        payload,                # SettlementCalculateRequest
+        *,
+        actor_user_id: int | None = None,
+    ):
+        """PENDING/CALCULATED → CALCULATED. system_total + extras."""
+        from datetime import datetime, timezone
+        from sqlalchemy import select, delete
+        from common.exceptions.base import AppException
+        from settlement.model import (
+            SettlementModel, ExtraChargeModel, SettlementAuditLogModel,
+        )
+        from settlement.const.status import SettlementStatus, SettlementAuditAction
+        from settlement.schemas.response import SettlementResponseSchema
+
+        class InvalidSettlementTransition(AppException):
+            code = "ERR_INVALID_SETTLEMENT_TRANSITION"
+            status_code = 422
+
+        team_id = self.repo._require_tenant()
+        s = (await self.db.execute(
+            select(SettlementModel).where(
+                SettlementModel.tenant_id == team_id,
+                SettlementModel.id == settlement_id,
+                SettlementModel.is_active.is_(True),
+            )
+        )).scalar_one_or_none()
+        if not s:
+            raise NotFoundException("Settlement")
+
+        if s.settlement_status not in (SettlementStatus.PENDING, SettlementStatus.CALCULATED):
+            raise InvalidSettlementTransition(
+                f"calculate 는 PENDING/CALCULATED 에서만 가능. 현재: {s.settlement_status.value}",
+            )
+
+        before = {"settlement_status": s.settlement_status.value, "system_total": str(s.system_total)}
+
+        s.system_total = payload.system_total
+        s.settlement_status = SettlementStatus.CALCULATED
+        if actor_user_id is not None:
+            s.updated_by_user_id = actor_user_id
+
+        # extras 재정의 (기존 삭제 후 재삽입)
+        await self.db.execute(delete(ExtraChargeModel).where(
+            ExtraChargeModel.tenant_id == team_id,
+            ExtraChargeModel.settlement_id == s.id,
+        ))
+        for ec in payload.extra_charges:
+            self.db.add(ExtraChargeModel(
+                tenant_id=team_id, settlement_id=s.id,
+                type=ec.type, amount=ec.amount, description=ec.description,
+            ))
+
+        # audit log
+        self.db.add(SettlementAuditLogModel(
+            tenant_id=team_id, settlement_id=s.id,
+            action=SettlementAuditAction.CALCULATE, actor_id=actor_user_id,
+            before_state=before,
+            after_state={"settlement_status": s.settlement_status.value, "system_total": str(s.system_total)},
+            reason=None,
+        ))
+
+        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(s)
+
+        await self._publish(s, "settlement.calculated", actor_user_id)
+        return SettlementResponseSchema.model_validate(s)
+
+    async def adjust(
+        self,
+        settlement_id: int,
+        payload,                # SettlementAdjustRequest
+        *,
+        actor_user_id: int | None = None,
+    ):
+        """CALCULATED/ADJUSTED → ADJUSTED. note 필수, has_flag 자동/수동, extras 재정의."""
+        from sqlalchemy import select, delete
+        from common.exceptions.base import AppException
+        from settlement.model import (
+            SettlementModel, ExtraChargeModel, SettlementAuditLogModel,
+        )
+        from settlement.const.status import SettlementStatus, SettlementAuditAction
+        from settlement.schemas.response import SettlementResponseSchema
+
+        class InvalidSettlementTransition(AppException):
+            code = "ERR_INVALID_SETTLEMENT_TRANSITION"
+            status_code = 422
+
+        team_id = self.repo._require_tenant()
+        s = (await self.db.execute(
+            select(SettlementModel).where(
+                SettlementModel.tenant_id == team_id,
+                SettlementModel.id == settlement_id,
+                SettlementModel.is_active.is_(True),
+            )
+        )).scalar_one_or_none()
+        if not s:
+            raise NotFoundException("Settlement")
+
+        if s.settlement_status not in (SettlementStatus.CALCULATED, SettlementStatus.ADJUSTED):
+            raise InvalidSettlementTransition(
+                f"adjust 는 CALCULATED/ADJUSTED 에서만 가능. 현재: {s.settlement_status.value}",
+            )
+
+        before = {
+            "settlement_status": s.settlement_status.value,
+            "final_amount": str(s.final_amount),
+            "has_flag": s.has_flag,
+        }
+
+        if payload.final_amount is not None:
+            s.final_amount = payload.final_amount
+        if payload.driver_reported_amount is not None:
+            s.driver_reported_amount = payload.driver_reported_amount
+            if s.system_total is not None:
+                s.discrepancy = payload.driver_reported_amount - s.system_total
+        s.has_flag = bool(payload.has_flag)
+        s.note = payload.note
+        s.settlement_status = SettlementStatus.ADJUSTED
+        if actor_user_id is not None:
+            s.updated_by_user_id = actor_user_id
+
+        await self.db.execute(delete(ExtraChargeModel).where(
+            ExtraChargeModel.tenant_id == team_id,
+            ExtraChargeModel.settlement_id == s.id,
+        ))
+        for ec in payload.extra_charges:
+            self.db.add(ExtraChargeModel(
+                tenant_id=team_id, settlement_id=s.id,
+                type=ec.type, amount=ec.amount, description=ec.description,
+            ))
+
+        self.db.add(SettlementAuditLogModel(
+            tenant_id=team_id, settlement_id=s.id,
+            action=SettlementAuditAction.ADJUST, actor_id=actor_user_id,
+            before_state=before,
+            after_state={
+                "settlement_status": s.settlement_status.value,
+                "final_amount": str(s.final_amount),
+                "has_flag": s.has_flag,
+            },
+            reason=payload.note,
+        ))
+
+        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(s)
+        await self._publish(s, "settlement.adjusted", actor_user_id)
+        return SettlementResponseSchema.model_validate(s)
+
+    async def approve(
+        self,
+        settlement_id: int,
+        payload,                # SettlementApproveRequest
+        *,
+        actor_user_id: int | None = None,
+    ):
+        """CALCULATED/ADJUSTED → APPROVED. 잠금 — final_amount 변경 불가 이후."""
+        from datetime import datetime, timezone
+        from sqlalchemy import select
+        from common.exceptions.base import AppException
+        from settlement.model import SettlementModel, SettlementAuditLogModel
+        from settlement.const.status import SettlementStatus, SettlementAuditAction
+        from settlement.schemas.response import SettlementResponseSchema
+
+        class InvalidSettlementTransition(AppException):
+            code = "ERR_INVALID_SETTLEMENT_TRANSITION"
+            status_code = 422
+
+        team_id = self.repo._require_tenant()
+        s = (await self.db.execute(
+            select(SettlementModel).where(
+                SettlementModel.tenant_id == team_id,
+                SettlementModel.id == settlement_id,
+                SettlementModel.is_active.is_(True),
+            )
+        )).scalar_one_or_none()
+        if not s:
+            raise NotFoundException("Settlement")
+        if s.settlement_status not in (SettlementStatus.CALCULATED, SettlementStatus.ADJUSTED):
+            raise InvalidSettlementTransition(
+                f"approve 는 CALCULATED/ADJUSTED 에서만. 현재: {s.settlement_status.value}",
+            )
+
+        before = {"settlement_status": s.settlement_status.value, "final_amount": str(s.final_amount)}
+
+        s.settlement_status = SettlementStatus.APPROVED
+        s.is_settled = True
+        s.approved_at = datetime.now(timezone.utc)
+        s.approved_by = actor_user_id
+        if payload.final_amount is not None:
+            s.final_amount = payload.final_amount
+        elif s.final_amount is None:
+            s.final_amount = s.system_total
+        if payload.note is not None:
+            s.note = payload.note
+        if actor_user_id is not None:
+            s.updated_by_user_id = actor_user_id
+
+        self.db.add(SettlementAuditLogModel(
+            tenant_id=team_id, settlement_id=s.id,
+            action=SettlementAuditAction.APPROVE, actor_id=actor_user_id,
+            before_state=before,
+            after_state={"settlement_status": s.settlement_status.value, "final_amount": str(s.final_amount)},
+            reason=payload.note,
+        ))
+
+        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(s)
+        await self._publish(s, "settlement.approved", actor_user_id)
+        return SettlementResponseSchema.model_validate(s)
+
+    async def unapprove(
+        self,
+        settlement_id: int,
+        payload,                # SettlementUnapproveRequest
+        *,
+        actor_user_id: int | None = None,
+    ):
+        """APPROVED → ADJUSTED. ADMIN+. reason 필수."""
+        from datetime import datetime, timezone
+        from sqlalchemy import select
+        from common.exceptions.base import AppException
+        from settlement.model import SettlementModel, SettlementAuditLogModel
+        from settlement.const.status import SettlementStatus, SettlementAuditAction
+        from settlement.schemas.response import SettlementResponseSchema
+
+        class InvalidSettlementTransition(AppException):
+            code = "ERR_INVALID_SETTLEMENT_TRANSITION"
+            status_code = 422
+
+        team_id = self.repo._require_tenant()
+        s = (await self.db.execute(
+            select(SettlementModel).where(
+                SettlementModel.tenant_id == team_id,
+                SettlementModel.id == settlement_id,
+                SettlementModel.is_active.is_(True),
+            )
+        )).scalar_one_or_none()
+        if not s:
+            raise NotFoundException("Settlement")
+        if s.settlement_status != SettlementStatus.APPROVED:
+            raise InvalidSettlementTransition(
+                f"unapprove 는 APPROVED 에서만. 현재: {s.settlement_status.value}",
+            )
+
+        before = {"settlement_status": s.settlement_status.value, "is_settled": s.is_settled}
+
+        s.settlement_status = SettlementStatus.ADJUSTED
+        s.is_settled = False
+        s.unapproved_at = datetime.now(timezone.utc)
+        s.unapproved_by = actor_user_id
+        s.unapproved_reason = payload.reason
+        if actor_user_id is not None:
+            s.updated_by_user_id = actor_user_id
+
+        self.db.add(SettlementAuditLogModel(
+            tenant_id=team_id, settlement_id=s.id,
+            action=SettlementAuditAction.UNAPPROVE, actor_id=actor_user_id,
+            before_state=before,
+            after_state={"settlement_status": s.settlement_status.value, "is_settled": False},
+            reason=payload.reason,
+        ))
+
+        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(s)
+        await self._publish(s, "settlement.unapproved", actor_user_id)
+        return SettlementResponseSchema.model_validate(s)
+
+    async def _publish(self, s, event_type: str, actor_id: int | None) -> None:
+        """Realtime publish (best-effort)."""
+        try:
+            from realtime.service import publish
+            from realtime.schemas.event import RealtimeEvent
+            await publish(RealtimeEvent.now(
+                type=event_type,
+                tenant_id=s.tenant_id,
+                actor_id=actor_id,
+                payload={
+                    "settlementId": s.id,
+                    "legId": s.leg_id,
+                    "status": s.settlement_status.value,
+                    "isSettled": s.is_settled,
+                },
+            ))
+        except Exception:
+            pass

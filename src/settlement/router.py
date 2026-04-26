@@ -15,6 +15,8 @@ from common.pagination.schemas.pagination_response import CursorPaginationResult
 from common.pagination.schemas.sync_response import SyncResponse
 from settlement.service import SettlementService
 from settlement.schemas.request import (
+    SettlementCalculateRequest, SettlementAdjustRequest,
+    SettlementApproveRequest, SettlementUnapproveRequest,
     SettlementCreateRequest, SettlementUpdateRequest, PaginateSettlementRequest,
     SettlementBulkCreateRequest, SettlementBulkUpdateRequest, SettlementBulkDeleteRequest,
 )
@@ -198,4 +200,67 @@ async def delete_settlements_bulk(
     return await SettlementService(db, tenant_id).delete_bulk(
         body,
         actor_user_id=int(me.id),
+    )
+
+# ═══════════════════════════════════════════════════════════════
+# 라이프사이클 — calculate / adjust / approve / unapprove
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/{settlement_id}/calculate", response_model=SettlementResponseSchema)
+async def calculate_settlement(
+    settlement_id: int,
+    body: "SettlementCalculateRequest",
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard("SETTLEMENT_CALCULATE")),
+    tenant_id: int = Depends(get_tenant_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    return await SettlementService(db, tenant_id).calculate(
+        settlement_id, body, actor_user_id=int(me.id),
+    )
+
+
+@router.post("/{settlement_id}/adjust", response_model=SettlementResponseSchema)
+async def adjust_settlement(
+    settlement_id: int,
+    body: "SettlementAdjustRequest",
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard("SETTLEMENT_ADJUST")),
+    tenant_id: int = Depends(get_tenant_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    return await SettlementService(db, tenant_id).adjust(
+        settlement_id, body, actor_user_id=int(me.id),
+    )
+
+
+@router.post("/{settlement_id}/approve", response_model=SettlementResponseSchema)
+async def approve_settlement(
+    settlement_id: int,
+    body: "SettlementApproveRequest",
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard("SETTLEMENT_APPROVE")),
+    tenant_id: int = Depends(get_tenant_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    return await SettlementService(db, tenant_id).approve(
+        settlement_id, body, actor_user_id=int(me.id),
+    )
+
+
+@router.post("/{settlement_id}/unapprove", response_model=SettlementResponseSchema)
+async def unapprove_settlement(
+    settlement_id: int,
+    body: "SettlementUnapproveRequest",
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard("SETTLEMENT_UNAPPROVE")),
+    tenant_id: int = Depends(get_tenant_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    return await SettlementService(db, tenant_id).unapprove(
+        settlement_id, body, actor_user_id=int(me.id),
     )

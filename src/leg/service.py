@@ -285,3 +285,123 @@ class LegService:
                 failed=0,
             ),
         )
+
+    # ═══════════════════════════════════════════════════════════════
+    # 상태 머신 — transition
+    # ═══════════════════════════════════════════════════════════════
+
+    async def transition(
+        self,
+        leg_id: int,
+        target,                 # LegStatus (string 가능)
+        *,
+        failure_reason: str | None = None,
+        actor_user_id: int | None = None,
+    ):
+        """Leg 상태 전이.
+
+        규칙:
+        - PENDING → IN_TRANSIT: started_at 자동 기록
+        - IN_TRANSIT → COMPLETED: completed_at + arrived_at(없으면) 자동, Settlement 자동 생성
+        - IN_TRANSIT → FAILED: failure_reason 필수
+        - 다른 전이는 거부.
+        """
+        from datetime import datetime, timezone
+        from sqlalchemy import select
+        from common.exceptions.base import AppException
+        from leg.model import LegModel
+        from leg.const.status import LegStatus
+
+        class InvalidLegTransition(AppException):
+            code = "ERR_INVALID_LEG_TRANSITION"
+            status_code = 422
+
+        _ALLOWED_LEG: dict = {
+            LegStatus.PENDING:    {LegStatus.IN_TRANSIT},
+            LegStatus.IN_TRANSIT: {LegStatus.COMPLETED, LegStatus.FAILED},
+            LegStatus.COMPLETED:  set(),
+            LegStatus.FAILED:     set(),
+        }
+
+        target_enum = target if isinstance(target, LegStatus) else LegStatus(target)
+        team_id = self.repo._require_tenant()
+        stmt = select(LegModel).where(
+            LegModel.tenant_id == team_id,
+            LegModel.id == leg_id,
+            LegModel.is_active.is_(True),
+        )
+        leg = (await self.db.execute(stmt)).scalar_one_or_none()
+        if not leg:
+            raise NotFoundException("Leg")
+
+        previous = leg.status
+        allowed = _ALLOWED_LEG.get(previous, set())
+        if target_enum not in allowed:
+            raise InvalidLegTransition(
+                f"Cannot transition leg {previous.value} → {target_enum.value}",
+                details={"from": previous.value, "to": target_enum.value,
+                         "allowed": [s.value for s in allowed]},
+            )
+        if target_enum == LegStatus.FAILED and not failure_reason:
+            raise BadRequestException("failure_reason required for FAILED")
+
+        now = datetime.now(timezone.utc)
+        if target_enum == LegStatus.IN_TRANSIT:
+            leg.started_at = now
+        elif target_enum == LegStatus.COMPLETED:
+            leg.completed_at = now
+            leg.arrived_at = leg.arrived_at or now
+            await self._ensure_settlement(leg)
+        elif target_enum == LegStatus.FAILED:
+            leg.failure_reason = failure_reason
+        leg.status = target_enum
+        if actor_user_id is not None:
+            leg.updated_by_user_id = actor_user_id
+
+        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(leg)
+
+        # Realtime publish
+        try:
+            from realtime.service import publish
+            from realtime.schemas.event import RealtimeEvent
+            await publish(RealtimeEvent.now(
+                type="leg.status_changed",
+                tenant_id=team_id,
+                actor_id=actor_user_id,
+                payload={
+                    "legId": leg.id,
+                    "deliveryOrderId": leg.delivery_order_id,
+                    "driverId": leg.driver_id,
+                    "from": previous.value,
+                    "to": target_enum.value,
+                },
+            ))
+        except Exception:
+            pass
+
+        return LegResponseSchema.model_validate(leg)
+
+    async def _ensure_settlement(self, leg) -> None:
+        """Leg COMPLETED 시 Settlement 자동 생성 (이미 있으면 skip)."""
+        from sqlalchemy import select
+        from settlement.model import SettlementModel
+        from settlement.const.status import SettlementStatus
+
+        team_id = self.repo._require_tenant()
+        stmt = select(SettlementModel).where(
+            SettlementModel.tenant_id == team_id,
+            SettlementModel.leg_id == leg.id,
+        )
+        existing = (await self.db.execute(stmt)).scalar_one_or_none()
+        if existing:
+            return
+        s = SettlementModel(
+            tenant_id=team_id,
+            leg_id=leg.id,
+            settlement_status=SettlementStatus.PENDING,
+            is_settled=False,
+        )
+        self.db.add(s)
+        await self.db.flush()

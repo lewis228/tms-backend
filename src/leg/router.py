@@ -15,6 +15,7 @@ from common.pagination.schemas.pagination_response import CursorPaginationResult
 from common.pagination.schemas.sync_response import SyncResponse
 from leg.service import LegService
 from leg.schemas.request import (
+    LegTransitionRequest,
     LegCreateRequest, LegUpdateRequest, PaginateLegRequest,
     LegBulkCreateRequest, LegBulkUpdateRequest, LegBulkDeleteRequest,
 )
@@ -198,4 +199,23 @@ async def delete_legs_bulk(
     return await LegService(db, tenant_id).delete_bulk(
         body,
         actor_user_id=int(me.id),
+    )
+
+# ═══════════════════════════════════════════════════════════════
+# 상태 전이 — LEG_TRANSITION 권한
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/{leg_id}/transition", response_model=LegResponseSchema)
+async def transition_leg(
+    leg_id: int,
+    body: "LegTransitionRequest",
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard("LEG_TRANSITION")),
+    tenant_id: int = Depends(get_tenant_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """Leg 상태 전이. FAILED 의 경우 failure_reason 필수."""
+    return await LegService(db, tenant_id).transition(
+        leg_id, body.target, failure_reason=body.failure_reason, actor_user_id=int(me.id),
     )

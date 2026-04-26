@@ -15,6 +15,7 @@ from common.pagination.schemas.pagination_response import CursorPaginationResult
 from common.pagination.schemas.sync_response import SyncResponse
 from delivery_order.service import DeliveryOrderService
 from delivery_order.schemas.request import (
+    DeliveryOrderTransitionRequest,
     DeliveryOrderCreateRequest, DeliveryOrderUpdateRequest, PaginateDeliveryOrderRequest,
     DeliveryOrderBulkCreateRequest, DeliveryOrderBulkUpdateRequest, DeliveryOrderBulkDeleteRequest,
 )
@@ -198,4 +199,23 @@ async def delete_delivery_orders_bulk(
     return await DeliveryOrderService(db, tenant_id).delete_bulk(
         body,
         actor_user_id=int(me.id),
+    )
+
+# ═══════════════════════════════════════════════════════════════
+# 상태 전이 — DO_TRANSITION 권한
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/{delivery_order_id}/transition", response_model=DeliveryOrderResponseSchema)
+async def transition_delivery_order(
+    delivery_order_id: int,
+    body: "DeliveryOrderTransitionRequest",
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard("DO_TRANSITION")),
+    tenant_id: int = Depends(get_tenant_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """D/O 상태 전이. 게이트 검증은 service 가 수행."""
+    return await DeliveryOrderService(db, tenant_id).transition(
+        delivery_order_id, body.target, actor_user_id=int(me.id),
     )

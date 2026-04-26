@@ -4,9 +4,18 @@ from typing import List
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select
+
 from common.exceptions.base import NotFoundException, BadRequestException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
+from delivery_order.const.status import DeliveryStatus
+from delivery_order.model import DeliveryOrderModel
 from delivery_order.repository import DeliveryOrderRepository
+from delivery_order.state_machine import (
+    TransitionContext, assert_can_transition,
+)
+from leg.model import LegModel
+from location.model import LocationModel
 from delivery_order.schemas.request import (
     DeliveryOrderCreateRequest, DeliveryOrderUpdateRequest, PaginateDeliveryOrderRequest,
     DeliveryOrderBulkCreateRequest, DeliveryOrderBulkUpdateRequest, DeliveryOrderBulkDeleteRequest,
@@ -285,3 +294,93 @@ class DeliveryOrderService:
                 failed=0,
             ),
         )
+
+    # ═══════════════════════════════════════════════════════════════
+    # 상태 머신 — transition + 게이트
+    # ═══════════════════════════════════════════════════════════════
+
+    async def transition(
+        self,
+        delivery_order_id: int,
+        target: DeliveryStatus,
+        *,
+        actor_user_id: int | None = None,
+    ) -> DeliveryOrderResponseSchema:
+        """D/O 상태 전이. 게이트는 state_machine.assert_can_transition 가 검증.
+
+        성공 시 status 변경 + Realtime publish 트리거 (do.status_changed).
+        """
+        # 1) D/O 조회 (raw model — repository.get 은 schema 반환)
+        team_id = self.repo._require_tenant()
+        stmt = select(DeliveryOrderModel).where(
+            DeliveryOrderModel.tenant_id == team_id,
+            DeliveryOrderModel.id == delivery_order_id,
+            DeliveryOrderModel.is_active.is_(True),
+        )
+        do = (await self.db.execute(stmt)).scalar_one_or_none()
+        if not do:
+            raise NotFoundException("D/O")
+
+        # 2) 컨텍스트 사전 로드 — legs (오래된 순), delivery/return location
+        legs_stmt = (
+            select(LegModel)
+            .where(
+                LegModel.tenant_id == team_id,
+                LegModel.delivery_order_id == do.id,
+                LegModel.is_active.is_(True),
+            )
+            .order_by(LegModel.id.asc())
+        )
+        legs = list((await self.db.execute(legs_stmt)).scalars().all())
+
+        delivery_loc = None
+        if do.delivery_location_id:
+            loc_stmt = select(LocationModel).where(
+                LocationModel.tenant_id == team_id,
+                LocationModel.id == do.delivery_location_id,
+            )
+            delivery_loc = (await self.db.execute(loc_stmt)).scalar_one_or_none()
+
+        return_loc = None
+        if do.return_location_id:
+            loc_stmt = select(LocationModel).where(
+                LocationModel.tenant_id == team_id,
+                LocationModel.id == do.return_location_id,
+            )
+            return_loc = (await self.db.execute(loc_stmt)).scalar_one_or_none()
+
+        ctx = TransitionContext(
+            do=do, legs=legs,
+            delivery_location=delivery_loc, return_location=return_loc,
+        )
+
+        # 3) 게이트 검증
+        previous = do.status
+        assert_can_transition(ctx, target)
+
+        # 4) 적용
+        do.status = target
+        if actor_user_id is not None:
+            do.updated_by_user_id = actor_user_id
+        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(do)
+
+        # 5) Realtime publish (best-effort)
+        try:
+            from realtime.service import publish
+            from realtime.schemas.event import RealtimeEvent
+            await publish(RealtimeEvent.now(
+                type="do.status_changed",
+                tenant_id=team_id,
+                actor_id=actor_user_id,
+                payload={
+                    "deliveryOrderId": do.id,
+                    "from": previous.value,
+                    "to": target.value,
+                },
+            ))
+        except Exception:
+            pass
+
+        return DeliveryOrderResponseSchema.model_validate(do)

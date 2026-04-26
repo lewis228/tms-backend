@@ -23,7 +23,7 @@ from street_turn.schemas.response import (
     StreetTurnBulkCreateResponseSchema, StreetTurnBulkUpdateResponseSchema, StreetTurnBulkDeleteResponseSchema,
 )
 
-router = APIRouter(prefix="/street_turns", tags=["street_turns"])
+router = APIRouter(prefix="/street-turns", tags=["street-turns"])
 
 
 # ═══════════════════════════════════════════════════════════════

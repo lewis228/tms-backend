@@ -23,7 +23,7 @@ from rate_setting.schemas.response import (
     RateSettingBulkCreateResponseSchema, RateSettingBulkUpdateResponseSchema, RateSettingBulkDeleteResponseSchema,
 )
 
-router = APIRouter(prefix="/rate_settings", tags=["rate_settings"])
+router = APIRouter(prefix="/rate-settings", tags=["rate-settings"])
 
 
 # ═══════════════════════════════════════════════════════════════

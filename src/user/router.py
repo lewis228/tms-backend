@@ -19,7 +19,7 @@ from user.schemas.response import (
 from user.dependencies.current_user import get_current_user
 from auth.tokens.access_token import access_token
 
-router = APIRouter(prefix="/user", tags=["user"])
+router = APIRouter(prefix="/users", tags=["users"])
 
 
 # ---------- 조회(목록: 커서 페이지네이션) ----------

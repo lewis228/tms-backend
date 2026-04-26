@@ -24,7 +24,7 @@ from delivery_order.schemas.response import (
     DeliveryOrderBulkCreateResponseSchema, DeliveryOrderBulkUpdateResponseSchema, DeliveryOrderBulkDeleteResponseSchema,
 )
 
-router = APIRouter(prefix="/delivery_orders", tags=["delivery_orders"])
+router = APIRouter(prefix="/delivery-orders", tags=["delivery-orders"])
 
 
 # ═══════════════════════════════════════════════════════════════

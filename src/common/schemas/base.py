@@ -26,21 +26,34 @@ class ResponseSchema(BaseModel):
     서버 → 클라이언트 응답 바디의 공통 베이스.
     - ORM 객체를 model_validate로 바로 변환 가능(from_attributes=True)
     - 여분 필드는 무시
-    -  datetime은 UTC + Z 접미사로 직렬화
+    - 직렬화 시 snake_case → camelCase 자동 변환 (alias_generator)
+    - datetime은 UTC + Z 접미사로 직렬화
     """
     model_config = ConfigDict(
         from_attributes=True,
         extra="ignore",
         validate_assignment=False,
+        alias_generator=to_camel,
+        populate_by_name=True,
     )
 
     @model_serializer(mode='wrap')
     def _serialize_with_utc_datetime(self, handler) -> dict[str, Any]:
-        """
-         모든 datetime 필드를 UTC ISO 8601 + Z 형식으로 직렬화
-        """
+        """직렬화 — camelCase alias 적용 + datetime UTC+Z 접미사."""
         result = handler(self)
+        if isinstance(result, dict):
+            result = self._apply_alias(result)
         return self._add_z_suffix(result)
+
+    @classmethod
+    def _apply_alias(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """필드명을 alias 로 매핑 (alias_generator=to_camel 결과 사용)."""
+        out: dict[str, Any] = {}
+        for k, v in data.items():
+            field = cls.model_fields.get(k)
+            alias = field.alias if (field and field.alias) else k
+            out[alias] = v
+        return out
 
     @staticmethod
     def _add_z_suffix(obj: Any) -> Any:

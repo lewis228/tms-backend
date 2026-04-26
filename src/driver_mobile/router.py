@@ -81,11 +81,25 @@ async def location_batch(
     tenant_id: int = Depends(get_tenant_scope),
     db: AsyncSession = Depends(get_write_db),
 ):
-    """GPS batch — 별도 location_ping 도메인 미구현. 204 (수신 OK) 만 반환.
-
-    실 구현 시: pings 를 location_ping 테이블에 bulk insert.
-    """
-    # TODO: location_ping 도메인 추가 후 bulk insert
+    """GPS batch — pings 를 location_ping 테이블에 bulk insert."""
+    from location_ping.model import LocationPingModel
+    if not body.pings:
+        return None
+    svc = DriverMobileService(db, tenant_id)
+    driver_id = await svc.resolve_driver_id(int(me.id))
+    for p in body.pings:
+        db.add(LocationPingModel(
+            tenant_id=tenant_id,
+            driver_id=driver_id,
+            latitude=p.latitude,
+            longitude=p.longitude,
+            speed_kmh=p.speed_kmh,
+            heading_deg=p.heading_deg,
+            accuracy_m=p.accuracy_m,
+            occurred_at=p.occurred_at,
+        ))
+    await db.flush()
+    await db.commit()
     return None
 
 
@@ -97,9 +111,50 @@ async def upsert_push_token(
     tenant_id: int = Depends(get_tenant_scope),
     db: AsyncSession = Depends(get_write_db),
 ):
-    """FCM/APNs 토큰 등록 — 별도 push_token 도메인 미구현. 단순 201 응답."""
-    # TODO: push_token 도메인 추가 후 upsert
-    return {"status": "ok", "platform": body.platform}
+    """FCM/APNs 토큰 upsert (driver+platform+token unique)."""
+    from sqlalchemy import select
+    from push_token.model import PushTokenModel
+
+    svc = DriverMobileService(db, tenant_id)
+    driver_id = await svc.resolve_driver_id(int(me.id))
+
+    now = datetime.now(timezone.utc)
+    existing = (await db.execute(
+        select(PushTokenModel).where(
+            PushTokenModel.tenant_id == tenant_id,
+            PushTokenModel.driver_id == driver_id,
+            PushTokenModel.platform == body.platform,
+            PushTokenModel.token == body.token,
+        )
+    )).scalar_one_or_none()
+
+    if existing:
+        existing.last_used_at = now
+        existing.is_active = True
+        await db.flush()
+        await db.commit()
+        await db.refresh(existing)
+        row = existing
+    else:
+        row = PushTokenModel(
+            tenant_id=tenant_id,
+            driver_id=driver_id,
+            platform=body.platform,
+            token=body.token,
+            last_used_at=now,
+        )
+        db.add(row)
+        await db.flush()
+        await db.commit()
+        await db.refresh(row)
+
+    return {
+        "id": row.id,
+        "platform": row.platform,
+        "token": row.token,
+        "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
+        "created_at": row.created_at.isoformat(),
+    }
 
 
 @router.post("/legs/{leg_id}/documents", status_code=201)

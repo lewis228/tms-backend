@@ -377,7 +377,7 @@ class LegService:
                     "from": previous.value,
                     "to": target_enum.value,
                 },
-            ))
+            ), db=self.db)
         except Exception:
             pass
 

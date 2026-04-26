@@ -379,7 +379,7 @@ class DeliveryOrderService:
                     "from": previous.value,
                     "to": target.value,
                 },
-            ))
+            ), db=self.db)
         except Exception:
             pass
 

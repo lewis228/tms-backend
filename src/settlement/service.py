@@ -579,6 +579,6 @@ class SettlementService:
                     "status": s.settlement_status.value,
                     "isSettled": s.is_settled,
                 },
-            ))
+            ), db=self.db)
         except Exception:
             pass

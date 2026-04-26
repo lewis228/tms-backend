@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import DB, DBReadOnly, TenantID, require_min_role
 from app.core.pagination import PageParams, PagedResponse, page_params
@@ -28,9 +28,12 @@ def _svc(db, *, tenant_id: str) -> TerminalService:
     dependencies=[require_min_role("DISPATCHER")],
 )
 async def list_terminals(
-    tenant_id: TenantID, db: DBReadOnly, params: Annotated[PageParams, Depends(page_params)]
+    tenant_id: TenantID,
+    db: DBReadOnly,
+    params: Annotated[PageParams, Depends(page_params)],
+    q: str | None = Query(None, description="이름 또는 코드 부분 일치", max_length=100),
 ):
-    items, total = await _svc(db, tenant_id=tenant_id).list_paged(params)
+    items, total = await _svc(db, tenant_id=tenant_id).list_paged(params, q=q)
     return PagedResponse.of([TerminalResponse.model_validate(i) for i in items], total, params)
 
 

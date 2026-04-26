@@ -1,6 +1,8 @@
 """Terminal 서비스."""
 from __future__ import annotations
 
+from sqlalchemy import or_
+
 from app.core.exceptions import NotFoundError
 from app.domains.terminals.models import Terminal
 from app.domains.terminals.repository import TerminalRepository
@@ -25,8 +27,12 @@ class TerminalService:
             raise NotFoundError("Terminal not found")
         return t
 
-    async def list_paged(self, params):
-        return await self.repo.list_paged(params)
+    async def list_paged(self, params, *, q: str | None = None):
+        extra: list = []
+        if q:
+            like = f"%{q.strip()}%"
+            extra.append(or_(Terminal.name.ilike(like), Terminal.code.ilike(like)))
+        return await self.repo.list_paged(params, extra_where=extra or None)
 
     async def update(self, id_: str, payload: TerminalUpdateRequest) -> Terminal:
         t = await self.get(id_)

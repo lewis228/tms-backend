@@ -63,9 +63,14 @@ async def list_drivers(
     db: DBReadOnly,
     params: Annotated[PageParams, Depends(page_params)],
     active_only: bool = Query(False, alias="activeOnly"),
+    q: str | None = Query(
+        None,
+        description="이름/이메일/전화/차량번호 부분 일치",
+        max_length=100,
+    ),
 ):
     drivers, users, total = await _svc(db, tenant_id=tenant_id).list_paged(
-        params, active_only=active_only
+        params, active_only=active_only, q=q
     )
     items = [_to_response(d, users[d.user_id]) for d in drivers if d.user_id in users]
     return PagedResponse.of(items, total, params)

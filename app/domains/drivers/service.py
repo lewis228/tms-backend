@@ -62,8 +62,12 @@ class DriverService:
             raise NotFoundError("Driver user missing")
         return driver, user
 
-    async def list_paged(self, params, *, active_only: bool = False):
-        rows, total = await self.repo.list_paged(params, active_only=active_only)
+    async def list_paged(
+        self, params, *, active_only: bool = False, q: str | None = None
+    ):
+        rows, total = await self.repo.list_paged(
+            params, active_only=active_only, q=q
+        )
         # 같은 트랜잭션에서 user 정보 한 번에
         users = {}
         if rows:

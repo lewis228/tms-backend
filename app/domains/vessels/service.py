@@ -1,6 +1,8 @@
 """Vessel 서비스."""
 from __future__ import annotations
 
+from sqlalchemy import or_
+
 from app.core.exceptions import NotFoundError
 from app.domains.vessels.models import Vessel
 from app.domains.vessels.repository import VesselRepository
@@ -25,8 +27,12 @@ class VesselService:
             raise NotFoundError("Vessel not found")
         return v
 
-    async def list_paged(self, params):
-        return await self.repo.list_paged(params)
+    async def list_paged(self, params, *, q: str | None = None):
+        extra: list = []
+        if q:
+            like = f"%{q.strip()}%"
+            extra.append(or_(Vessel.name.ilike(like), Vessel.imo_number.ilike(like)))
+        return await self.repo.list_paged(params, extra_where=extra or None)
 
     async def update(self, id_: str, payload: VesselUpdateRequest) -> Vessel:
         v = await self.get(id_)

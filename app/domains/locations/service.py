@@ -1,6 +1,8 @@
 """Location 서비스."""
 from __future__ import annotations
 
+from sqlalchemy import or_
+
 from app.core.exceptions import NotFoundError
 from app.domains.locations.models import Location
 from app.domains.locations.repository import LocationRepository
@@ -25,8 +27,12 @@ class LocationService:
             raise NotFoundError("Location not found")
         return loc
 
-    async def list_paged(self, params):
-        return await self.repo.list_paged(params)
+    async def list_paged(self, params, *, q: str | None = None):
+        extra: list = []
+        if q:
+            like = f"%{q.strip()}%"
+            extra.append(or_(Location.name.ilike(like), Location.address.ilike(like)))
+        return await self.repo.list_paged(params, extra_where=extra or None)
 
     async def update(self, id_: str, payload: LocationUpdateRequest) -> Location:
         loc = await self.get(id_)

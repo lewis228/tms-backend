@@ -2,7 +2,7 @@
 from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional, Literal
-from pydantic import EmailStr
+from pydantic import EmailStr, Field, AliasPath
 from common.schemas.base import ResponseSchema
 from common.schemas.nested import FileNestedSchema
 from user.const.roles import RolesEnum
@@ -14,8 +14,24 @@ from user.const.roles import RolesEnum
 class UserTenantRowResponseSchema(ResponseSchema):
     id: int
     tenant_id: int
-    tenant_name: Optional[str] = None
+    # nested ORM (UserTenantModel.tenant.<field>) 매핑
+    tenant_name: Optional[str] = Field(
+        default=None, validation_alias=AliasPath("tenant", "name"),
+    )
     permission_group_id: Optional[int] = None
+    # 온보딩 진행 상태 — 프론트가 wizard 표시 여부 결정에 사용
+    onboarding_completed: bool = Field(
+        default=False, validation_alias=AliasPath("tenant", "onboarding_completed"),
+    )
+    onboarding_step1_done: bool = Field(
+        default=False, validation_alias=AliasPath("tenant", "onboarding_step1_done"),
+    )
+    onboarding_step2_done: bool = Field(
+        default=False, validation_alias=AliasPath("tenant", "onboarding_step2_done"),
+    )
+    onboarding_step3_done: bool = Field(
+        default=False, validation_alias=AliasPath("tenant", "onboarding_step3_done"),
+    )
 
 
 # ─────────────────────────────────────────────

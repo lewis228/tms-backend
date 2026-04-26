@@ -66,6 +66,10 @@ class UserRepository:
                     load_only(
                         TenantModel.id,
                         TenantModel.name,
+                        TenantModel.onboarding_completed,
+                        TenantModel.onboarding_step1_done,
+                        TenantModel.onboarding_step2_done,
+                        TenantModel.onboarding_step3_done,
                     )
                 ),
             ),
@@ -113,6 +117,10 @@ class UserRepository:
                     load_only(
                         TenantModel.id,
                         TenantModel.name,
+                        TenantModel.onboarding_completed,
+                        TenantModel.onboarding_step1_done,
+                        TenantModel.onboarding_step2_done,
+                        TenantModel.onboarding_step3_done,
                     )
                 ),
             ),

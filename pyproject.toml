@@ -75,6 +75,7 @@ ignore = [
     "F401",  # unused imports — sed/cleanup 단계에서 정리
     "F403", "F405",  # star imports
     "E402",  # module level import 위치
+    "F841",  # ste 코드 자산의 unused locals — 추후 cleanup
 ]
 
 [tool.mypy]

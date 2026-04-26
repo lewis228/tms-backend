@@ -23,7 +23,7 @@ from terminal.schemas.response import (
     TerminalBulkCreateResponseSchema, TerminalBulkUpdateResponseSchema, TerminalBulkDeleteResponseSchema,
 )
 
-router = APIRouter(prefix="/terminals", tags=["terminals"])
+router = APIRouter(prefix="/api/v1/terminals", tags=["terminals"])
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -25,7 +25,7 @@ from settlement.schemas.response import (
     SettlementBulkCreateResponseSchema, SettlementBulkUpdateResponseSchema, SettlementBulkDeleteResponseSchema,
 )
 
-router = APIRouter(prefix="/settlements", tags=["settlements"])
+router = APIRouter(prefix="/api/v1/settlements", tags=["settlements"])
 
 
 # ═══════════════════════════════════════════════════════════════

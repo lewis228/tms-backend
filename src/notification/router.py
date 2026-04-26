@@ -23,7 +23,7 @@ from notification.schemas.response import (
     NotificationBulkCreateResponseSchema, NotificationBulkUpdateResponseSchema, NotificationBulkDeleteResponseSchema,
 )
 
-router = APIRouter(prefix="/notifications", tags=["notifications"])
+router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 
 
 # ═══════════════════════════════════════════════════════════════

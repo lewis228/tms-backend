@@ -85,7 +85,6 @@ class SettlementRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     SettlementModel.id,
-                    SettlementModel.name,
                     SettlementModel.settlement_status,
                     SettlementModel.note,
                     SettlementModel.leg_id,
@@ -117,7 +116,6 @@ class SettlementRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     SettlementModel.id,
-                    SettlementModel.name,
                     SettlementModel.settlement_status,
                     SettlementModel.note,
                     SettlementModel.leg_id,
@@ -155,7 +153,6 @@ class SettlementRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     SettlementModel.id,
-                    SettlementModel.name,
                     SettlementModel.settlement_status,
                     SettlementModel.note,
                     SettlementModel.leg_id,
@@ -308,7 +305,6 @@ class SettlementRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     SettlementModel.id,
-                    SettlementModel.name,
                     SettlementModel.settlement_status,
                     SettlementModel.note,
                     SettlementModel.leg_id,

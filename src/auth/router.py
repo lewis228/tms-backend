@@ -38,7 +38,7 @@ from user.schemas.response import UserResponseSchema
 from common.const.settings import settings
 from common.exceptions.base import AppException
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════

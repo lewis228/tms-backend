@@ -23,7 +23,7 @@ from location.schemas.response import (
     LocationBulkCreateResponseSchema, LocationBulkUpdateResponseSchema, LocationBulkDeleteResponseSchema,
 )
 
-router = APIRouter(prefix="/locations", tags=["locations"])
+router = APIRouter(prefix="/api/v1/locations", tags=["locations"])
 
 
 # ═══════════════════════════════════════════════════════════════

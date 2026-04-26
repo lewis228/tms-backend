@@ -45,7 +45,7 @@ from file.schemas.response import (
 )
 from file.service import FileService
 
-router = APIRouter(prefix="/files", tags=["files"])
+router = APIRouter(prefix="/api/v1/files", tags=["files"])
 
 
 # ─────────────────────────────────────────────────────────

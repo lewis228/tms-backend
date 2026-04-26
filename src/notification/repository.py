@@ -85,7 +85,6 @@ class NotificationRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     NotificationModel.id,
-                    NotificationModel.name,
                     NotificationModel.event_type,
                     NotificationModel.body,
                     NotificationModel.user_id,
@@ -117,7 +116,6 @@ class NotificationRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     NotificationModel.id,
-                    NotificationModel.name,
                     NotificationModel.event_type,
                     NotificationModel.body,
                     NotificationModel.user_id,
@@ -155,7 +153,6 @@ class NotificationRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     NotificationModel.id,
-                    NotificationModel.name,
                     NotificationModel.event_type,
                     NotificationModel.body,
                     NotificationModel.user_id,
@@ -308,7 +305,6 @@ class NotificationRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     NotificationModel.id,
-                    NotificationModel.name,
                     NotificationModel.event_type,
                     NotificationModel.body,
                     NotificationModel.user_id,

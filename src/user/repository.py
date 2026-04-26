@@ -51,6 +51,9 @@ class UserRepository:
                 UserModel.notification_email,
                 UserModel.event_notification_enabled,
                 UserModel.language,                    #  i18n
+                UserModel.is_active,                   # Base 공통 — 응답 스키마가 사용
+                UserModel.created_at,
+                UserModel.updated_at,
             ),
             # User → Teams(활성만) → Team(최소 컬럼)
             selectinload(UserModel.tenants).options(

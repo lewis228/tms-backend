@@ -24,7 +24,7 @@ from leg.schemas.response import (
     LegBulkCreateResponseSchema, LegBulkUpdateResponseSchema, LegBulkDeleteResponseSchema,
 )
 
-router = APIRouter(prefix="/legs", tags=["legs"])
+router = APIRouter(prefix="/api/v1/legs", tags=["legs"])
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -23,7 +23,7 @@ from vessel.schemas.response import (
     VesselBulkCreateResponseSchema, VesselBulkUpdateResponseSchema, VesselBulkDeleteResponseSchema,
 )
 
-router = APIRouter(prefix="/vessels", tags=["vessels"])
+router = APIRouter(prefix="/api/v1/vessels", tags=["vessels"])
 
 
 # ═══════════════════════════════════════════════════════════════

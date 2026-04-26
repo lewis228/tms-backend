@@ -23,7 +23,7 @@ from customer.schemas.response import (
     CustomerBulkCreateResponseSchema, CustomerBulkUpdateResponseSchema, CustomerBulkDeleteResponseSchema,
 )
 
-router = APIRouter(prefix="/customers", tags=["customers"])
+router = APIRouter(prefix="/api/v1/customers", tags=["customers"])
 
 
 # ═══════════════════════════════════════════════════════════════

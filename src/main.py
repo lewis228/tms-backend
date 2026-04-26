@@ -100,6 +100,7 @@ app.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)
 app.mount("/public", StaticFiles(directory=PUBLIC_FOLDER_PATH), name="public")
 
 # ── 시스템 도메인 router 등록 ────────────────────────────────
+# 각 router 는 자체 prefix 에 /api/v1 을 직접 박는다 (ste 운영 패턴).
 app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(tenant_router)

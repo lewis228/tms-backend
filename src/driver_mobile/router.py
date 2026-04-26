@@ -25,7 +25,7 @@ from driver_mobile.schemas.response import TodayTasksResponse, PushTokenResponse
 from driver_mobile.service import DriverMobileService
 from leg.schemas.response import LegResponseSchema
 
-router = APIRouter(prefix="/driver", tags=["driver_mobile"])
+router = APIRouter(prefix="/api/v1/driver", tags=["driver_mobile"])
 
 ALLOWED_DOCUMENT_TYPES = {
     "image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf",

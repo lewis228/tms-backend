@@ -33,6 +33,7 @@ from auth.const.providers import AuthProviderEnum
 from common.const.settings import settings
 from database.mysql_connection import write_engine
 from driver.model import DriverModel
+from rbac.model import PermissionGroupModel
 from tenant.model import TenantModel, UserTenantModel
 from user.const.roles import RolesEnum
 from user.model import UserModel
@@ -83,7 +84,33 @@ async def get_or_create_user(db, email: str, name: str, role: RolesEnum) -> User
     return u
 
 
-async def get_or_create_membership(db, user: UserModel, tenant: TenantModel) -> None:
+async def get_or_create_admin_group(db, tenant: TenantModel) -> PermissionGroupModel:
+    existing = (await db.execute(
+        select(PermissionGroupModel).where(
+            PermissionGroupModel.tenant_id == tenant.id,
+            PermissionGroupModel.system_key == "ADMIN",
+        )
+    )).scalar_one_or_none()
+    if existing:
+        print(f"[skip] admin perm group (gid={existing.id})")
+        return existing
+    g = PermissionGroupModel(
+        tenant_id=tenant.id,
+        name="Admin",
+        is_admin=True,
+        is_system=True,
+        system_key="ADMIN",
+    )
+    db.add(g)
+    await db.flush()
+    print(f"[new]  admin perm group (gid={g.id})")
+    return g
+
+
+async def get_or_create_membership(
+    db, user: UserModel, tenant: TenantModel,
+    permission_group_id: int | None = None,
+) -> None:
     existing = (await db.execute(
         select(UserTenantModel).where(
             UserTenantModel.user_id == user.id,
@@ -91,11 +118,20 @@ async def get_or_create_membership(db, user: UserModel, tenant: TenantModel) -> 
         )
     )).scalar_one_or_none()
     if existing:
-        print(f"[skip] membership {user.email} -> {tenant.name}")
+        # permission_group 없는 기존 row 면 채워줌 (idempotent 보강)
+        if permission_group_id and not existing.permission_group_id:
+            existing.permission_group_id = permission_group_id
+            await db.flush()
+            print(f"[upd]  membership {user.email} -> {tenant.name} (gid={permission_group_id})")
+        else:
+            print(f"[skip] membership {user.email} -> {tenant.name}")
         return
-    db.add(UserTenantModel(user_id=user.id, tenant_id=tenant.id))
+    db.add(UserTenantModel(
+        user_id=user.id, tenant_id=tenant.id,
+        permission_group_id=permission_group_id,
+    ))
     await db.flush()
-    print(f"[new]  membership {user.email} -> {tenant.name}")
+    print(f"[new]  membership {user.email} -> {tenant.name} (gid={permission_group_id})")
 
 
 async def get_or_create_driver(db, user: UserModel, tenant: TenantModel) -> None:
@@ -117,11 +153,14 @@ async def main() -> None:
     Session = async_sessionmaker(write_engine, expire_on_commit=False)
     async with Session() as db:
         tenant = await get_or_create_tenant(db)
+        admin_group = await get_or_create_admin_group(db, tenant)
 
         for email, name, role, is_member in USERS:
             user = await get_or_create_user(db, email, name, role)
             if is_member:
-                await get_or_create_membership(db, user, tenant)
+                # ADMIN/DISPATCHER → admin perm group, DRIVER → null (모바일 라우트는 role 가드)
+                pg = admin_group.id if role != RolesEnum.DRIVER else None
+                await get_or_create_membership(db, user, tenant, permission_group_id=pg)
                 if role == RolesEnum.DRIVER:
                     await get_or_create_driver(db, user, tenant)
 

@@ -1,5 +1,6 @@
 # src/user/schemas/response.py
 from __future__ import annotations
+from datetime import datetime
 from typing import List, Optional, Literal
 from pydantic import EmailStr
 from common.schemas.base import ResponseSchema
@@ -27,9 +28,14 @@ class UserListItemResponseSchema(ResponseSchema):
     name: Optional[str] = None
     phone: Optional[str] = None
 
+    # 활성 / 감사 (Base 모델 공통 필드 — 프론트 목록 / 상세 표시용)
+    is_active: bool = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
     #  OAuth 관련
     auth_provider: str = "email"  # email, google, kakao, apple
-    
+
     #  알림 설정
     notification_email: Optional[str] = None
     event_notification_enabled: bool = False

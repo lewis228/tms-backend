@@ -51,7 +51,7 @@ from tenant.schemas.response import (
 from tenant.service import get_timezone_list
 
 
-router = APIRouter(prefix="/tenants", tags=["tenants"])
+router = APIRouter(prefix="/api/v1/tenants", tags=["tenants"])
 
 
 # ─────────────────────────────────────────────────────────

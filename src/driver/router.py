@@ -23,7 +23,7 @@ from driver.schemas.response import (
     DriverBulkCreateResponseSchema, DriverBulkUpdateResponseSchema, DriverBulkDeleteResponseSchema,
 )
 
-router = APIRouter(prefix="/drivers", tags=["drivers"])
+router = APIRouter(prefix="/api/v1/drivers", tags=["drivers"])
 
 
 # ═══════════════════════════════════════════════════════════════

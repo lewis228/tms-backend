@@ -85,7 +85,6 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     DeliveryOrderModel.id,
-                    DeliveryOrderModel.name,
                     DeliveryOrderModel.status,
                     DeliveryOrderModel.internal_note,
                     DeliveryOrderModel.direction,
@@ -116,7 +115,6 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     DeliveryOrderModel.id,
-                    DeliveryOrderModel.name,
                     DeliveryOrderModel.status,
                     DeliveryOrderModel.internal_note,
                     DeliveryOrderModel.direction,
@@ -153,7 +151,6 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     DeliveryOrderModel.id,
-                    DeliveryOrderModel.name,
                     DeliveryOrderModel.status,
                     DeliveryOrderModel.internal_note,
                     DeliveryOrderModel.direction,
@@ -305,7 +302,6 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     DeliveryOrderModel.id,
-                    DeliveryOrderModel.name,
                     DeliveryOrderModel.status,
                     DeliveryOrderModel.internal_note,
                     DeliveryOrderModel.direction,

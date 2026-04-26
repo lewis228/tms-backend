@@ -85,7 +85,6 @@ class DriverRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     DriverModel.id,
-                    DriverModel.name,
                     DriverModel.user_id,
                     DriverModel.note,
                     DriverModel.license_number,
@@ -115,7 +114,6 @@ class DriverRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     DriverModel.id,
-                    DriverModel.name,
                     DriverModel.user_id,
                     DriverModel.note,
                     DriverModel.license_number,
@@ -151,7 +149,6 @@ class DriverRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     DriverModel.id,
-                    DriverModel.name,
                     DriverModel.user_id,
                     DriverModel.note,
                     DriverModel.license_number,
@@ -302,7 +299,6 @@ class DriverRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     DriverModel.id,
-                    DriverModel.name,
                     DriverModel.user_id,
                     DriverModel.note,
                     DriverModel.license_number,

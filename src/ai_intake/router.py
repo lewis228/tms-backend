@@ -13,7 +13,7 @@ from user.schemas.response import UserResponseSchema
 from ai_intake.service import AIIntakeService
 from ai_intake.schemas.response import AIIntakeExtractResponse
 
-router = APIRouter(prefix="/ai-intake", tags=["ai_intake"])
+router = APIRouter(prefix="/api/v1/ai-intake", tags=["ai_intake"])
 
 
 @router.post("/extract", response_model=AIIntakeExtractResponse)

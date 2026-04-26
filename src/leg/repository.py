@@ -85,7 +85,6 @@ class LegRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     LegModel.id,
-                    LegModel.name,
                     LegModel.status,
                     LegModel.note,
                     LegModel.delivery_order_id,
@@ -117,7 +116,6 @@ class LegRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     LegModel.id,
-                    LegModel.name,
                     LegModel.status,
                     LegModel.note,
                     LegModel.delivery_order_id,
@@ -155,7 +153,6 @@ class LegRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     LegModel.id,
-                    LegModel.name,
                     LegModel.status,
                     LegModel.note,
                     LegModel.delivery_order_id,
@@ -308,7 +305,6 @@ class LegRepository(TenantScopedRepoMixin):
             .options(
                 load_only(
                     LegModel.id,
-                    LegModel.name,
                     LegModel.status,
                     LegModel.note,
                     LegModel.delivery_order_id,

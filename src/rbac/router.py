@@ -30,7 +30,7 @@ from rbac.schemas.request import (
 from rbac.dependencies.guards import permission_guard
 from rbac.const.const import TENANT_MEMBER_PERMISSION_ASSIGN
 
-router = APIRouter(prefix="/rbac", tags=["rbac"])
+router = APIRouter(prefix="/api/v1/rbac", tags=["rbac"])
 
 
 # ─────────────────────────────────────────────────────────

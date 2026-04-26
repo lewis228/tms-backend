@@ -30,10 +30,12 @@ async def extract_do(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "AI_INTAKE_DISABLED",
-                    "message": "ANTHROPIC_API_KEY 가 설정되지 않았습니다."},
+                    "message": "AI_INTAKE_PROVIDER 미설정 또는 해당 API key 가 비어있다."},
         )
     body = await file.read()
     result = await svc.extract_delivery_order(
         file_bytes=body, filename=file.filename or "document", content_type=file.content_type or "application/octet-stream",
     )
-    return AIIntakeExtractResponse(**{k: v for k, v in result.items() if k in {"filename", "size_bytes", "fields", "confidence"}})
+    return AIIntakeExtractResponse(
+        **{k: v for k, v in result.items() if k in {"filename", "size_bytes", "fields", "confidence", "provider"}}
+    )

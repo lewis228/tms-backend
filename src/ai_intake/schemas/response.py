@@ -9,3 +9,4 @@ class AIIntakeExtractResponse(ResponseSchema):
     size_bytes: int
     fields: dict[str, Any]
     confidence: float
+    provider: str = ""    # "gemini" | "anthropic" — 프론트 표시용

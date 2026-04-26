@@ -132,6 +132,13 @@ class Settings(BaseSettings):
     MINIO_PRESIGNED_DOWNLOAD_TTL: int
     MINIO_TEMP_PREFIX: str
 
+    # ===== AI Intake (D/O 자동 추출) =====
+    # 비활성: AI_INTAKE_PROVIDER 비우거나 해당 provider key 비우면 endpoint 503.
+    AI_INTAKE_PROVIDER: str = ""        # "" | "gemini" | "anthropic"
+    GEMINI_API_KEY: str = ""            # aistudio.google.com — 무료 티어
+    ANTHROPIC_API_KEY: str = ""         # console.anthropic.com — 종량제
+    AI_INTAKE_MODEL: str = ""           # 비우면 provider 기본 모델 사용
+
     # ===== 기타 =====
     ROOT_PATH: str = ""  # 리버스 프록시 경로 접두어 (운영: "/api")
     TIMEZONE: str

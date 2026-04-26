@@ -70,8 +70,7 @@ jobs:
         run: |
           alembic upgrade head
 
-      # 추후 도메인 테스트 추가 시 활성화
-      # - name: Pytest
-      #   env:
-      #     PYTHONPATH: ${{ github.workspace }}/src
-      #   run: pytest -q
+      - name: Pytest
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+        run: pytest -q

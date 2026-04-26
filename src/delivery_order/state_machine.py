@@ -21,8 +21,14 @@ from location.model import LocationModel
 
 
 class InvalidStateTransitionError(AppException):
-    code = "ERR_INVALID_STATE_TRANSITION"
-    status_code = 422
+    """D/O / Leg 상태 전이 게이트 위반."""
+    def __init__(self, message: str = "Invalid state transition", *, details: dict | None = None):
+        super().__init__(
+            code="ERR_INVALID_STATE_TRANSITION",
+            message=message,
+            status_code=422,
+            detail=details,
+        )
 
 
 @dataclass

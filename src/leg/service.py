@@ -313,8 +313,13 @@ class LegService:
         from leg.const.status import LegStatus
 
         class InvalidLegTransition(AppException):
-            code = "ERR_INVALID_LEG_TRANSITION"
-            status_code = 422
+            def __init__(self, message: str, *, details: dict | None = None):
+                super().__init__(
+                    code="ERR_INVALID_LEG_TRANSITION",
+                    message=message,
+                    status_code=422,
+                    detail=details,
+                )
 
         _ALLOWED_LEG: dict = {
             LegStatus.PENDING:    {LegStatus.IN_TRANSIT},

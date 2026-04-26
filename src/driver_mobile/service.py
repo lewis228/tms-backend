@@ -82,10 +82,11 @@ class DriverMobileService:
         if not leg:
             raise NotFoundException("Leg")
         if leg.driver_id != driver_id:
-            class ForbiddenLegError(AppException):
-                code = "ERR_FORBIDDEN_LEG"
-                status_code = 403
-            raise ForbiddenLegError("Leg not assigned to current driver")
+            raise AppException(
+                code="ERR_FORBIDDEN_LEG",
+                message="Leg not assigned to current driver",
+                status_code=403,
+            )
 
         svc = LegService(self.db, self.tenant_id)
         result = await svc.transition(

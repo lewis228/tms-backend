@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import load_only
 
-from common.repository.tenant_scoped import TeamScopedRepoMixin
+from common.repository.tenant_scoped import TenantScopedRepoMixin
 from common.pagination.service import CommonService
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from vessel.model import VesselModel
@@ -14,7 +14,7 @@ from vessel.schemas.request import PaginateVesselRequest
 from vessel.schemas.response import VesselResponseSchema
 
 
-class VesselRepository(TeamScopedRepoMixin):
+class VesselRepository(TenantScopedRepoMixin):
     """
     Vessel(거래처) 리포지토리
     - tenant 스코프 강제(_require_tenant)

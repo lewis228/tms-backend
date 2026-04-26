@@ -4,7 +4,7 @@ from typing import List
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from common.exceptions.base import NotFoundException
+from common.exceptions.base import AppException, NotFoundException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from settlement.repository import SettlementRepository
 from settlement.schemas.request import (
@@ -16,6 +16,17 @@ from settlement.schemas.response import (
     SettlementBulkCreateResponseSchema, SettlementBulkUpdateResponseSchema, SettlementBulkDeleteResponseSchema,
     BulkResultItem, BulkDeleteResultItem, BulkSummary,
 )
+
+
+class InvalidSettlementTransition(AppException):
+    """Settlement 라이프사이클 게이트 위반."""
+    def __init__(self, message: str, *, details: dict | None = None):
+        super().__init__(
+            code="ERR_INVALID_SETTLEMENT_TRANSITION",
+            message=message,
+            status_code=422,
+            detail=details,
+        )
 
 
 class SettlementService:
@@ -299,16 +310,11 @@ class SettlementService:
     ):
         """PENDING/CALCULATED → CALCULATED. system_total + extras."""
         from sqlalchemy import select, delete
-        from common.exceptions.base import AppException
         from settlement.model import (
             SettlementModel, ExtraChargeModel, SettlementAuditLogModel,
         )
         from settlement.const.status import SettlementStatus, SettlementAuditAction
         from settlement.schemas.response import SettlementResponseSchema
-
-        class InvalidSettlementTransition(AppException):
-            code = "ERR_INVALID_SETTLEMENT_TRANSITION"
-            status_code = 422
 
         team_id = self.repo._require_tenant()
         s = (await self.db.execute(
@@ -369,16 +375,11 @@ class SettlementService:
     ):
         """CALCULATED/ADJUSTED → ADJUSTED. note 필수, has_flag 자동/수동, extras 재정의."""
         from sqlalchemy import select, delete
-        from common.exceptions.base import AppException
         from settlement.model import (
             SettlementModel, ExtraChargeModel, SettlementAuditLogModel,
         )
         from settlement.const.status import SettlementStatus, SettlementAuditAction
         from settlement.schemas.response import SettlementResponseSchema
-
-        class InvalidSettlementTransition(AppException):
-            code = "ERR_INVALID_SETTLEMENT_TRANSITION"
-            status_code = 422
 
         team_id = self.repo._require_tenant()
         s = (await self.db.execute(
@@ -452,14 +453,9 @@ class SettlementService:
         """CALCULATED/ADJUSTED → APPROVED. 잠금 — final_amount 변경 불가 이후."""
         from datetime import datetime, timezone
         from sqlalchemy import select
-        from common.exceptions.base import AppException
         from settlement.model import SettlementModel, SettlementAuditLogModel
         from settlement.const.status import SettlementStatus, SettlementAuditAction
         from settlement.schemas.response import SettlementResponseSchema
-
-        class InvalidSettlementTransition(AppException):
-            code = "ERR_INVALID_SETTLEMENT_TRANSITION"
-            status_code = 422
 
         team_id = self.repo._require_tenant()
         s = (await self.db.execute(
@@ -515,14 +511,9 @@ class SettlementService:
         """APPROVED → ADJUSTED. ADMIN+. reason 필수."""
         from datetime import datetime, timezone
         from sqlalchemy import select
-        from common.exceptions.base import AppException
         from settlement.model import SettlementModel, SettlementAuditLogModel
         from settlement.const.status import SettlementStatus, SettlementAuditAction
         from settlement.schemas.response import SettlementResponseSchema
-
-        class InvalidSettlementTransition(AppException):
-            code = "ERR_INVALID_SETTLEMENT_TRANSITION"
-            status_code = 422
 
         team_id = self.repo._require_tenant()
         s = (await self.db.execute(

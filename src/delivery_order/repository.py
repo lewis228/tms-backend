@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import load_only
 
-from common.repository.tenant_scoped import TeamScopedRepoMixin
+from common.repository.tenant_scoped import TenantScopedRepoMixin
 from common.pagination.service import CommonService
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from delivery_order.model import DeliveryOrderModel
@@ -14,7 +14,7 @@ from delivery_order.schemas.request import PaginateDeliveryOrderRequest
 from delivery_order.schemas.response import DeliveryOrderResponseSchema
 
 
-class DeliveryOrderRepository(TeamScopedRepoMixin):
+class DeliveryOrderRepository(TenantScopedRepoMixin):
     """
     DeliveryOrder(거래처) 리포지토리
     - 팀 스코프 강제(_require_tenant)

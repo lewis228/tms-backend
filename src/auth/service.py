@@ -263,7 +263,9 @@ class AuthService:
         access_payload = {
             "sub": str(uid), "sid": sid, "did": did,
             "type": "access", "jti": access_jti,
-            "iat": utc_ts(), "exp": access_exp
+            "iat": utc_ts(), "exp": access_exp,
+            # WS / 미들웨어가 토큰만으로 role 판정할 수 있게 노출 (N:M tenant 는 별도 query 로 결정)
+            "role": getattr(getattr(user, "role", None), "value", str(getattr(user, "role", ""))),
         }
         access = jwt.encode(access_payload, settings.JWT_SECRET, algorithm=settings.ALGORITHM)
         refresh = self.sign_token(sub=uid, sid=sid, did=did, is_refresh=True)

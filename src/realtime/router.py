@@ -31,10 +31,19 @@ async def realtime_ws(
     - 4003: tenant 미해결 (SUPER_ADMIN 인데 tenant_id 미지정 등)
     - 4004: ping idle timeout
     """
-    # 토큰 디코드 (auth 모듈 활용 — 단순화: 추후 정교 구현)
+    # 토큰 디코드 — JWT 직접 (HS256 + JWT_SECRET).
     try:
-        from auth.tokens.access_token import decode_access_token
-        claims = decode_access_token(token)
+        import jwt as pyjwt
+        from common.const.settings import settings
+        claims = pyjwt.decode(
+            token, settings.JWT_SECRET, algorithms=[settings.ALGORITHM],
+        )
+        if claims.get("type") != "access":
+            raise pyjwt.InvalidTokenError("not access token")
+    except pyjwt.ExpiredSignatureError:
+        await websocket.accept()
+        await websocket.close(code=4001)
+        return
     except Exception:
         await websocket.accept()
         await websocket.close(code=4002)
@@ -42,25 +51,18 @@ async def realtime_ws(
 
     user_id = int(claims.get("sub", 0))
     role = claims.get("role")
-    claim_tenant = claims.get("tenant_id")
 
-    # tenant 결정
-    if role == "SUPER_ADMIN":
-        if tenant_id is None:
-            await websocket.accept()
-            await websocket.close(code=4003)
-            return
-    else:
-        # 일반 유저 — JWT 의 tenant_id 사용. query 와 다르면 거부.
-        if claim_tenant is None:
-            await websocket.accept()
-            await websocket.close(code=4003)
-            return
-        if tenant_id is not None and int(tenant_id) != int(claim_tenant):
-            await websocket.accept()
-            await websocket.close(code=4003)
-            return
-        tenant_id = int(claim_tenant)
+    # tenant_id 는 항상 query 로 받는다 (N:M 모델 — 토큰에 박지 않음).
+    # SUPER_ADMIN/일반 사용자 모두 query 필수.
+    # TODO: 일반 사용자의 경우 user_tenants 멤버십 EXISTS 검증 (현재는 미검증).
+    if tenant_id is None:
+        await websocket.accept()
+        await websocket.close(code=4003)
+        return
+    if role is None:
+        await websocket.accept()
+        await websocket.close(code=4002)
+        return
 
     await websocket.accept()
     conn = _Connection(websocket, int(tenant_id), user_id)

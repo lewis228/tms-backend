@@ -116,10 +116,10 @@ class RbacRepository:
                     UserTenantModel.is_active.is_(True),
                 )
             )
-            if not user_team:
+            if not user_tenant:
                 return set(), None, None, False
 
-            group_id = getattr(user_team, "permission_group_id", None)
+            group_id = getattr(user_tenant, "permission_group_id", None)
 
             if group_id is not None:
                 group = await self.db.scalar(

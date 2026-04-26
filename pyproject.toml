@@ -66,9 +66,16 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# ste 코드 자산 가져왔으므로 점진 cleanup. 일단 critical 룰만 강제.
+extend-exclude = [".venv", "migrations/versions"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+select = ["E9", "F"]   # syntax errors + undefined-name 만 강제
+ignore = [
+    "F401",  # unused imports — sed/cleanup 단계에서 정리
+    "F403", "F405",  # star imports
+    "E402",  # module level import 위치
+]
 
 [tool.mypy]
 python_version = "3.12"

@@ -1,0 +1,77 @@
+name: backend-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: tms
+          MYSQL_ROOT_PASSWORD: rootpassword
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost --silent"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Copy .env.example to .env
+        run: cp .env.example .env
+
+      - name: Lint (ruff)
+        run: ruff check src/
+
+      - name: Smoke import (app + metadata)
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+        run: |
+          python -c "from main import app; print('routes:', len(app.routes))"
+
+      - name: Alembic upgrade
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+        run: |
+          alembic upgrade head
+
+      # 추후 도메인 테스트 추가 시 활성화
+      # - name: Pytest
+      #   env:
+      #     PYTHONPATH: ${{ github.workspace }}/src
+      #   run: pytest -q

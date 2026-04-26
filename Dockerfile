@@ -3,7 +3,7 @@ FROM python:3.12-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONPATH=/app \
+    PYTHONPATH=/app/src \
     APP_LOG_DIR=/app/logs
 
 WORKDIR /app
@@ -14,7 +14,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 10001 appuser \
- && mkdir -p /app/logs \
+ && mkdir -p /app/logs /app/public \
  && chown -R appuser:appuser /app
 
 COPY --chown=appuser:appuser pyproject.toml /app/pyproject.toml

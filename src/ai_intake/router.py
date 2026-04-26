@@ -34,6 +34,6 @@ async def extract_do(
         )
     body = await file.read()
     result = await svc.extract_delivery_order(
-        file_bytes=body, filename=file.filename or "document",
+        file_bytes=body, filename=file.filename or "document", content_type=file.content_type or "application/octet-stream",
     )
     return AIIntakeExtractResponse(**{k: v for k, v in result.items() if k in {"filename", "size_bytes", "fields", "confidence"}})

@@ -1,0 +1,117 @@
+# src/main.py — TMS Pro 백엔드 진입점 (ste 패턴)
+"""
+FastAPI 메인 애플리케이션.
+
+ste/backend_sample 패턴:
+  - lifespan 통합 (common/lifecycle/lifespan.py)
+  - 미들웨어 순서: CORS → AccessLog → Auth → LogContext (역순 add)
+  - 예외 핸들러 일괄 등록
+  - 도메인 router 명시 등록
+
+TMS Phase A — 시스템 도메인만 등록 (auth/user/tenant/rbac/file).
+TMS 도메인 router (customer/terminal/vessel/location/driver/delivery_order/leg/
+street_turn/settlement/rate_setting/notification/realtime/ai_intake/driver_mobile)
+는 Phase B 이후 추가.
+"""
+import asyncio
+import logging  # noqa: F401
+
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from common.const.path_consts import PUBLIC_FOLDER_PATH
+from common.const.settings import settings
+from common.exceptions.base import AppException
+from common.exceptions.handlers import (
+    app_exception_handler,
+    global_exception_handler,
+    http_exception_handler,
+    sqlalchemy_exception_handler,
+    timeout_exception_handler,
+    validation_exception_handler,
+)
+from common.lifecycle.lifespan import lifespan
+from common.middleware.access_log import AccessLogMiddleware
+from common.middleware.auth import AuthMiddleware
+from common.middleware.context import LogContextMiddleware
+
+# ── 시스템 도메인 routers ────────────────────────────────────
+from auth.router import router as auth_router
+from user.router import router as user_router
+from tenant.router import router as tenant_router
+from rbac.router import router as rbac_router
+from file.router import router as file_router
+
+# TMS 도메인 routers — Phase B 이후 import (placeholder)
+# from customer.router import router as customer_router
+# from terminal.router import router as terminal_router
+# from vessel.router import router as vessel_router
+# from location.router import router as location_router
+# from driver.router import router as driver_router
+# from delivery_order.router import router as delivery_order_router
+# from leg.router import router as leg_router
+# from street_turn.router import router as street_turn_router
+# from rate_setting.router import router as rate_setting_router
+# from settlement.router import router as settlement_router
+# from notification.router import router as notification_router
+# from realtime.router import router as realtime_router
+# from ai_intake.router import router as ai_intake_router
+# from driver_mobile.router import router as driver_mobile_router
+
+
+app = FastAPI(lifespan=lifespan, root_path=settings.ROOT_PATH)
+
+# ── 미들웨어 (역순 add) ─────────────────────────────────────
+# 1) LogContext (요청 ID 바인딩) → 2) Auth (user 식별) → 3) AccessLog (응답 기록)
+app.add_middleware(AccessLogMiddleware)
+app.add_middleware(AuthMiddleware)
+app.add_middleware(LogContextMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=settings.ALLOWED_ORIGIN_REGEX,
+    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization", "Content-Type", "Accept",
+        "X-Client-Type", "X-Device-Key", "X-App-Version",
+        "User-Agent", "X-Tenant-Id", "X-Request-ID",
+    ],
+)
+
+# ── 예외 핸들러 ──────────────────────────────────────────────
+app.add_exception_handler(AppException, app_exception_handler)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, global_exception_handler)
+app.add_exception_handler(asyncio.TimeoutError, timeout_exception_handler)
+app.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)
+
+# ── 정적 파일 ───────────────────────────────────────────────
+# /public — 로고 등 공용 에셋
+app.mount("/public", StaticFiles(directory=PUBLIC_FOLDER_PATH), name="public")
+
+# ── 시스템 도메인 router 등록 ────────────────────────────────
+app.include_router(auth_router)
+app.include_router(user_router)
+app.include_router(tenant_router)
+app.include_router(rbac_router)
+app.include_router(file_router)
+
+# ── TMS 도메인 router 등록 (Phase B+) ────────────────────────
+# app.include_router(customer_router)
+# ... 등
+
+
+@app.get("/", include_in_schema=False)
+async def ping_root():
+    return {"status": "connect success"}
+
+
+@app.get("/health", include_in_schema=False)
+async def ping_health():
+    return {"status": "ok"}

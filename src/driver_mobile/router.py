@@ -34,7 +34,9 @@ MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
 
 
 def require_driver(me: UserResponseSchema = Depends(get_current_user)) -> UserResponseSchema:
-    if str(getattr(me, "role", "")) != RolesEnum.DRIVER.value:
+    role = getattr(me, "role", None)
+    role_value = getattr(role, "value", role)  # RolesEnum 또는 str 모두 처리
+    if role_value != RolesEnum.DRIVER.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "FORBIDDEN_ROLE",
@@ -188,7 +190,7 @@ async def upload_leg_document(
 
     # 본인 leg 검증
     svc = DriverMobileService(db, tenant_id)
-    await svc.resolve_driver_id(int(me.id))   # 단순 verify (NotFoundException raise)
+    driver_id = await svc.resolve_driver_id(int(me.id))
     from leg.model import LegModel
     leg = (await db.execute(
         select(LegModel).where(
@@ -199,18 +201,35 @@ async def upload_leg_document(
     )).scalar_one_or_none()
     if not leg:
         raise NotFoundException("Leg")
+    if leg.driver_id != driver_id:
+        raise HTTPException(status_code=403, detail={
+            "code": "ERR_FORBIDDEN_LEG",
+            "message": "Leg not assigned to current driver"})
 
-    # file.service 의 직접 업로드 흐름 — 단순 file 행 + S3 put
-    # ste 의 file 도메인은 presign/finalize 패턴이 기본. driver mobile 은 이미
-    # multipart 본문을 가지고 있으므로 별도 직접 업로드.
-    # TODO: file.service 에 direct_upload 메서드 추가. 지금은 단순 응답.
+    # FileService.direct_upload — multipart 본문 → S3 PUT + FileAsset 행 생성
+    from file.service import FileService
+    from file.const.domains import FileDomain
+    file_svc = FileService(db)
+    asset = await file_svc.direct_upload(
+        tenant_id=tenant_id,
+        domain=FileDomain.LEG_DOCUMENT,
+        object_id=leg_id,
+        file_bytes=body,
+        filename=file.filename or "upload",
+        content_type=file.content_type or "application/octet-stream",
+        actor_user_id=int(me.id),
+        subdir=kind.lower() if kind else "",
+    )
+    await db.commit()
+
     return {
-        "status": "ok",
-        "leg_id": leg_id,
+        "id": asset.id,
+        "legId": leg_id,
         "kind": kind,
-        "filename": file.filename,
-        "size_bytes": len(body),
-        "_note": "file 도메인 direct_upload 통합 추후. 현재는 메타만.",
+        "filename": asset.filename,
+        "sizeBytes": asset.size,
+        "mime": asset.mime,
+        "logicalPath": asset.logical_path,
     }
 
 

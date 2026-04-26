@@ -92,6 +92,74 @@ class FileService:
         self.bucket = MINIO_BUCKET
 
     # ─────────────────────────────────────────────────────────────
+    # ▼ 직접 업로드 (mobile 등 — multipart 본문을 서버가 받아 S3 PUT + DB 행 생성)
+    # ─────────────────────────────────────────────────────────────
+    async def direct_upload(
+        self,
+        *,
+        tenant_id: int | None,
+        domain: FileDomain,
+        object_id: int,
+        file_bytes: bytes,
+        filename: str,
+        content_type: str,
+        actor_user_id: int | None,
+        subdir: str = "",
+        is_public: bool = False,
+    ) -> FileAssetModel:
+        """multipart 본문을 받아 S3 put_object + FileAsset 행을 한 번에 처리.
+
+        호출자가 사이즈/타입 검증을 사전에 끝내야 한다.
+        commit() 의 2단계 (presign → commit) 와 달리, 모바일처럼 클라가
+        multipart 본문을 그대로 보내는 흐름에 사용.
+
+        DB flush 후 S3 put. flush 실패 시 S3 도 호출 안 됨.
+        """
+        if self.db is None:
+            raise RuntimeError("FileService.direct_upload 는 db 가 필요합니다.")
+
+        # 동일 파일명 충돌 회피 — uuid 접두 (서버 키 기준; 사용자 표시용 filename 은 원본 유지)
+        stem, ext = self._split_filename(filename)
+        stored_name = f"{secrets.token_urlsafe(8)}_{stem}{ext}"
+
+        kb = ObjectKeyBuilder(
+            tenant_id=tenant_id, domain=domain, object_id=object_id,
+            subdir=subdir, is_public=is_public,
+        )
+        key = kb.key(stored_name)
+
+        # DB 행 먼저 (flush) — 실패 시 S3 호출 없이 롤백
+        row = FileAssetModel(
+            tenant_id=tenant_id,
+            domain=domain,
+            object_id=object_id,
+            subdir=subdir,
+            filename=filename,                     # 사용자 표시 원본
+            size=len(file_bytes),
+            mime=content_type or "application/octet-stream",
+            is_public=is_public,
+            logical_path=key,                      # MinIO key 와 동일하게 저장
+            created_by_user_id=actor_user_id,
+            updated_by_user_id=actor_user_id,
+        )
+        self.db.add(row)
+        await self.db.flush()
+
+        # S3 put — 실패 시 호출자가 transaction rollback 으로 정리.
+        try:
+            self.s3.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=file_bytes,
+                ContentType=content_type or "application/octet-stream",
+            )
+        except ClientError as e:
+            logger.error("direct_upload.s3_failed", extra={"key": key, "err": str(e)})
+            raise
+
+        return row
+
+    # ─────────────────────────────────────────────────────────────
     # ▼ URL 주입 헬퍼 (공통 사용)
     # ─────────────────────────────────────────────────────────────
     def inject_file_urls(self, files: List[Any]) -> None:

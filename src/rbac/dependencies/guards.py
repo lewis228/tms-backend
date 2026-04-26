@@ -47,7 +47,7 @@ def permission_guard(*required_codes: str):
     ):
         # 플랫폼 운영자는 모든 권한 통과 (tenant 없이도)
         from user.const.roles import RolesEnum
-        if str(getattr(me, "role", "")) == RolesEnum.SUPER_ADMIN.value:
+        if getattr(getattr(me, "role", None), "value", getattr(me, "role", "")) == RolesEnum.SUPER_ADMIN.value:
             return
 
         tenant_id = _extract_tenant_id(request)
@@ -102,7 +102,7 @@ async def tenant_admin_guard(
     tenant 내 admin_group 또는 SUPER_ADMIN 만 허용.
     """
     from user.const.roles import RolesEnum
-    if str(getattr(me, "role", "")) == RolesEnum.SUPER_ADMIN.value:
+    if getattr(getattr(me, "role", None), "value", getattr(me, "role", "")) == RolesEnum.SUPER_ADMIN.value:
         return
 
     tenant_id = _extract_tenant_id(request)

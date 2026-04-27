@@ -2,7 +2,7 @@
 """RealtimeEvent → Notification inbox fan-out.
 
 호출처: realtime.service.publish(event, *, db=...) 가 자동 호출.
-단순 규칙: tenant 의 활성 멤버 (UserTenantModel.is_active=True) 의 user 중
+단순 규칙: team 의 활성 멤버 (UserTeamModel.is_active=True) 의 user 중
 - DRIVER role 제외 (모바일 푸시 별도)
 - actor 본인 제외
 에게 inbox 행 생성. add + flush only — commit 은 호출처가.
@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from notification.const.channel import NotificationChannel, NotificationStatus
 from notification.model import NotificationModel
 from realtime.schemas.event import RealtimeEvent
-from tenant.model import UserTenantModel
+from team.model import UserTeamModel
 from user.const.roles import RolesEnum
 from user.model import UserModel
 
@@ -57,13 +57,13 @@ async def fan_out_event(db: AsyncSession, event: RealtimeEvent) -> int:
     title = _EVENT_TITLES[event.type]
     body = _format_body(event)
 
-    # tenant 의 활성 멤버 user_id 조회 (DRIVER 제외, actor 제외)
+    # team 의 활성 멤버 user_id 조회 (DRIVER 제외, actor 제외)
     stmt = (
         select(UserModel.id)
-        .join(UserTenantModel, UserTenantModel.user_id == UserModel.id)
+        .join(UserTeamModel, UserTeamModel.user_id == UserModel.id)
         .where(
-            UserTenantModel.tenant_id == event.tenant_id,
-            UserTenantModel.is_active.is_(True),
+            UserTeamModel.team_id == event.team_id,
+            UserTeamModel.is_active.is_(True),
             UserModel.is_active.is_(True),
             UserModel.role != RolesEnum.DRIVER,
         )
@@ -77,7 +77,7 @@ async def fan_out_event(db: AsyncSession, event: RealtimeEvent) -> int:
     payload_dict: dict[str, Any] | None = event.payload
     for uid in user_ids:
         db.add(NotificationModel(
-            tenant_id=event.tenant_id,
+            team_id=event.team_id,
             user_id=uid,
             channel=NotificationChannel.PUSH,
             status=NotificationStatus.PENDING,

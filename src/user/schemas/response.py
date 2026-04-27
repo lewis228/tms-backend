@@ -11,26 +11,26 @@ from user.const.roles import RolesEnum
 # ─────────────────────────────────────────────
 # 서브 응답 스키마들(관계용)
 # ─────────────────────────────────────────────
-class UserTenantRowResponseSchema(ResponseSchema):
+class UserTeamRowResponseSchema(ResponseSchema):
     id: int
-    tenant_id: int
-    # nested ORM (UserTenantModel.tenant.<field>) 매핑
-    tenant_name: Optional[str] = Field(
-        default=None, validation_alias=AliasPath("tenant", "name"),
+    team_id: int
+    # nested ORM (UserTeamModel.team.<field>) 매핑
+    team_name: Optional[str] = Field(
+        default=None, validation_alias=AliasPath("team", "name"),
     )
     permission_group_id: Optional[int] = None
     # 온보딩 진행 상태 — 프론트가 wizard 표시 여부 결정에 사용
     onboarding_completed: bool = Field(
-        default=False, validation_alias=AliasPath("tenant", "onboarding_completed"),
+        default=False, validation_alias=AliasPath("team", "onboarding_completed"),
     )
     onboarding_step1_done: bool = Field(
-        default=False, validation_alias=AliasPath("tenant", "onboarding_step1_done"),
+        default=False, validation_alias=AliasPath("team", "onboarding_step1_done"),
     )
     onboarding_step2_done: bool = Field(
-        default=False, validation_alias=AliasPath("tenant", "onboarding_step2_done"),
+        default=False, validation_alias=AliasPath("team", "onboarding_step2_done"),
     )
     onboarding_step3_done: bool = Field(
-        default=False, validation_alias=AliasPath("tenant", "onboarding_step3_done"),
+        default=False, validation_alias=AliasPath("team", "onboarding_step3_done"),
     )
 
 
@@ -59,7 +59,7 @@ class UserListItemResponseSchema(ResponseSchema):
     #  언어 설정
     language: Optional[str] = "auto"
 
-    tenants: List[UserTenantRowResponseSchema] = []
+    teams: List[UserTeamRowResponseSchema] = []
     files: List[FileNestedSchema] = []
 
 

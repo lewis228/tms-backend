@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import load_only
 
-from common.repository.tenant_scoped import TenantScopedRepoMixin
+from common.repository.team_scoped import TeamScopedRepoMixin
 from common.pagination.service import CommonService
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from delivery_order.model import DeliveryOrderModel
@@ -14,16 +14,16 @@ from delivery_order.schemas.request import PaginateDeliveryOrderRequest
 from delivery_order.schemas.response import DeliveryOrderResponseSchema
 
 
-class DeliveryOrderRepository(TenantScopedRepoMixin):
+class DeliveryOrderRepository(TeamScopedRepoMixin):
     """
     DeliveryOrder(거래처) 리포지토리
-    - 팀 스코프 강제(_require_tenant)
+    - 팀 스코프 강제(_require_team)
     - 기본 is_active=True
     - take=-1 이면 전체 로드 (limit 없이 조회)
     """
 
-    def __init__(self, db: AsyncSession, tenant_id: int | None):
-        super().__init__(tenant_id)
+    def __init__(self, db: AsyncSession, team_id: int | None):
+        super().__init__(team_id)
         self.db = db
         self._common_service = CommonService()
 
@@ -36,7 +36,7 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
         payload: dict,
         actor_user_id: int | None = None,
     ) -> DeliveryOrderModel:
-        payload["tenant_id"] = self._require_tenant()
+        payload["team_id"] = self._require_team()
         if actor_user_id is not None:
             payload["created_by_user_id"] = actor_user_id
         row = DeliveryOrderModel(**payload)
@@ -53,10 +53,10 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
         """
         벌크 생성 (단순 반복 - 개별 에러 처리는 Service에서)
         """
-        tenant_id = self._require_tenant()
+        team_id = self._require_team()
         rows = []
         for payload in payloads:
-            payload["tenant_id"] = tenant_id
+            payload["team_id"] = team_id
             if actor_user_id is not None:
                 payload["created_by_user_id"] = actor_user_id
             row = DeliveryOrderModel(**payload)
@@ -78,7 +78,7 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
         q = (
             select(DeliveryOrderModel)
             .where(
-                DeliveryOrderModel.tenant_id == self._require_tenant(),
+                DeliveryOrderModel.team_id == self._require_team(),
                 DeliveryOrderModel.id == delivery_order_id,
                 DeliveryOrderModel.is_active.is_(True),
             )
@@ -108,7 +108,7 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
         q = (
             select(DeliveryOrderModel)
             .where(
-                DeliveryOrderModel.tenant_id == self._require_tenant(),
+                DeliveryOrderModel.team_id == self._require_team(),
                 DeliveryOrderModel.id.in_(delivery_order_ids),
                 DeliveryOrderModel.is_active.is_(True),
             )
@@ -138,10 +138,10 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
 
         필터: where__* → CommonService에서 처리
         """
-        tenant_id = self._require_tenant()
+        team_id = self._require_team()
 
-        # 기본 쿼리 (tenant_id, 옵션에 따른 is_active)
-        base_conditions = [DeliveryOrderModel.tenant_id == tenant_id]
+        # 기본 쿼리 (team_id, 옵션에 따른 is_active)
+        base_conditions = [DeliveryOrderModel.team_id == team_id]
         if not request.include_inactive:
             base_conditions.append(DeliveryOrderModel.is_active.is_(True))
 
@@ -197,7 +197,7 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
         q = (
             select(DeliveryOrderModel)
             .where(
-                DeliveryOrderModel.tenant_id == self._require_tenant(),
+                DeliveryOrderModel.team_id == self._require_team(),
                 DeliveryOrderModel.id == delivery_order_id,
                 DeliveryOrderModel.is_active.is_(True),
             )
@@ -206,7 +206,7 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
         if not row:
             return None
 
-        protected = {"id", "tenant_id", "is_active", "created_at", "created_by_user_id"}
+        protected = {"id", "team_id", "is_active", "created_at", "created_by_user_id"}
         
         for k, v in payload.items():
             if k in protected:
@@ -229,7 +229,7 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
         """단건 하드 삭제"""
         await self.db.execute(
             delete(DeliveryOrderModel).where(
-                DeliveryOrderModel.tenant_id == self._require_tenant(),
+                DeliveryOrderModel.team_id == self._require_team(),
                 DeliveryOrderModel.id == delivery_order_id,
             )
         )
@@ -254,7 +254,7 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
         await self.db.execute(
             update(DeliveryOrderModel)
             .where(
-                DeliveryOrderModel.tenant_id == self._require_tenant(),
+                DeliveryOrderModel.team_id == self._require_team(),
                 DeliveryOrderModel.id == delivery_order_id,
                 DeliveryOrderModel.is_active.is_(True),
             )
@@ -275,7 +275,7 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
         stmt = (
             select(DeliveryOrderModel.id)
             .where(
-                DeliveryOrderModel.tenant_id == self._require_tenant(),
+                DeliveryOrderModel.team_id == self._require_team(),
                 DeliveryOrderModel.is_active.is_(True),
                 DeliveryOrderModel.id.in_(id_list),
             )
@@ -294,11 +294,11 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
         - items: is_active=True & updated_at >= since
         - deleted_ids: is_active=False & updated_at >= since
         """
-        tenant_id = self._require_tenant()
+        team_id = self._require_team()
 
         base_query = (
             select(DeliveryOrderModel)
-            .where(DeliveryOrderModel.tenant_id == tenant_id)
+            .where(DeliveryOrderModel.team_id == team_id)
             .options(
                 load_only(
                     DeliveryOrderModel.id,
@@ -317,7 +317,7 @@ class DeliveryOrderRepository(TenantScopedRepoMixin):
             model=DeliveryOrderModel,
             session=self.db,
             since=since,
-            tenant_id=tenant_id,
+            team_id=team_id,
             base_query=base_query,
             use_soft_delete=True,
         )

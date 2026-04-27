@@ -1,5 +1,5 @@
 # src/realtime/router.py
-"""WebSocket endpoint — token 인증 + tenant 결정 + ping/pong."""
+"""WebSocket endpoint — token 인증 + team 결정 + ping/pong."""
 from __future__ import annotations
 import asyncio
 import json
@@ -20,15 +20,15 @@ IDLE_TIMEOUT = 60   # 클라 메시지 없으면 종료 (4004)
 async def realtime_ws(
     websocket: WebSocket,
     token: str = Query(...),
-    tenant_id: int | None = Query(None, alias="tenant_id"),
+    team_id: int | None = Query(None, alias="team_id"),
 ):
     """
-    /api/v1/ws?token=<JWT>&tenant_id=<id>
+    /api/v1/ws?token=<JWT>&team_id=<id>
 
     Close codes:
     - 4001: token expired
     - 4002: token invalid / role 없음
-    - 4003: tenant 미해결 (SUPER_ADMIN 인데 tenant_id 미지정 등)
+    - 4003: team 미해결 (SUPER_ADMIN 인데 team_id 미지정 등)
     - 4004: ping idle timeout
     """
     # 토큰 디코드 — JWT 직접 (HS256 + JWT_SECRET).
@@ -52,8 +52,8 @@ async def realtime_ws(
     user_id = int(claims.get("sub", 0))
     role = claims.get("role")
 
-    # tenant_id 는 항상 query 로 받는다 (N:M 모델 — 토큰에 박지 않음).
-    if tenant_id is None:
+    # team_id 는 항상 query 로 받는다 (N:M 모델 — 토큰에 박지 않음).
+    if team_id is None:
         await websocket.accept()
         await websocket.close(code=4003)
         return
@@ -62,18 +62,18 @@ async def realtime_ws(
         await websocket.close(code=4002)
         return
 
-    # 일반 사용자는 user_tenants 멤버십 EXISTS 검증 (cross-tenant data leak 방지).
-    # SUPER_ADMIN 만 멤버십 없이도 cross-tenant 가능.
+    # 일반 사용자는 user_team 멤버십 EXISTS 검증 (cross-team data leak 방지).
+    # SUPER_ADMIN 만 멤버십 없이도 cross-team 가능.
     if role != "SUPER_ADMIN":
         from sqlalchemy import select
         from database.mysql_connection import write_session_maker
-        from tenant.model import UserTenantModel
+        from team.model import UserTeamModel
 
         async with write_session_maker() as db:
-            stmt = select(UserTenantModel.id).where(
-                UserTenantModel.user_id == user_id,
-                UserTenantModel.tenant_id == tenant_id,
-                UserTenantModel.is_active.is_(True),
+            stmt = select(UserTeamModel.id).where(
+                UserTeamModel.user_id == user_id,
+                UserTeamModel.team_id == team_id,
+                UserTeamModel.is_active.is_(True),
             ).limit(1)
             row = (await db.execute(stmt)).scalar_one_or_none()
         if row is None:
@@ -82,7 +82,7 @@ async def realtime_ws(
             return
 
     await websocket.accept()
-    conn = _Connection(websocket, int(tenant_id), user_id)
+    conn = _Connection(websocket, int(team_id), user_id)
     await manager.register(conn)
 
     async def send_loop():

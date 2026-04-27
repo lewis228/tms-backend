@@ -42,9 +42,9 @@ class SettlementService:
     - 사전 검증 실패 → 전체 실패 (트랜잭션 롤백)
     - 생성/수정: 전체 성공 or 전체 실패
     """
-    def __init__(self, db: AsyncSession, tenant_id: int):
+    def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
-        self.repo = SettlementRepository(db, tenant_id)
+        self.repo = SettlementRepository(db, team_id)
 
     # ═══════════════════════════════════════════════════════════════
     # Create (단건)
@@ -316,10 +316,10 @@ class SettlementService:
         from settlement.const.status import SettlementStatus, SettlementAuditAction
         from settlement.schemas.response import SettlementResponseSchema
 
-        team_id = self.repo._require_tenant()
+        team_id = self.repo._require_team()
         s = (await self.db.execute(
             select(SettlementModel).where(
-                SettlementModel.tenant_id == team_id,
+                SettlementModel.team_id == team_id,
                 SettlementModel.id == settlement_id,
                 SettlementModel.is_active.is_(True),
             )
@@ -341,18 +341,18 @@ class SettlementService:
 
         # extras 재정의 (기존 삭제 후 재삽입)
         await self.db.execute(delete(ExtraChargeModel).where(
-            ExtraChargeModel.tenant_id == team_id,
+            ExtraChargeModel.team_id == team_id,
             ExtraChargeModel.settlement_id == s.id,
         ))
         for ec in payload.extra_charges:
             self.db.add(ExtraChargeModel(
-                tenant_id=team_id, settlement_id=s.id,
+                team_id=team_id, settlement_id=s.id,
                 type=ec.type, amount=ec.amount, description=ec.description,
             ))
 
         # audit log
         self.db.add(SettlementAuditLogModel(
-            tenant_id=team_id, settlement_id=s.id,
+            team_id=team_id, settlement_id=s.id,
             action=SettlementAuditAction.CALCULATE, actor_id=actor_user_id,
             before_state=before,
             after_state={"settlement_status": s.settlement_status.value, "system_total": str(s.system_total)},
@@ -381,10 +381,10 @@ class SettlementService:
         from settlement.const.status import SettlementStatus, SettlementAuditAction
         from settlement.schemas.response import SettlementResponseSchema
 
-        team_id = self.repo._require_tenant()
+        team_id = self.repo._require_team()
         s = (await self.db.execute(
             select(SettlementModel).where(
-                SettlementModel.tenant_id == team_id,
+                SettlementModel.team_id == team_id,
                 SettlementModel.id == settlement_id,
                 SettlementModel.is_active.is_(True),
             )
@@ -416,17 +416,17 @@ class SettlementService:
             s.updated_by_user_id = actor_user_id
 
         await self.db.execute(delete(ExtraChargeModel).where(
-            ExtraChargeModel.tenant_id == team_id,
+            ExtraChargeModel.team_id == team_id,
             ExtraChargeModel.settlement_id == s.id,
         ))
         for ec in payload.extra_charges:
             self.db.add(ExtraChargeModel(
-                tenant_id=team_id, settlement_id=s.id,
+                team_id=team_id, settlement_id=s.id,
                 type=ec.type, amount=ec.amount, description=ec.description,
             ))
 
         self.db.add(SettlementAuditLogModel(
-            tenant_id=team_id, settlement_id=s.id,
+            team_id=team_id, settlement_id=s.id,
             action=SettlementAuditAction.ADJUST, actor_id=actor_user_id,
             before_state=before,
             after_state={
@@ -457,10 +457,10 @@ class SettlementService:
         from settlement.const.status import SettlementStatus, SettlementAuditAction
         from settlement.schemas.response import SettlementResponseSchema
 
-        team_id = self.repo._require_tenant()
+        team_id = self.repo._require_team()
         s = (await self.db.execute(
             select(SettlementModel).where(
-                SettlementModel.tenant_id == team_id,
+                SettlementModel.team_id == team_id,
                 SettlementModel.id == settlement_id,
                 SettlementModel.is_active.is_(True),
             )
@@ -488,7 +488,7 @@ class SettlementService:
             s.updated_by_user_id = actor_user_id
 
         self.db.add(SettlementAuditLogModel(
-            tenant_id=team_id, settlement_id=s.id,
+            team_id=team_id, settlement_id=s.id,
             action=SettlementAuditAction.APPROVE, actor_id=actor_user_id,
             before_state=before,
             after_state={"settlement_status": s.settlement_status.value, "final_amount": str(s.final_amount)},
@@ -515,10 +515,10 @@ class SettlementService:
         from settlement.const.status import SettlementStatus, SettlementAuditAction
         from settlement.schemas.response import SettlementResponseSchema
 
-        team_id = self.repo._require_tenant()
+        team_id = self.repo._require_team()
         s = (await self.db.execute(
             select(SettlementModel).where(
-                SettlementModel.tenant_id == team_id,
+                SettlementModel.team_id == team_id,
                 SettlementModel.id == settlement_id,
                 SettlementModel.is_active.is_(True),
             )
@@ -541,7 +541,7 @@ class SettlementService:
             s.updated_by_user_id = actor_user_id
 
         self.db.add(SettlementAuditLogModel(
-            tenant_id=team_id, settlement_id=s.id,
+            team_id=team_id, settlement_id=s.id,
             action=SettlementAuditAction.UNAPPROVE, actor_id=actor_user_id,
             before_state=before,
             after_state={"settlement_status": s.settlement_status.value, "is_settled": False},
@@ -561,7 +561,7 @@ class SettlementService:
             from realtime.schemas.event import RealtimeEvent
             await publish(RealtimeEvent.now(
                 type=event_type,
-                tenant_id=s.tenant_id,
+                team_id=s.team_id,
                 actor_id=actor_id,
                 payload={
                     "settlementId": s.id,

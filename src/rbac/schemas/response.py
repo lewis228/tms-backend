@@ -25,7 +25,7 @@ class RbacMetaResponseSchema(ResponseSchema):
     """
     RBAC 응답 내부 메타데이터
     - 실제 모델 컬럼명과 일치:
-      * permission_group_id  ↔ UserTenantModel.permission_group_id
+      * permission_group_id  ↔ UserTeamModel.permission_group_id
       * is_admin             ↔ PermissionGroupModel.is_admin
       * version              ↔ PermissionGroupModel.version (그룹 권한 코드셋 버전)  # NEW
     """

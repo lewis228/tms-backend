@@ -16,45 +16,45 @@ class FileRepository:
     """
     파일 메타(FileAssetModel) 전용 레포지토리 (쿼리/CRUD).
     
-     tenant_id=None 지원:
-    - User 도메인은 tenant_id=NULL로 저장
-    - 조회/삭제 시 tenant_id=None이면 IS NULL 조건 사용
+     team_id=None 지원:
+    - User 도메인은 team_id=NULL로 저장
+    - 조회/삭제 시 team_id=None이면 IS NULL 조건 사용
     """
     def __init__(self, db: AsyncSession):
         self.db = db
         self.common = CommonService()
 
     # ─────────────────────────────────────────────────────────────
-    # tenant_id 조건 헬퍼 (NULL 처리)
+    # team_id 조건 헬퍼 (NULL 처리)
     # ─────────────────────────────────────────────────────────────
-    def _tenant_id_condition(self, tenant_id: Optional[int]):
+    def _team_id_condition(self, team_id: Optional[int]):
         """
-        tenant_id 조건 생성 (None이면 IS NULL)
+        team_id 조건 생성 (None이면 IS NULL)
         
-        사용: stmt.where(self._tenant_id_condition(tenant_id))
+        사용: stmt.where(self._team_id_condition(team_id))
         """
-        if tenant_id is not None:
-            return FileAssetModel.tenant_id == tenant_id
+        if team_id is not None:
+            return FileAssetModel.team_id == team_id
         else:
-            return FileAssetModel.tenant_id.is_(None)
+            return FileAssetModel.team_id.is_(None)
 
     # ─────────────────────────────────────────────────────────────
     # 커서 페이지네이션: 도메인/오브젝트/서브디렉토리 기준 경량 목록
     # ─────────────────────────────────────────────────────────────
     async def list_files_paginated(
-        self, *, tenant_id: int, request: PaginateFileListRequestSchema
+        self, *, team_id: int, request: PaginateFileListRequestSchema
     ) -> CursorPaginationResult[FileAssetModel]:
         base = (
             select(FileAssetModel)
             .where(
-                FileAssetModel.tenant_id == tenant_id,
+                FileAssetModel.team_id == team_id,
                 FileAssetModel.domain == request.domain,
                 FileAssetModel.object_id == request.object_id,
             )
             .options(
                 load_only(
                     FileAssetModel.id,
-                    FileAssetModel.tenant_id,
+                    FileAssetModel.team_id,
                     FileAssetModel.domain,
                     FileAssetModel.object_id,
                     FileAssetModel.subdir,
@@ -84,11 +84,11 @@ class FileRepository:
 
     # ─────────────────────────────────────────────────────────────
     # 단순 목록: 경량 컬럼 로딩
-    #  tenant_id=None 지원
+    #  team_id=None 지원
     # ─────────────────────────────────────────────────────────────
     async def list_files(
         self, *, 
-        tenant_id: Optional[int],  #  None 가능
+        team_id: Optional[int],  #  None 가능
         domain: FileDomain | str, 
         object_id: int, 
         subdir: Optional[str] = None
@@ -96,14 +96,14 @@ class FileRepository:
         stmt = (
             select(FileAssetModel)
             .where(
-                self._tenant_id_condition(tenant_id),  #  NULL 처리
+                self._team_id_condition(team_id),  #  NULL 처리
                 FileAssetModel.domain == domain,
                 FileAssetModel.object_id == object_id,
             )
             .options(
                 load_only(
                     FileAssetModel.id,
-                    FileAssetModel.tenant_id,
+                    FileAssetModel.team_id,
                     FileAssetModel.domain,
                     FileAssetModel.object_id,
                     FileAssetModel.subdir,
@@ -137,11 +137,11 @@ class FileRepository:
 
     # ─────────────────────────────────────────────────────────────
     # ID 목록으로 선택 (팀 스코프 보장)
-    #  tenant_id=None 지원
+    #  team_id=None 지원
     # ─────────────────────────────────────────────────────────────
     async def select_by_ids(
         self, *, 
-        tenant_id: Optional[int],  #  None 가능
+        team_id: Optional[int],  #  None 가능
         ids: Sequence[int]
     ) -> list[FileAssetModel]:
         if not ids:
@@ -150,12 +150,12 @@ class FileRepository:
             select(FileAssetModel)
             .where(
                 FileAssetModel.id.in_(ids), 
-                self._tenant_id_condition(tenant_id)  #  NULL 처리
+                self._team_id_condition(team_id)  #  NULL 처리
             )
             .options(
                 load_only(
                     FileAssetModel.id,
-                    FileAssetModel.tenant_id,
+                    FileAssetModel.team_id,
                     FileAssetModel.domain,
                     FileAssetModel.object_id,
                     FileAssetModel.subdir,
@@ -173,34 +173,34 @@ class FileRepository:
 
     # ─────────────────────────────────────────────────────────────
     # 다건 삭제: 메타만 삭제 (파일 시스템은 스케줄러에서 별도 정리)
-    #  tenant_id=None 지원
+    #  team_id=None 지원
     # ─────────────────────────────────────────────────────────────
     async def delete_files_by_ids(
         self, *, 
-        tenant_id: Optional[int],  #  None 가능
+        team_id: Optional[int],  #  None 가능
         ids: Sequence[int]
     ) -> int:
         if not ids:
             return 0
         stmt = delete(FileAssetModel).where(
             FileAssetModel.id.in_(ids), 
-            self._tenant_id_condition(tenant_id)  #  NULL 처리
+            self._team_id_condition(team_id)  #  NULL 처리
         )
         res = await self.db.execute(stmt)
         return res.rowcount or 0
 
     # ─────────────────────────────────────────────────────────────
     # 도메인/오브젝트 스코프 전체 삭제 (메타만)
-    #  tenant_id=None 지원
+    #  team_id=None 지원
     # ─────────────────────────────────────────────────────────────
     async def delete_scope(
         self, *, 
-        tenant_id: Optional[int],  #  None 가능
+        team_id: Optional[int],  #  None 가능
         domain: FileDomain | str, 
         object_id: int
     ) -> int:
         stmt = delete(FileAssetModel).where(
-            self._tenant_id_condition(tenant_id),  #  NULL 처리
+            self._team_id_condition(team_id),  #  NULL 처리
             FileAssetModel.domain == domain,
             FileAssetModel.object_id == object_id,
         )
@@ -210,19 +210,19 @@ class FileRepository:
     # ─────────────────────────────────────────────────────────────
     # 팀 전체 삭제 (메타만) — 퍼지 시 사용 가능
     # ─────────────────────────────────────────────────────────────
-    async def delete_all_in_team(self, *, tenant_id: int) -> int:
-        stmt = delete(FileAssetModel).where(FileAssetModel.tenant_id == tenant_id)
+    async def delete_all_in_team(self, *, team_id: int) -> int:
+        stmt = delete(FileAssetModel).where(FileAssetModel.team_id == team_id)
         res = await self.db.execute(stmt)
         return res.rowcount or 0
     
     # ─────────────────────────────────────────────────────────────
     # 소프트 삭제: 도메인/오브젝트 스코프 전체
-    #  tenant_id=None 지원
+    #  team_id=None 지원
     # ─────────────────────────────────────────────────────────────
     async def soft_deactivate_by_object(
         self,
         *,
-        tenant_id: Optional[int],
+        team_id: Optional[int],
         domain: FileDomain | str,
         object_id: int,
         actor_user_id: int | None = None,
@@ -235,7 +235,7 @@ class FileRepository:
         stmt = (
             update(FileAssetModel)
             .where(
-                self._tenant_id_condition(tenant_id),
+                self._team_id_condition(team_id),
                 FileAssetModel.domain == domain,
                 FileAssetModel.object_id == object_id,
                 FileAssetModel.is_active.is_(True),
@@ -250,12 +250,12 @@ class FileRepository:
 
     # ─────────────────────────────────────────────────────────────
     # 복구: 도메인/오브젝트 스코프 전체
-    #  tenant_id=None 지원
+    #  team_id=None 지원
     # ─────────────────────────────────────────────────────────────
     async def reactivate_by_object(
         self,
         *,
-        tenant_id: Optional[int],
+        team_id: Optional[int],
         domain: FileDomain | str,
         object_id: int,
         actor_user_id: int | None = None,
@@ -268,7 +268,7 @@ class FileRepository:
         stmt = (
             update(FileAssetModel)
             .where(
-                self._tenant_id_condition(tenant_id),
+                self._team_id_condition(team_id),
                 FileAssetModel.domain == domain,
                 FileAssetModel.object_id == object_id,
                 FileAssetModel.is_active.is_(False),

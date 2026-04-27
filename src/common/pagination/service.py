@@ -392,7 +392,7 @@ class CommonService:
         model: Type,
         session: AsyncSession,
         since: datetime,
-        tenant_id: int,
+        team_id: int,
         base_query=None,
         use_soft_delete: bool = True,
         reverse_active: bool = False,
@@ -421,7 +421,7 @@ class CommonService:
             model: SQLAlchemy 모델 클래스
             session: DB 세션
             since: 마지막 sync 시각 (UTC)
-            tenant_id: 팀 ID
+            team_id: 팀 ID
             base_query: 기본 쿼리 (eager loading options 포함, is_active 필터 미포함)
             use_soft_delete: True=soft-delete 도메인, False=hard-delete 도메인
             reverse_active: True=삭제된 목록 뷰 (is_active 반전), use_soft_delete=True일 때만 유효
@@ -441,7 +441,7 @@ class CommonService:
 
             items_query = base_query if base_query is not None else select(model)
             items_query = items_query.where(
-                model.tenant_id == tenant_id,
+                model.team_id == team_id,
                 model.updated_at >= since,
                 model.is_active.is_(items_active),
             )
@@ -457,7 +457,7 @@ class CommonService:
             deleted_query = (
                 select(model.id)
                 .where(
-                    model.tenant_id == tenant_id,
+                    model.team_id == team_id,
                     model.updated_at >= since,
                     model.is_active.is_(removed_active),
                 )
@@ -478,7 +478,7 @@ class CommonService:
             # ─── Hard-delete: 변경된 활성 아이템 + 전체 활성 ID ───
             items_query = base_query if base_query is not None else select(model)
             items_query = items_query.where(
-                model.tenant_id == tenant_id,
+                model.team_id == team_id,
                 model.is_active.is_(True),
                 model.updated_at >= since,
             )
@@ -494,7 +494,7 @@ class CommonService:
             ids_query = (
                 select(model.id)
                 .where(
-                    model.tenant_id == tenant_id,
+                    model.team_id == team_id,
                     model.is_active.is_(True),
                 )
             )

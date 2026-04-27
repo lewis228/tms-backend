@@ -4,11 +4,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Text, Index, UniqueConstraint
 
 from common.model.base_model import Base
-from common.model.tenant_scoped_mixin import TenantScopedMixin
+from common.model.team_scoped_mixin import TeamScopedMixin
 
 
-class VesselModel(Base, TenantScopedMixin):
-    """본선 (Tenant-Scoped)."""
+class VesselModel(Base, TeamScopedMixin):
+    """본선 (Team-Scoped)."""
     __tablename__ = "vessel"
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -17,9 +17,9 @@ class VesselModel(Base, TenantScopedMixin):
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "id", name="uq_vessel_tenant_id_id"),
-        UniqueConstraint("tenant_id", "imo_number", name="uq_vessel_tenant_imo"),
-        Index("ix_vessel_tenant_active_id", "tenant_id", "is_active", "id"),
-        Index("ix_vessel_tenant_name",       "tenant_id", "name"),
-        Index("ix_vessel_tenant_updated_at", "tenant_id", "updated_at"),
+        UniqueConstraint("team_id", "id", name="uq_vessel_team_id_id"),
+        UniqueConstraint("team_id", "imo_number", name="uq_vessel_team_imo"),
+        Index("ix_vessel_team_active_id", "team_id", "is_active", "id"),
+        Index("ix_vessel_team_name",       "team_id", "name"),
+        Index("ix_vessel_team_updated_at", "team_id", "updated_at"),
     )

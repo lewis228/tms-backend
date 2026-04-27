@@ -31,12 +31,12 @@ def _generate_key() -> tuple[str, str]:
 
 
 class ApiKeyService:
-    """tenant scoped API Key 서비스. 생성자에서 ``tenant_id`` 를 받는다."""
+    """team scoped API Key 서비스. 생성자에서 ``team_id`` 를 받는다."""
 
-    def __init__(self, db: AsyncSession, tenant_id: int):
+    def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
-        self.tenant_id = tenant_id
-        self.repo = ApiKeyRepository(db, tenant_id)
+        self.team_id = team_id
+        self.repo = ApiKeyRepository(db, team_id)
 
     async def create(
         self,
@@ -62,8 +62,8 @@ class ApiKeyService:
         row = await self.repo.create(row)
         return ApiKeyCreatedResponseSchema.model_validate(row)
 
-    async def list_by_tenant(self) -> Sequence[ApiKeyListItemResponseSchema]:
-        rows = await self.repo.list_by_tenant()
+    async def list_by_team(self) -> Sequence[ApiKeyListItemResponseSchema]:
+        rows = await self.repo.list_by_team()
         return [ApiKeyListItemResponseSchema.model_validate(r) for r in rows]
 
     async def get(self, api_key_id: int) -> ApiKeyListItemResponseSchema:

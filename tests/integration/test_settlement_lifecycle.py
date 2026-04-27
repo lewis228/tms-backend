@@ -17,25 +17,25 @@ from settlement.service import InvalidSettlementTransition, SettlementService
 
 from tests.integration.factories import (
     make_customer, make_delivery_order, make_driver, make_leg, make_settlement,
-    make_tenant,
+    make_team,
 )
 
 
 async def _new_settlement(db, *, status=SettlementStatus.PENDING):
-    tenant = await make_tenant(db)
-    customer = await make_customer(db, tenant=tenant)
-    do = await make_delivery_order(db, tenant=tenant, customer=customer)
-    driver = await make_driver(db, tenant=tenant)
-    leg = await make_leg(db, tenant=tenant, do=do, driver_id=driver.id)
-    s = await make_settlement(db, tenant=tenant, leg=leg, settlement_status=status)
+    team = await make_team(db)
+    customer = await make_customer(db, team=team)
+    do = await make_delivery_order(db, team=team, customer=customer)
+    driver = await make_driver(db, team=team)
+    leg = await make_leg(db, team=team, do=do, driver_id=driver.id)
+    s = await make_settlement(db, team=team, leg=leg, settlement_status=status)
     await db.commit()
-    return tenant, s
+    return team, s
 
 
 @pytest.mark.asyncio
 async def test_calculate_sets_system_total_and_status(db_session):
-    tenant, s = await _new_settlement(db_session)
-    svc = SettlementService(db_session, tenant.id)
+    team, s = await _new_settlement(db_session)
+    svc = SettlementService(db_session, team.id)
     payload = SettlementCalculateRequest(system_total=Decimal("100.00"), extra_charges=[])
 
     result = await svc.calculate(s.id, payload)
@@ -51,8 +51,8 @@ async def test_calculate_sets_system_total_and_status(db_session):
 
 @pytest.mark.asyncio
 async def test_calculate_blocked_after_approve(db_session):
-    tenant, s = await _new_settlement(db_session, status=SettlementStatus.APPROVED)
-    svc = SettlementService(db_session, tenant.id)
+    team, s = await _new_settlement(db_session, status=SettlementStatus.APPROVED)
+    svc = SettlementService(db_session, team.id)
     payload = SettlementCalculateRequest(system_total=Decimal("50.00"), extra_charges=[])
     with pytest.raises(InvalidSettlementTransition, match="PENDING/CALCULATED"):
         await svc.calculate(s.id, payload)
@@ -60,8 +60,8 @@ async def test_calculate_blocked_after_approve(db_session):
 
 @pytest.mark.asyncio
 async def test_adjust_requires_calculated(db_session):
-    tenant, s = await _new_settlement(db_session)
-    svc = SettlementService(db_session, tenant.id)
+    team, s = await _new_settlement(db_session)
+    svc = SettlementService(db_session, team.id)
     payload = SettlementAdjustRequest(note="dispute", has_flag=True)
     with pytest.raises(InvalidSettlementTransition):
         await svc.adjust(s.id, payload)
@@ -69,11 +69,11 @@ async def test_adjust_requires_calculated(db_session):
 
 @pytest.mark.asyncio
 async def test_approve_then_unapprove(db_session):
-    tenant, s = await _new_settlement(db_session, status=SettlementStatus.CALCULATED)
+    team, s = await _new_settlement(db_session, status=SettlementStatus.CALCULATED)
     s.system_total = Decimal("200.00")
     await db_session.commit()
 
-    svc = SettlementService(db_session, tenant.id)
+    svc = SettlementService(db_session, team.id)
 
     approved = await svc.approve(s.id, SettlementApproveRequest())
     assert approved.settlement_status == SettlementStatus.APPROVED
@@ -87,7 +87,7 @@ async def test_approve_then_unapprove(db_session):
 
 @pytest.mark.asyncio
 async def test_unapprove_requires_approved(db_session):
-    tenant, s = await _new_settlement(db_session, status=SettlementStatus.CALCULATED)
-    svc = SettlementService(db_session, tenant.id)
+    team, s = await _new_settlement(db_session, status=SettlementStatus.CALCULATED)
+    svc = SettlementService(db_session, team.id)
     with pytest.raises(InvalidSettlementTransition, match="APPROVED"):
         await svc.unapprove(s.id, SettlementUnapproveRequest(reason="oops"))

@@ -26,7 +26,7 @@ from location.const.kind import LocationKind
 from location.model import LocationModel
 from settlement.const.status import SettlementStatus
 from settlement.model import SettlementModel
-from tenant.model import TenantModel, UserTenantModel
+from team.model import TeamModel, UserTeamModel
 from terminal.model import TerminalModel
 from user.const.roles import RolesEnum
 from user.model import UserModel
@@ -37,8 +37,8 @@ def _rand(prefix: str = "") -> str:
     return f"{prefix}{secrets.token_hex(4)}"
 
 
-async def make_tenant(db: AsyncSession, *, name: str | None = None) -> TenantModel:
-    t = TenantModel(name=name or _rand("tenant-"))
+async def make_team(db: AsyncSession, *, name: str | None = None) -> TeamModel:
+    t = TeamModel(name=name or _rand("team-"))
     db.add(t)
     await db.flush()
     return t
@@ -63,13 +63,13 @@ async def make_user(
     return u
 
 
-async def make_user_tenant(
-    db: AsyncSession, *, user: UserModel, tenant: TenantModel,
+async def make_user_team(
+    db: AsyncSession, *, user: UserModel, team: TeamModel,
     permission_group_id: int | None = None,
-) -> UserTenantModel:
-    ut = UserTenantModel(
+) -> UserTeamModel:
+    ut = UserTeamModel(
         user_id=user.id,
-        tenant_id=tenant.id,
+        team_id=team.id,
         permission_group_id=permission_group_id,
     )
     db.add(ut)
@@ -78,50 +78,50 @@ async def make_user_tenant(
 
 
 async def make_customer(
-    db: AsyncSession, *, tenant: TenantModel, name: str | None = None,
+    db: AsyncSession, *, team: TeamModel, name: str | None = None,
 ) -> CustomerModel:
-    c = CustomerModel(tenant_id=tenant.id, name=name or _rand("customer-"))
+    c = CustomerModel(team_id=team.id, name=name or _rand("customer-"))
     db.add(c)
     await db.flush()
     return c
 
 
 async def make_terminal(
-    db: AsyncSession, *, tenant: TenantModel, name: str | None = None,
+    db: AsyncSession, *, team: TeamModel, name: str | None = None,
 ) -> TerminalModel:
-    t = TerminalModel(tenant_id=tenant.id, name=name or _rand("terminal-"))
+    t = TerminalModel(team_id=team.id, name=name or _rand("terminal-"))
     db.add(t)
     await db.flush()
     return t
 
 
 async def make_vessel(
-    db: AsyncSession, *, tenant: TenantModel, name: str | None = None,
+    db: AsyncSession, *, team: TeamModel, name: str | None = None,
 ) -> VesselModel:
-    v = VesselModel(tenant_id=tenant.id, name=name or _rand("vessel-"))
+    v = VesselModel(team_id=team.id, name=name or _rand("vessel-"))
     db.add(v)
     await db.flush()
     return v
 
 
 async def make_driver(
-    db: AsyncSession, *, tenant: TenantModel, user: UserModel | None = None,
+    db: AsyncSession, *, team: TeamModel, user: UserModel | None = None,
 ) -> DriverModel:
     if user is None:
         user = await make_user(db, role=RolesEnum.DRIVER)
-    d = DriverModel(tenant_id=tenant.id, user_id=user.id)
+    d = DriverModel(team_id=team.id, user_id=user.id)
     db.add(d)
     await db.flush()
     return d
 
 
 async def make_location(
-    db: AsyncSession, *, tenant: TenantModel,
+    db: AsyncSession, *, team: TeamModel,
     kind: LocationKind = LocationKind.YARD, name: str | None = None,
     customer_id: int | None = None,
 ) -> LocationModel:
     loc = LocationModel(
-        tenant_id=tenant.id,
+        team_id=team.id,
         name=name or _rand("location-"),
         kind=kind,
         customer_id=customer_id,
@@ -132,7 +132,7 @@ async def make_location(
 
 
 async def make_delivery_order(
-    db: AsyncSession, *, tenant: TenantModel, customer: CustomerModel,
+    db: AsyncSession, *, team: TeamModel, customer: CustomerModel,
     direction: ShipmentDirection = ShipmentDirection.IMPORT,
     status: DeliveryStatus = DeliveryStatus.PLANNING,
     delivery_location_id: int | None = None,
@@ -140,7 +140,7 @@ async def make_delivery_order(
     **kw,
 ) -> DeliveryOrderModel:
     do = DeliveryOrderModel(
-        tenant_id=tenant.id,
+        team_id=team.id,
         customer_id=customer.id,
         direction=direction,
         status=status,
@@ -154,7 +154,7 @@ async def make_delivery_order(
 
 
 async def make_leg(
-    db: AsyncSession, *, tenant: TenantModel, do: DeliveryOrderModel,
+    db: AsyncSession, *, team: TeamModel, do: DeliveryOrderModel,
     step: DeliveryStatus = DeliveryStatus.DISPATCHED,
     move_type: MoveType = MoveType.LOADED,
     service_type: ServiceType = ServiceType.LIVE,
@@ -164,7 +164,7 @@ async def make_leg(
     **kw,
 ) -> LegModel:
     leg = LegModel(
-        tenant_id=tenant.id,
+        team_id=team.id,
         delivery_order_id=do.id,
         step=step,
         move_type=move_type,
@@ -180,11 +180,11 @@ async def make_leg(
 
 
 async def make_settlement(
-    db: AsyncSession, *, tenant: TenantModel, leg: LegModel,
+    db: AsyncSession, *, team: TeamModel, leg: LegModel,
     settlement_status: SettlementStatus = SettlementStatus.PENDING,
 ) -> SettlementModel:
     s = SettlementModel(
-        tenant_id=tenant.id,
+        team_id=team.id,
         leg_id=leg.id,
         settlement_status=settlement_status,
     )

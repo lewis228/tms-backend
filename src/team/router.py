@@ -1,4 +1,4 @@
-# src/tenant/router.py
+# src/team/router.py
 from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,16 +15,16 @@ from user.schemas.response import UserResponseSchema as AuthUserResponseSchema  
 
 from rbac.dependencies.guards import permission_guard
 from rbac.const.const import (
-    TENANT_RENAME, TENANT_DELETE,
-    TENANT_MEMBER_INVITE, TENANT_MEMBER_REMOVE, TENANT_MEMBER_PERMISSION_ASSIGN,
+    TEAM_RENAME, TEAM_DELETE,
+    TEAM_MEMBER_INVITE, TEAM_MEMBER_REMOVE, TEAM_MEMBER_PERMISSION_ASSIGN,
 )
 
-from tenant.service import TenantService
-from tenant.schemas.request import (
+from team.service import TeamService
+from team.schemas.request import (
     PaginateTeamMemberRequestSchema,
     PaginateTeamRequestSchema,
-    TenantCreateRequestSchema,
-    TenantRenameRequestSchema,
+    TeamCreateRequestSchema,
+    TeamRenameRequestSchema,
     InviteMemberRequestSchema,
     AssignPermissionGroupRequestSchema,
     OnboardingUpdateRequestSchema,
@@ -34,13 +34,13 @@ from file.service import FileService
 from file.schemas.request import UploadUrlRequestSchema
 from file.schemas.response import UploadUrlResponseSchema
 
-from tenant.schemas.response import (
-    TenantListItemResponseSchema,
-    UserTenantResponseSchema,
-    TenantDetailResponseSchema,
+from team.schemas.response import (
+    TeamListItemResponseSchema,
+    UserTeamResponseSchema,
+    TeamDetailResponseSchema,
     TeamRenameResponseSchema,
-    TenantDeleteResponseSchema,
-    TenantReactivateResponseSchema,
+    TeamDeleteResponseSchema,
+    TeamReactivateResponseSchema,
     TeamMemberInviteResponseSchema,
     TeamMemberRemoveResponseSchema,
     TeamMemberPermissionResponseSchema,
@@ -48,14 +48,14 @@ from tenant.schemas.response import (
     TeamUsageStatsResponseSchema,
     TimezoneItemSchema,
 )
-from tenant.service import get_timezone_list
+from team.service import get_timezone_list
 
 
-router = APIRouter(prefix="/api/v1/tenants", tags=["tenants"])
+router = APIRouter(prefix="/api/v1/teams", tags=["teams"])
 
 
 # ─────────────────────────────────────────────────────────
-# ▼ 시간대 목록 (참조 데이터 — tenant_id 불필요)
+# ▼ 시간대 목록 (참조 데이터 — team_id 불필요)
 # ─────────────────────────────────────────────────────────
 @router.get("/timezones", response_model=list[TimezoneItemSchema])
 async def list_timezones(
@@ -68,44 +68,44 @@ async def list_timezones(
 # ─────────────────────────────────────────────────────────
 # ▼ 커서 페이지네이션: 마이 팀 목록
 # ─────────────────────────────────────────────────────────
-@router.get("/my-tenants", response_model=CursorPaginationResult[TenantListItemResponseSchema])
+@router.get("/my-teams", response_model=CursorPaginationResult[TeamListItemResponseSchema])
 async def get_my_teams_cursor(
     request: PaginateTeamRequestSchema = Depends(),
     _1: None = Depends(access_token),
     me: AuthUserResponseSchema = Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db),  #  SELECT → get_read_db
 ):
-    svc = TenantService(db)
-    return await svc.list_my_tenants_paginated(int(me.id), request)
+    svc = TeamService(db)
+    return await svc.list_my_teams_paginated(int(me.id), request)
 
 
 # ─────────────────────────────────────────────────────────
 # ▼ 단일 팀 상세 화면 (product 패턴 통일)
 # ─────────────────────────────────────────────────────────
-@router.get("/{tenant_id}", response_model=TenantDetailResponseSchema)
-async def get_tenant_detail(
-    tenant_id: int,
+@router.get("/{team_id}", response_model=TeamDetailResponseSchema)
+async def get_team_detail(
+    team_id: int,
     _1: None = Depends(access_token),
     db: AsyncSession = Depends(get_read_db),  #  SELECT → get_read_db
 ):
-    svc = TenantService(db)
-    return await svc.get_tenant(tenant_id)
+    svc = TeamService(db)
+    return await svc.get_team(team_id)
 
 
 # ─────────────────────────────────────────────────────────
 # ▼ 팀 멤버 목록 커서 페이지네이션
 # ─────────────────────────────────────────────────────────
-@router.get("/{tenant_id}/members", response_model=CursorPaginationResult[UserTenantResponseSchema])
+@router.get("/{team_id}/members", response_model=CursorPaginationResult[UserTeamResponseSchema])
 async def list_team_members(
-    tenant_id: int,
+    team_id: int,
     request: PaginateTeamMemberRequestSchema = Depends(),
     _1: None = Depends(access_token),
     me: AuthUserResponseSchema = Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db),  #  SELECT → get_read_db
 ):
-    svc = TenantService(db)
-    return await svc.list_tenant_members_paginated(
-        tenant_id=tenant_id,
+    svc = TeamService(db)
+    return await svc.list_team_members_paginated(
+        team_id=team_id,
         request=request,
         actor_user_id=int(me.id),
     )
@@ -114,18 +114,18 @@ async def list_team_members(
 # ─────────────────────────────────────────────────────────
 # ▼ 팀 멤버 Delta Sync (hard-delete → all_ids)
 # ─────────────────────────────────────────────────────────
-@router.get("/{tenant_id}/members/sync", response_model=SyncWithAllIdsResponse[UserTenantResponseSchema])
+@router.get("/{team_id}/members/sync", response_model=SyncWithAllIdsResponse[UserTeamResponseSchema])
 async def sync_team_members(
-    tenant_id: int,
+    team_id: int,
     since: str,
     _1: None = Depends(access_token),
     me: AuthUserResponseSchema = Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db),
 ):
     """팀 멤버 Delta Sync (since 이후 변경분 + 전체 활성 ID)"""
-    svc = TenantService(db)
+    svc = TeamService(db)
     return await svc.sync_members_delta(
-        tenant_id=tenant_id,
+        team_id=team_id,
         since_str=since,
         actor_user_id=int(me.id),
     )
@@ -134,36 +134,36 @@ async def sync_team_members(
 # ─────────────────────────────────────────────────────────
 # 생성 / 수정 / 삭제
 # ─────────────────────────────────────────────────────────
-@router.post("", response_model=TenantDetailResponseSchema)
-async def create_tenant(
-    payload: TenantCreateRequestSchema,
+@router.post("", response_model=TeamDetailResponseSchema)
+async def create_team(
+    payload: TeamCreateRequestSchema,
     _1: None = Depends(access_token),
     me: AuthUserResponseSchema = Depends(get_current_user),
     db: AsyncSession = Depends(get_write_db),  #  INSERT → get_write_db
 ):
-    svc = TenantService(db)
-    return await svc.create_tenant(name=payload.name, creator_user_id=int(me.id))
+    svc = TeamService(db)
+    return await svc.create_team(name=payload.name, creator_user_id=int(me.id))
 
 
-@router.put("/{tenant_id}", response_model=TeamRenameResponseSchema)
-async def rename_tenant(
-    tenant_id: int,
-    payload: TenantRenameRequestSchema = None,
+@router.put("/{team_id}", response_model=TeamRenameResponseSchema)
+async def rename_team(
+    team_id: int,
+    payload: TeamRenameRequestSchema = None,
     _1: None = Depends(access_token),
-    _2: None = Depends(permission_guard(TENANT_RENAME)),
+    _2: None = Depends(permission_guard(TEAM_RENAME)),
     db: AsyncSession = Depends(get_write_db),
     me: AuthUserResponseSchema = Depends(get_current_user),
 ):
     """팀 이름 변경"""
-    svc = TenantService(db)
-    return await svc.rename_tenant(tenant_id=tenant_id, name=payload.name, actor_user_id=int(me.id))
+    svc = TeamService(db)
+    return await svc.rename_team(team_id=team_id, name=payload.name, actor_user_id=int(me.id))
 
 
-@router.delete("/{tenant_id}", response_model=TenantDeleteResponseSchema)
-async def delete_tenant(
-    tenant_id: int,
+@router.delete("/{team_id}", response_model=TeamDeleteResponseSchema)
+async def delete_team(
+    team_id: int,
     _1: None = Depends(access_token),
-    _2: None = Depends(permission_guard(TENANT_DELETE)),
+    _2: None = Depends(permission_guard(TEAM_DELETE)),
     db: AsyncSession = Depends(get_write_db),
     me: AuthUserResponseSchema = Depends(get_current_user),
 ):
@@ -171,92 +171,92 @@ async def delete_tenant(
     팀 삭제 (소프트)
     - 비활성화 후 purge_at 예약
     """
-    svc = TenantService(db)
-    return await svc.delete_tenant(tenant_id=tenant_id, actor_user_id=int(me.id))
+    svc = TeamService(db)
+    return await svc.delete_team(team_id=team_id, actor_user_id=int(me.id))
 
 
-@router.post("/{tenant_id}/reactivate", response_model=TenantReactivateResponseSchema)
-async def reactivate_tenant(
-    tenant_id: int,
+@router.post("/{team_id}/reactivate", response_model=TeamReactivateResponseSchema)
+async def reactivate_team(
+    team_id: int,
     _1: None = Depends(access_token),
     db: AsyncSession = Depends(get_write_db),  #  UPDATE → get_write_db
 ):
     """비활성화된 팀 재활성화"""
-    svc = TenantService(db)
-    return await svc.reactivate_tenant(tenant_id=tenant_id)
+    svc = TeamService(db)
+    return await svc.reactivate_team(team_id=team_id)
 
 
-@router.post("/{tenant_id}/members", response_model=TeamMemberInviteResponseSchema)
+@router.post("/{team_id}/members", response_model=TeamMemberInviteResponseSchema)
 async def invite_member(
-    tenant_id: int,
+    team_id: int,
     payload: InviteMemberRequestSchema = None,
     _1: None = Depends(access_token),
-    _2: None = Depends(permission_guard(TENANT_MEMBER_INVITE)),
+    _2: None = Depends(permission_guard(TEAM_MEMBER_INVITE)),
     db: AsyncSession = Depends(get_write_db),  #  INSERT → get_write_db
     redis: Redis = Depends(get_write_redis),   #  캐시 무효화 → get_write_redis
 ):
     """팀 멤버 초대"""
-    svc = TenantService(db, redis)
+    svc = TeamService(db, redis)
     return await svc.invite_member(
-        tenant_id=tenant_id,
+        team_id=team_id,
         user_id=payload.user_id,
         permission_group_id=payload.permission_group_id,
     )
 
 
-@router.delete("/{tenant_id}/members/{user_id}", response_model=TeamMemberRemoveResponseSchema)
+@router.delete("/{team_id}/members/{user_id}", response_model=TeamMemberRemoveResponseSchema)
 async def remove_member(
-    tenant_id: int,
+    team_id: int,
     user_id: int = None,
     _1: None = Depends(access_token),
-    _2: None = Depends(permission_guard(TENANT_MEMBER_REMOVE)),
+    _2: None = Depends(permission_guard(TEAM_MEMBER_REMOVE)),
     db: AsyncSession = Depends(get_write_db),  #  DELETE → get_write_db
     redis: Redis = Depends(get_write_redis),   #  캐시 무효화 → get_write_redis
 ):
     """팀 멤버 제거"""
-    svc = TenantService(db, redis)
-    return await svc.remove_member(tenant_id=tenant_id, target_user_id=user_id)
+    svc = TeamService(db, redis)
+    return await svc.remove_member(team_id=team_id, target_user_id=user_id)
 
 
-@router.post("/{tenant_id}/leave", response_model=TeamMemberRemoveResponseSchema)
+@router.post("/{team_id}/leave", response_model=TeamMemberRemoveResponseSchema)
 async def leave_team(
-    tenant_id: int,
+    team_id: int,
     _1: None = Depends(access_token),
     me: AuthUserResponseSchema = Depends(get_current_user),
     db: AsyncSession = Depends(get_write_db),  #  DELETE → get_write_db
     redis: Redis = Depends(get_write_redis),   #  캐시 무효화 → get_write_redis
 ):
     """팀 탈퇴 (본인)"""
-    svc = TenantService(db, redis)
-    return await svc.leave_team(tenant_id=tenant_id, actor_user_id=int(me.id))
+    svc = TeamService(db, redis)
+    return await svc.leave_team(team_id=team_id, actor_user_id=int(me.id))
 
 
-@router.put("/{tenant_id}/members/{user_id}/permission-group", response_model=TeamMemberPermissionResponseSchema)
+@router.put("/{team_id}/members/{user_id}/permission-group", response_model=TeamMemberPermissionResponseSchema)
 async def assign_permission_group(
-    tenant_id: int,
+    team_id: int,
     user_id: int = None,
     payload: AssignPermissionGroupRequestSchema = None,
     _1: None = Depends(access_token),
-    _2: None = Depends(permission_guard(TENANT_MEMBER_PERMISSION_ASSIGN)),
+    _2: None = Depends(permission_guard(TEAM_MEMBER_PERMISSION_ASSIGN)),
     db: AsyncSession = Depends(get_write_db),  #  UPDATE → get_write_db
     redis: Redis = Depends(get_write_redis),   #  캐시 무효화 → get_write_redis
 ):
     """멤버 권한 그룹 변경"""
-    svc = TenantService(db, redis)
+    svc = TeamService(db, redis)
     return await svc.assign_permission_group(
-        tenant_id=tenant_id, target_user_id=user_id, permission_group_id=payload.permission_group_id
+        team_id=team_id, target_user_id=user_id, permission_group_id=payload.permission_group_id
     )
 
 
 # ─────────────────────────────────────────────────────────
 # ▼ 팀 이미지 업로드용 Presigned URL 발급
 # ─────────────────────────────────────────────────────────
-@router.post("/{tenant_id}/upload-urls", response_model=UploadUrlResponseSchema)
-async def get_tenant_upload_urls(
-    tenant_id: int,
+@router.post("/{team_id}/upload-urls", response_model=UploadUrlResponseSchema)
+async def get_team_upload_urls(
+    team_id: int,
     body: UploadUrlRequestSchema,
     _1: None = Depends(access_token),
-    _2: None = Depends(permission_guard(TENANT_RENAME)),
+    _2: None = Depends(permission_guard(TEAM_RENAME)),
     db: AsyncSession = Depends(get_read_db),
 ):
     """팀 이미지 업로드용 Presigned URL 발급"""
@@ -268,46 +268,46 @@ async def get_tenant_upload_urls(
 # ─────────────────────────────────────────────────────────
 # ▼ 팀 설정 업데이트
 # ─────────────────────────────────────────────────────────
-@router.patch("/{tenant_id}/settings", response_model=TenantDetailResponseSchema)
+@router.patch("/{team_id}/settings", response_model=TeamDetailResponseSchema)
 async def update_team_settings(
-    tenant_id: int,
+    team_id: int,
     payload: TeamSettingsUpdateRequestSchema,
     _1: None = Depends(access_token),
-    _2: None = Depends(permission_guard(TENANT_RENAME)),
+    _2: None = Depends(permission_guard(TEAM_RENAME)),
     db: AsyncSession = Depends(get_write_db),
     me: AuthUserResponseSchema = Depends(get_current_user),
 ):
     """팀 설정 업데이트 (전달된 필드만 반영)"""
-    svc = TenantService(db)
-    return await svc.update_team_settings(tenant_id=tenant_id, payload=payload, actor_user_id=int(me.id))
+    svc = TeamService(db)
+    return await svc.update_team_settings(team_id=team_id, payload=payload, actor_user_id=int(me.id))
 
 
 # ─────────────────────────────────────────────────────────
 # ▼ 팀 사용량 통계
 # ─────────────────────────────────────────────────────────
-@router.get("/{tenant_id}/usage-stats", response_model=TeamUsageStatsResponseSchema)
-async def get_tenant_usage_stats(
-    tenant_id: int,
+@router.get("/{team_id}/usage-stats", response_model=TeamUsageStatsResponseSchema)
+async def get_team_usage_stats(
+    team_id: int,
     _1: None = Depends(access_token),
     db: AsyncSession = Depends(get_read_db),
 ):
     """팀 사용량 통계 조회"""
-    svc = TenantService(db)
-    return await svc.get_usage_stats(tenant_id)
+    svc = TeamService(db)
+    return await svc.get_usage_stats(team_id)
 
 
 # ─────────────────────────────────────────────────────────
 # ▼ 온보딩 상태 업데이트
 # ─────────────────────────────────────────────────────────
-@router.patch("/{tenant_id}/onboarding", response_model=OnboardingUpdateResponseSchema)
+@router.patch("/{team_id}/onboarding", response_model=OnboardingUpdateResponseSchema)
 async def update_onboarding(
-    tenant_id: int,
+    team_id: int,
     payload: OnboardingUpdateRequestSchema,
     _1: None = Depends(access_token),
     db: AsyncSession = Depends(get_write_db),
 ):
     """온보딩 상태 업데이트 (팀 멤버 누구나 가능)"""
-    svc = TenantService(db)
-    return await svc.update_onboarding(tenant_id=tenant_id, payload=payload)
+    svc = TeamService(db)
+    return await svc.update_onboarding(team_id=team_id, payload=payload)
 
 

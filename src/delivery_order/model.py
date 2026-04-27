@@ -8,14 +8,14 @@ from sqlalchemy import (
 )
 
 from common.model.base_model import Base
-from common.model.tenant_scoped_mixin import TenantScopedMixin
+from common.model.team_scoped_mixin import TeamScopedMixin
 from delivery_order.const.status import (
     DeliveryStatus, ShipmentDirection, ContainerSize,
 )
 
 
-class DeliveryOrderModel(Base, TenantScopedMixin):
-    """D/O (Tenant-Scoped). 상태 머신 + 게이트는 service 에서."""
+class DeliveryOrderModel(Base, TeamScopedMixin):
+    """D/O (Team-Scoped). 상태 머신 + 게이트는 service 에서."""
     __tablename__ = "delivery_order"
 
     # ── 상태 / 방향 ─────────────────────────────────────────────
@@ -81,13 +81,13 @@ class DeliveryOrderModel(Base, TenantScopedMixin):
     internal_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "id", name="uq_delivery_order_tenant_id_id"),
-        Index("ix_do_tenant_status",         "tenant_id", "status"),
-        Index("ix_do_tenant_direction",      "tenant_id", "direction"),
-        Index("ix_do_tenant_customer",       "tenant_id", "customer_id"),
-        Index("ix_do_tenant_container",      "tenant_id", "container_number"),
-        Index("ix_do_tenant_active_id",      "tenant_id", "is_active", "id"),
-        Index("ix_do_tenant_demurrage_lfd",  "tenant_id", "demurrage_lfd"),
-        Index("ix_do_tenant_detention_lfd",  "tenant_id", "detention_lfd"),
-        Index("ix_do_tenant_updated_at",     "tenant_id", "updated_at"),
+        UniqueConstraint("team_id", "id", name="uq_delivery_order_team_id_id"),
+        Index("ix_do_team_status",         "team_id", "status"),
+        Index("ix_do_team_direction",      "team_id", "direction"),
+        Index("ix_do_team_customer",       "team_id", "customer_id"),
+        Index("ix_do_team_container",      "team_id", "container_number"),
+        Index("ix_do_team_active_id",      "team_id", "is_active", "id"),
+        Index("ix_do_team_demurrage_lfd",  "team_id", "demurrage_lfd"),
+        Index("ix_do_team_detention_lfd",  "team_id", "detention_lfd"),
+        Index("ix_do_team_updated_at",     "team_id", "updated_at"),
     )

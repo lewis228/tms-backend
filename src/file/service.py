@@ -19,9 +19,9 @@ MinIO 기반 파일 서비스
 - 이렇게 해야 DB 롤백 시 MinIO 파일이 남아있어 404 방지
 - MinIO 삭제 실패 시 고아 파일만 남음 (새벽 정리 스케줄러로 처리)
 
- tenant_id=None 지원:
-- User 도메인은 팀과 무관하므로 tenant_id=None
-- 경로: private/{domain}/{object_id}/... (tenant- prefix 없음)
+ team_id=None 지원:
+- User 도메인은 팀과 무관하므로 team_id=None
+- 경로: private/{domain}/{object_id}/... (team- prefix 없음)
 
 워크플로우:
 1. 클라이언트가 업로드 URL 요청 → FastAPI가 presigned PUT URL 발급 (+ 검증)
@@ -76,9 +76,9 @@ class FileService:
     - copy_files: 기존 파일 복사 (제품 복제용)
     - save_oauth_profile_image: OAuth 프로필 이미지 저장
     
-     tenant_id=None 지원:
-    - User 도메인은 tenant_id=None으로 처리
-    - 경로에서 tenant- prefix 생략
+     team_id=None 지원:
+    - User 도메인은 team_id=None으로 처리
+    - 경로에서 team- prefix 생략
     
     ⚠️ 트랜잭션 안전성:
     - DB 작업 먼저, MinIO 삭제는 flush() 성공 후
@@ -97,7 +97,7 @@ class FileService:
     async def direct_upload(
         self,
         *,
-        tenant_id: int | None,
+        team_id: int | None,
         domain: FileDomain,
         object_id: int,
         file_bytes: bytes,
@@ -123,14 +123,14 @@ class FileService:
         stored_name = f"{secrets.token_urlsafe(8)}_{stem}{ext}"
 
         kb = ObjectKeyBuilder(
-            tenant_id=tenant_id, domain=domain, object_id=object_id,
+            team_id=team_id, domain=domain, object_id=object_id,
             subdir=subdir, is_public=is_public,
         )
         key = kb.key(stored_name)
 
         # DB 행 먼저 (flush) — 실패 시 S3 호출 없이 롤백
         row = FileAssetModel(
-            tenant_id=tenant_id,
+            team_id=team_id,
             domain=domain,
             object_id=object_id,
             subdir=subdir,
@@ -209,10 +209,10 @@ class FileService:
     # ▼ 커서 페이지네이션 (기존과 동일)
     # ─────────────────────────────────────────────────────────────
     async def list_paginated(
-        self, *, tenant_id: int, request: PaginateFileListRequestSchema
+        self, *, team_id: int, request: PaginateFileListRequestSchema
     ) -> CursorPaginationResult[FileInfoResponseSchema]:
         assert self.repo, "This method requires DB session"
-        page = await self.repo.list_files_paginated(tenant_id=tenant_id, request=request)
+        page = await self.repo.list_files_paginated(team_id=team_id, request=request)
         items = [FileInfoResponseSchema.model_validate(x) for x in page.data]
         return CursorPaginationResult[FileInfoResponseSchema](meta=page.meta, data=items)
 
@@ -283,7 +283,7 @@ class FileService:
     async def commit(
         self,
         *,
-        tenant_id: Optional[int],  #  None 허용 (User 도메인용)
+        team_id: Optional[int],  #  None 허용 (User 도메인용)
         domain: FileDomain,
         object_id: int,
         subdir: Optional[str],
@@ -299,8 +299,8 @@ class FileService:
         - 기존: 토큰 폴더 스캔 → 폴더 내 모든 파일 커밋
         - 변경: 개별 키 직접 처리 → 프론트에서 선택한 파일만 커밋
 
-         tenant_id=None 지원:
-        - User 도메인은 tenant_id=None으로 처리
+         team_id=None 지원:
+        - User 도메인은 team_id=None으로 처리
         - 경로: private/{domain}/{object_id}/...
 
         ⚠️ 트랜잭션 안전성:
@@ -330,7 +330,7 @@ class FileService:
         # ─────────────────────────────────────────────────────────
         if remove_file_ids:
             files_to_remove = await self.repo.select_by_ids(
-                tenant_id=tenant_id,  #  None 가능
+                team_id=team_id,  #  None 가능
                 ids=remove_file_ids
             )
             paths_to_delete = [f.logical_path for f in files_to_remove]
@@ -339,7 +339,7 @@ class FileService:
             # 2. [DB] 기존 file_asset 레코드 삭제 (MinIO 삭제 전!)
             # ─────────────────────────────────────────────────────
             await self.repo.delete_files_by_ids(
-                tenant_id=tenant_id,  #  None 가능
+                team_id=team_id,  #  None 가능
                 ids=remove_file_ids
             )
 
@@ -347,7 +347,7 @@ class FileService:
         # 3-5. 새 파일 처리 (temp → 영구) - 개별 키 직접 처리
         # ─────────────────────────────────────────────────────────
         key_builder = ObjectKeyBuilder(
-            tenant_id=tenant_id,  #  None 가능
+            team_id=team_id,  #  None 가능
             domain=domain,
             object_id=object_id,
             subdir=subdir or "",
@@ -377,7 +377,7 @@ class FileService:
                     original_filename=filename,
                     original_size=size,
                     key_builder=key_builder,
-                    tenant_id=tenant_id,
+                    team_id=team_id,
                     domain=domain,
                     object_id=object_id,
                     subdir=subdir or "",
@@ -391,7 +391,7 @@ class FileService:
                     filename=filename,
                     size=size,
                     key_builder=key_builder,
-                    tenant_id=tenant_id,
+                    team_id=team_id,
                     domain=domain,
                     object_id=object_id,
                     subdir=subdir or "",
@@ -445,7 +445,7 @@ class FileService:
     async def copy_files(
         self,
         *,
-        tenant_id: int,
+        team_id: int,
         source_file_ids: list[int],
         target_domain: FileDomain,
         target_object_id: int,
@@ -459,7 +459,7 @@ class FileService:
         사용 예시:
             # 제품 복제 시 기존 이미지 복사
             await self.file_svc.copy_files(
-                tenant_id=self.tenant_id,
+                team_id=self.team_id,
                 source_file_ids=[1, 2, 3],
                 target_domain=FileDomain.PRODUCT,
                 target_object_id=new_product.id,
@@ -474,7 +474,7 @@ class FileService:
         4. flush()
         
         Args:
-            tenant_id: 팀 ID
+            team_id: 팀 ID
             source_file_ids: 복사할 원본 파일 ID 목록
             target_domain: 대상 도메인 (예: FileDomain.PRODUCT)
             target_object_id: 대상 오브젝트 ID (예: 새 제품 ID)
@@ -493,7 +493,7 @@ class FileService:
         # ─────────────────────────────────────────────────────────
         # 1. 소스 파일 정보 조회
         # ─────────────────────────────────────────────────────────
-        source_files = await self.repo.select_by_ids(tenant_id=tenant_id, ids=source_file_ids)
+        source_files = await self.repo.select_by_ids(team_id=team_id, ids=source_file_ids)
         if not source_files:
             return []
         
@@ -501,7 +501,7 @@ class FileService:
         # 2. 대상 키 빌더 생성
         # ─────────────────────────────────────────────────────────
         key_builder = ObjectKeyBuilder(
-            tenant_id=tenant_id,
+            team_id=team_id,
             domain=target_domain,
             object_id=target_object_id,
             subdir=target_subdir,
@@ -541,7 +541,7 @@ class FileService:
             # 4. 새 DB 메타 생성
             # ─────────────────────────────────────────────────────
             new_asset = FileAssetModel(
-                tenant_id=tenant_id,
+                team_id=team_id,
                 domain=target_domain,
                 object_id=target_object_id,
                 subdir=target_subdir,
@@ -617,10 +617,10 @@ class FileService:
         result: ProcessedImage = process_image_if_needed(image_bytes, "avatar.jpg")
         
         # ─────────────────────────────────────────────────────────
-        # 3. MinIO 경로 생성 (User는 tenant_id=None)
+        # 3. MinIO 경로 생성 (User는 team_id=None)
         # ─────────────────────────────────────────────────────────
         key_builder = ObjectKeyBuilder(
-            tenant_id=None,  # User는 플랫폼 전역
+            team_id=None,  # User는 플랫폼 전역
             domain=FileDomain.USER,
             object_id=user_id,
             subdir="profile",
@@ -663,7 +663,7 @@ class FileService:
         # 5. DB 메타 생성 + 저장
         # ─────────────────────────────────────────────────────────
         asset = FileAssetModel(
-            tenant_id=None,  # User는 플랫폼 전역
+            team_id=None,  # User는 플랫폼 전역
             domain=FileDomain.USER,
             object_id=user_id,
             subdir="profile",
@@ -689,7 +689,7 @@ class FileService:
         original_filename: str,
         original_size: int,
         key_builder: ObjectKeyBuilder,
-        tenant_id: Optional[int],  #  None 가능
+        team_id: Optional[int],  #  None 가능
         domain: FileDomain,
         object_id: int,
         subdir: str,
@@ -750,7 +750,7 @@ class FileService:
         
         # DB 메타 생성
         return FileAssetModel(
-            tenant_id=tenant_id,  #  None 가능
+            team_id=team_id,  #  None 가능
             domain=domain,
             object_id=object_id,
             subdir=subdir,
@@ -769,7 +769,7 @@ class FileService:
         filename: str,
         size: int,
         key_builder: ObjectKeyBuilder,
-        tenant_id: Optional[int],  #  None 가능
+        team_id: Optional[int],  #  None 가능
         domain: FileDomain,
         object_id: int,
         subdir: str,
@@ -804,7 +804,7 @@ class FileService:
         
         # DB 메타 생성
         return FileAssetModel(
-            tenant_id=tenant_id,  #  None 가능
+            team_id=team_id,  #  None 가능
             domain=domain,
             object_id=object_id,
             subdir=subdir,
@@ -829,7 +829,7 @@ class FileService:
         - private/ 파일: presigned URL (서명 있음, 만료 있음)
 
         Args:
-            logical_path: DB에 저장된 오브젝트 키 (예: "private/tenant-7/product/123/images/a.jpg")
+            logical_path: DB에 저장된 오브젝트 키 (예: "private/team-7/product/123/images/a.jpg")
             ttl: URL 유효시간 (초) — private 파일에만 적용
 
         Returns:
@@ -852,7 +852,7 @@ class FileService:
     # ─────────────────────────────────────────────────────────────
     async def _remove_files(
         self, *, 
-        tenant_id: Optional[int],  #  None 가능
+        team_id: Optional[int],  #  None 가능
         file_ids: list[int]
     ) -> None:
         """
@@ -868,11 +868,11 @@ class FileService:
         assert self.repo, "This method requires DB session"
 
         # 1. 삭제 대상 조회 (logical_path 필요)
-        files = await self.repo.select_by_ids(tenant_id=tenant_id, ids=file_ids)
+        files = await self.repo.select_by_ids(team_id=team_id, ids=file_ids)
         paths_to_delete = [f.logical_path for f in files]
 
         # 2. [DB] 메타 삭제 먼저
-        await self.repo.delete_files_by_ids(tenant_id=tenant_id, ids=file_ids)
+        await self.repo.delete_files_by_ids(team_id=team_id, ids=file_ids)
         
         # 3. [DB] flush()
         await self.db.flush()
@@ -888,11 +888,11 @@ class FileService:
     # ▼ 7) 리스트 (기존과 동일)
     # ─────────────────────────────────────────────────────────────
     async def list(
-        self, *, tenant_id: int, domain: str, object_id: int, subdir: Optional[str]
+        self, *, team_id: int, domain: str, object_id: int, subdir: Optional[str]
     ) -> list[FileAssetModel]:
         assert self.repo, "This method requires DB session"
         return await self.repo.list_files(
-            tenant_id=tenant_id, domain=domain, object_id=object_id, subdir=subdir
+            team_id=team_id, domain=domain, object_id=object_id, subdir=subdir
         )
 
     # ─────────────────────────────────────────────────────────────
@@ -900,15 +900,15 @@ class FileService:
     # ─────────────────────────────────────────────────────────────
     async def delete_scope(
         self, *, 
-        tenant_id: Optional[int],  #  None 가능
+        team_id: Optional[int],  #  None 가능
         domain: str, 
         object_id: int
     ) -> int:
         """
         도메인 객체 스코프 전체 삭제 (DB + MinIO) - 트랜잭션 안전
         
-         tenant_id=None 지원:
-        - User 도메인 삭제 시 tenant_id=None으로 호출
+         team_id=None 지원:
+        - User 도메인 삭제 시 team_id=None으로 호출
         
         순서:
         1. [DB] 파일 조회 → 경로 저장
@@ -920,7 +920,7 @@ class FileService:
 
         # 1. 삭제 대상 조회
         files = await self.repo.list_files(
-            tenant_id=tenant_id, domain=domain, object_id=object_id, subdir=None
+            team_id=team_id, domain=domain, object_id=object_id, subdir=None
         )
         
         if not files:
@@ -930,7 +930,7 @@ class FileService:
 
         # 2. [DB] 메타 삭제
         deleted_rows = await self.repo.delete_scope(
-            tenant_id=tenant_id, domain=domain, object_id=object_id
+            team_id=team_id, domain=domain, object_id=object_id
         )
         
         # 3. [DB] flush()
@@ -948,15 +948,15 @@ class FileService:
     # ─────────────────────────────────────────────────────────────
     # ▼ 9) 팀 전체 삭제 (팀 퍼지 시)
     # ─────────────────────────────────────────────────────────────
-    async def delete_tenant_files(self, tenant_id: int) -> None:
+    async def delete_team_files(self, team_id: int) -> None:
         """
         팀 퍼지 시 해당 팀의 모든 파일 삭제
 
         MinIO에서는 prefix로 일괄 삭제 가능
         """
-        # public/tenant-{id}/ 와 private/tenant-{id}/ 모두 삭제
+        # public/team-{id}/ 와 private/team-{id}/ 모두 삭제
         for visibility in ["public", "private"]:
-            prefix = f"{visibility}/tenant-{tenant_id}/"
+            prefix = f"{visibility}/team-{team_id}/"
             self._delete_prefix(prefix)
 
     def _delete_prefix(self, prefix: str) -> None:
@@ -983,7 +983,7 @@ class FileService:
     async def soft_deactivate_by_object(
         self,
         *,
-        tenant_id: Optional[int],
+        team_id: Optional[int],
         domain: FileDomain | str,
         object_id: int,
         actor_user_id: int | None = None,
@@ -995,7 +995,7 @@ class FileService:
         - 복구 가능하도록 MinIO 파일은 그대로 유지
         
         Args:
-            tenant_id: 팀 ID (User는 None)
+            team_id: 팀 ID (User는 None)
             domain: 파일 도메인 (예: FileDomain.PRODUCT)
             object_id: 대상 오브젝트 ID
             actor_user_id: 작업자 ID
@@ -1005,7 +1005,7 @@ class FileService:
         """
         assert self.repo, "This method requires DB session"
         return await self.repo.soft_deactivate_by_object(
-            tenant_id=tenant_id,
+            team_id=team_id,
             domain=domain,
             object_id=object_id,
             actor_user_id=actor_user_id,
@@ -1017,7 +1017,7 @@ class FileService:
     async def reactivate_by_object(
         self,
         *,
-        tenant_id: Optional[int],
+        team_id: Optional[int],
         domain: FileDomain | str,
         object_id: int,
         actor_user_id: int | None = None,
@@ -1029,7 +1029,7 @@ class FileService:
         - MinIO 파일은 소프트삭제 시 유지했으므로 그대로 있음
         
         Args:
-            tenant_id: 팀 ID (User는 None)
+            team_id: 팀 ID (User는 None)
             domain: 파일 도메인 (예: FileDomain.PRODUCT)
             object_id: 대상 오브젝트 ID
             actor_user_id: 작업자 ID
@@ -1039,7 +1039,7 @@ class FileService:
         """
         assert self.repo, "This method requires DB session"
         return await self.repo.reactivate_by_object(
-            tenant_id=tenant_id,
+            team_id=team_id,
             domain=domain,
             object_id=object_id,
             actor_user_id=actor_user_id,

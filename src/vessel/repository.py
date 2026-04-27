@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import load_only
 
-from common.repository.tenant_scoped import TenantScopedRepoMixin
+from common.repository.team_scoped import TeamScopedRepoMixin
 from common.pagination.service import CommonService
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from vessel.model import VesselModel
@@ -14,16 +14,16 @@ from vessel.schemas.request import PaginateVesselRequest
 from vessel.schemas.response import VesselResponseSchema
 
 
-class VesselRepository(TenantScopedRepoMixin):
+class VesselRepository(TeamScopedRepoMixin):
     """
     Vessel(거래처) 리포지토리
-    - tenant 스코프 강제(_require_tenant)
+    - team 스코프 강제(_require_team)
     - 기본 is_active=True
     - take=-1 이면 전체 로드 (limit 없이 조회)
     """
 
-    def __init__(self, db: AsyncSession, tenant_id: int | None):
-        super().__init__(tenant_id)
+    def __init__(self, db: AsyncSession, team_id: int | None):
+        super().__init__(team_id)
         self.db = db
         self._common_service = CommonService()
 
@@ -36,7 +36,7 @@ class VesselRepository(TenantScopedRepoMixin):
         payload: dict,
         actor_user_id: int | None = None,
     ) -> VesselModel:
-        payload["tenant_id"] = self._require_tenant()
+        payload["team_id"] = self._require_team()
         if actor_user_id is not None:
             payload["created_by_user_id"] = actor_user_id
         row = VesselModel(**payload)
@@ -53,10 +53,10 @@ class VesselRepository(TenantScopedRepoMixin):
         """
         벌크 생성 (단순 반복 - 개별 에러 처리는 Service에서)
         """
-        tenant_id = self._require_tenant()
+        team_id = self._require_team()
         rows = []
         for payload in payloads:
-            payload["tenant_id"] = tenant_id
+            payload["team_id"] = team_id
             if actor_user_id is not None:
                 payload["created_by_user_id"] = actor_user_id
             row = VesselModel(**payload)
@@ -78,7 +78,7 @@ class VesselRepository(TenantScopedRepoMixin):
         q = (
             select(VesselModel)
             .where(
-                VesselModel.tenant_id == self._require_tenant(),
+                VesselModel.team_id == self._require_team(),
                 VesselModel.id == vessel_id,
                 VesselModel.is_active.is_(True),
             )
@@ -106,7 +106,7 @@ class VesselRepository(TenantScopedRepoMixin):
         q = (
             select(VesselModel)
             .where(
-                VesselModel.tenant_id == self._require_tenant(),
+                VesselModel.team_id == self._require_team(),
                 VesselModel.id.in_(vessel_ids),
                 VesselModel.is_active.is_(True),
             )
@@ -134,10 +134,10 @@ class VesselRepository(TenantScopedRepoMixin):
 
         필터: where__* → CommonService에서 처리
         """
-        tenant_id = self._require_tenant()
+        team_id = self._require_team()
 
-        # 기본 쿼리 (tenant_id, 옵션에 따른 is_active)
-        base_conditions = [VesselModel.tenant_id == tenant_id]
+        # 기본 쿼리 (team_id, 옵션에 따른 is_active)
+        base_conditions = [VesselModel.team_id == team_id]
         if not request.include_inactive:
             base_conditions.append(VesselModel.is_active.is_(True))
 
@@ -191,7 +191,7 @@ class VesselRepository(TenantScopedRepoMixin):
         q = (
             select(VesselModel)
             .where(
-                VesselModel.tenant_id == self._require_tenant(),
+                VesselModel.team_id == self._require_team(),
                 VesselModel.id == vessel_id,
                 VesselModel.is_active.is_(True),
             )
@@ -200,7 +200,7 @@ class VesselRepository(TenantScopedRepoMixin):
         if not row:
             return None
 
-        protected = {"id", "tenant_id", "is_active", "created_at", "created_by_user_id"}
+        protected = {"id", "team_id", "is_active", "created_at", "created_by_user_id"}
         
         for k, v in payload.items():
             if k in protected:
@@ -223,7 +223,7 @@ class VesselRepository(TenantScopedRepoMixin):
         """단건 하드 삭제"""
         await self.db.execute(
             delete(VesselModel).where(
-                VesselModel.tenant_id == self._require_tenant(),
+                VesselModel.team_id == self._require_team(),
                 VesselModel.id == vessel_id,
             )
         )
@@ -248,7 +248,7 @@ class VesselRepository(TenantScopedRepoMixin):
         await self.db.execute(
             update(VesselModel)
             .where(
-                VesselModel.tenant_id == self._require_tenant(),
+                VesselModel.team_id == self._require_team(),
                 VesselModel.id == vessel_id,
                 VesselModel.is_active.is_(True),
             )
@@ -269,7 +269,7 @@ class VesselRepository(TenantScopedRepoMixin):
         stmt = (
             select(VesselModel.id)
             .where(
-                VesselModel.tenant_id == self._require_tenant(),
+                VesselModel.team_id == self._require_team(),
                 VesselModel.is_active.is_(True),
                 VesselModel.id.in_(id_list),
             )
@@ -288,11 +288,11 @@ class VesselRepository(TenantScopedRepoMixin):
         - items: is_active=True & updated_at >= since
         - deleted_ids: is_active=False & updated_at >= since
         """
-        tenant_id = self._require_tenant()
+        team_id = self._require_team()
 
         base_query = (
             select(VesselModel)
-            .where(VesselModel.tenant_id == tenant_id)
+            .where(VesselModel.team_id == team_id)
             .options(
                 load_only(
                     VesselModel.id,
@@ -309,7 +309,7 @@ class VesselRepository(TenantScopedRepoMixin):
             model=VesselModel,
             session=self.db,
             since=since,
-            tenant_id=tenant_id,
+            team_id=team_id,
             base_query=base_query,
             use_soft_delete=True,
         )

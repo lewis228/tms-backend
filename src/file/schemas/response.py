@@ -22,7 +22,7 @@ class FileInfoResponseSchema(ResponseSchema):
     기존과 동일 - 변경 없음
     """
     id: int
-    tenant_id: int
+    team_id: int
     domain: FileDomain
     object_id: int
     subdir: str

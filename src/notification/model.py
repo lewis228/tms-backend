@@ -9,12 +9,12 @@ from sqlalchemy import (
 )
 
 from common.model.base_model import Base
-from common.model.tenant_scoped_mixin import TenantScopedMixin
+from common.model.team_scoped_mixin import TeamScopedMixin
 from notification.const.channel import NotificationChannel, NotificationStatus
 
 
-class NotificationModel(Base, TenantScopedMixin):
-    """In-app + 외부 알림 통합. user_id NULL = tenant-wide broadcast."""
+class NotificationModel(Base, TeamScopedMixin):
+    """In-app + 외부 알림 통합. user_id NULL = team-wide broadcast."""
     __tablename__ = "notification"
 
     user_id: Mapped[int | None] = mapped_column(
@@ -40,9 +40,9 @@ class NotificationModel(Base, TenantScopedMixin):
     sent_at:  Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "id", name="uq_notification_tenant_id_id"),
-        Index("ix_notification_tenant_user_read", "tenant_id", "user_id", "is_read"),
-        Index("ix_notification_tenant_status",    "tenant_id", "status"),
-        Index("ix_notification_tenant_active_id", "tenant_id", "is_active", "id"),
-        Index("ix_notification_tenant_created_at","tenant_id", "created_at"),
+        UniqueConstraint("team_id", "id", name="uq_notification_team_id_id"),
+        Index("ix_notification_team_user_read", "team_id", "user_id", "is_read"),
+        Index("ix_notification_team_status",    "team_id", "status"),
+        Index("ix_notification_team_active_id", "team_id", "is_active", "id"),
+        Index("ix_notification_team_created_at","team_id", "created_at"),
     )

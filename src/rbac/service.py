@@ -26,7 +26,7 @@ from rbac.schemas.request import (
 from rbac.cache_service import (
     invalidate_group_codes,
     invalidate_group_excluded_attrs,
-    bulk_invalidate_user_tenant_meta,
+    bulk_invalidate_user_team_meta,
 )
 from rbac.const.const import ALL_PERMISSION_CODES, IMPLICIT_NON_VIEWER_CODES
 from common.exceptions.base import NotFoundException, ConflictException, AppException
@@ -56,7 +56,7 @@ class RbacService:
         self,
         *,
         user_id: int,
-        tenant_id: Optional[int],
+        team_id: Optional[int],
     ) -> RbacMeResponseSchema:
         """
         현재 사용자·팀 컨텍스트에 대한 단일 응답.
@@ -66,7 +66,7 @@ class RbacService:
         """
         codes, group_id, version, is_admin_group = await self.repo.get_user_perm_meta(
             user_id,
-            tenant_id=tenant_id,
+            team_id=team_id,
         )
 
         # abilities 생성
@@ -97,9 +97,9 @@ class RbacService:
     # ▼ 커서 페이지네이션: 권한 그룹
     # ─────────────────────────────────────────────────────────
     async def list_groups_paginated(
-        self, *, tenant_id: int, request: PaginatePermissionGroupRequest
+        self, *, team_id: int, request: PaginatePermissionGroupRequest
     ) -> CursorPaginationResult[PermissionGroupListItemResponseSchema]:
-        page = await self.repo.list_groups_paginated(tenant_id=tenant_id, request=request)
+        page = await self.repo.list_groups_paginated(team_id=team_id, request=request)
         groups: list[PermissionGroupModel] = page.data
 
         group_ids = [g.id for g in groups]
@@ -127,14 +127,14 @@ class RbacService:
     # ─────────────────────────────────────────────────────────
     # ▼ Delta Sync: 권한 그룹 (hard-delete → all_ids)
     # ─────────────────────────────────────────────────────────
-    async def sync_delta(self, *, tenant_id: int, since_str: str):
+    async def sync_delta(self, *, team_id: int, since_str: str):
         """
         권한 그룹 Delta Sync
         - since 이후 변경된 그룹 + 전체 활성 그룹 ID 반환
         - items에 members/code_count 집계 포함
         """
         since = datetime.fromisoformat(since_str.replace("Z", "+00:00"))
-        result = await self.repo.sync_delta(tenant_id, since)
+        result = await self.repo.sync_delta(team_id, since)
 
         # items에 members/code_count 집계 추가
         group_ids = [g.id for g in result.items]
@@ -161,8 +161,8 @@ class RbacService:
     # 그룹/코드 관리
     # ─────────────────────────────────────────
 
-    async def get_group_detail(self, *, tenant_id: int, group_id: int) -> PermissionGroupDetailResponseSchema:
-        g = await self.repo.get_group(group_id=group_id, tenant_id=tenant_id)
+    async def get_group_detail(self, *, team_id: int, group_id: int) -> PermissionGroupDetailResponseSchema:
+        g = await self.repo.get_group(group_id=group_id, team_id=team_id)
         if not g:
             raise NotFoundException("권한 그룹")
 
@@ -181,14 +181,14 @@ class RbacService:
             code_count=len(codes),
         )
 
-    async def create_group(self, *, tenant_id: int, payload: PermissionGroupCreateRequestSchema) -> PermissionGroupDetailResponseSchema:
+    async def create_group(self, *, team_id: int, payload: PermissionGroupCreateRequestSchema) -> PermissionGroupDetailResponseSchema:
         """
         커스텀 그룹 생성(+선택적 초기 코드 세트).
         - system_key=None으로 생성
         - payload.codes가 있으면 set_group_codes 반영
         """
         grp = await self.repo.create_group(
-            tenant_id=tenant_id,
+            team_id=team_id,
             name=payload.name,
             is_admin=False,
             is_system=False,
@@ -216,12 +216,12 @@ class RbacService:
     async def rename_group(
         self,
         *,
-        tenant_id: int,
+        team_id: int,
         group_id: int,
         payload: PermissionGroupRenameRequestSchema,
     ) -> PermissionGroupRenameResponseSchema:
         """그룹 이름 변경. 시스템 그룹은 변경 금지."""
-        g = await self.repo.get_group(group_id=group_id, tenant_id=tenant_id)
+        g = await self.repo.get_group(group_id=group_id, team_id=team_id)
         if not g:
             raise NotFoundException("권한 그룹")
         if g.is_system:
@@ -233,9 +233,9 @@ class RbacService:
             name=payload.name,
         )
 
-    async def delete_group(self, *, tenant_id: int, group_id: int) -> PermissionGroupDeleteResponseSchema:
+    async def delete_group(self, *, team_id: int, group_id: int) -> PermissionGroupDeleteResponseSchema:
         """그룹 삭제. 시스템 그룹 / 멤버 존재 그룹은 삭제 금지."""
-        g = await self.repo.get_group(group_id=group_id, tenant_id=tenant_id)
+        g = await self.repo.get_group(group_id=group_id, team_id=team_id)
         if not g:
             raise NotFoundException("권한 그룹")
         if g.is_system:
@@ -255,14 +255,14 @@ class RbacService:
         )
 
     async def set_group_codes(
-        self, *, tenant_id: int, group_id: int, payload: PermissionGroupSetCodesRequestSchema
+        self, *, team_id: int, group_id: int, payload: PermissionGroupSetCodesRequestSchema
     ) -> PermissionGroupDetailResponseSchema:
         """
         권한 코드 '완전 교체'.
         - 시스템 그룹은 코드 수정 금지
         - ✔ 반영 후: 그룹 버전 ++, 그룹코드 캐시 무효화, 멤버 META 벌크 무효화
         """
-        g = await self.repo.get_group(group_id=group_id, tenant_id=tenant_id)
+        g = await self.repo.get_group(group_id=group_id, team_id=team_id)
         if not g:
             raise NotFoundException("권한 그룹")
         if g.is_system:
@@ -288,19 +288,19 @@ class RbacService:
 
             #  벌크 무효화 (Pipeline 사용)
             pairs = await self.repo.list_active_member_pairs_of_group(group_id)
-            await bulk_invalidate_user_tenant_meta(self.redis, pairs)
+            await bulk_invalidate_user_team_meta(self.redis, pairs)
 
-        return await self.get_group_detail(tenant_id=tenant_id, group_id=group_id)
+        return await self.get_group_detail(team_id=team_id, group_id=group_id)
 
     async def patch_group_codes(
-        self, *, tenant_id: int, group_id: int, payload: PermissionGroupPatchCodesRequestSchema
+        self, *, team_id: int, group_id: int, payload: PermissionGroupPatchCodesRequestSchema
     ) -> PermissionGroupDetailResponseSchema:
         """
         권한 코드 '증감 패치' (op=add/remove).
         - 시스템 그룹 수정 금지
         - ✔ 반영 후: 그룹 버전 ++, 그룹코드 캐시 무효화, 멤버 META 벌크 무효화
         """
-        g = await self.repo.get_group(group_id=group_id, tenant_id=tenant_id)
+        g = await self.repo.get_group(group_id=group_id, team_id=team_id)
         if not g:
             raise NotFoundException("권한 그룹")
         if g.is_system:
@@ -322,7 +322,7 @@ class RbacService:
 
             # 벌크 무효화 (Pipeline 사용)
             pairs = await self.repo.list_active_member_pairs_of_group(group_id)
-            await bulk_invalidate_user_tenant_meta(self.redis, pairs)
+            await bulk_invalidate_user_team_meta(self.redis, pairs)
 
         return PermissionGroupDetailResponseSchema(
             id=g.id,

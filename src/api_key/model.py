@@ -7,13 +7,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, DateTime, Index, UniqueConstraint
 
 from common.model.base_model import Base
-from common.model.tenant_scoped_mixin import TenantScopedMixin
+from common.model.team_scoped_mixin import TeamScopedMixin
 
 
-class ApiKeyModel(Base, TenantScopedMixin):
-    """테넌트가 발급하는 프로그래머틱 접근용 API 토큰.
+class ApiKeyModel(Base, TeamScopedMixin):
+    """팀가 발급하는 프로그래머틱 접근용 API 토큰.
 
-    테넌트당 여러 키 발급 가능 (dev/staging/prod 등). 각각 이름, 선택적 만료일,
+    팀당 여러 키 발급 가능 (dev/staging/prod 등). 각각 이름, 선택적 만료일,
     soft-delete 상태(is_active)를 가진다. 키 문자열 자체는 평문 저장 (Stripe/Linear
     관행). 생성 직후에만 전체 값을 노출하고 이후 UI 에는 ``prefix`` 만 표시한다.
 
@@ -39,13 +39,13 @@ class ApiKeyModel(Base, TenantScopedMixin):
         DateTime(timezone=True), nullable=True,
     )
 
-    # ``tenant`` 관계 / id 컬럼은 TenantScopedMixin 이 자동 제공.
+    # ``team`` 관계 / id 컬럼은 TeamScopedMixin 이 자동 제공.
 
     __table_args__ = (
-        # 키는 전역 unique (어느 tenant 든 동일한 키 문자열 금지).
+        # 키는 전역 unique (어느 team 든 동일한 키 문자열 금지).
         UniqueConstraint("key", name="uq_api_key_key"),
-        UniqueConstraint("tenant_id", "id", name="uq_api_key_tenant_id_id"),
-        Index("ix_api_key_tenant_active_id", "tenant_id", "is_active", "id"),
-        Index("ix_api_key_tenant_prefix", "tenant_id", "prefix"),
+        UniqueConstraint("team_id", "id", name="uq_api_key_team_id_id"),
+        Index("ix_api_key_team_active_id", "team_id", "is_active", "id"),
+        Index("ix_api_key_team_prefix", "team_id", "prefix"),
         Index("ix_api_key_prefix", "prefix"),
     )

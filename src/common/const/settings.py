@@ -74,7 +74,7 @@ class Settings(BaseSettings):
 
     # ===== Redis TTL =====
     USER_CACHE_TTL: int
-    RBAC_USER_TENANT_TTL: int
+    RBAC_USER_TEAM_TTL: int
     RBAC_GROUP_CODES_TTL: int
     REDIS_SESSION_MAX_AGE: int
 

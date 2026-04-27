@@ -8,12 +8,12 @@ from sqlalchemy import (
 )
 
 from common.model.base_model import Base
-from common.model.tenant_scoped_mixin import TenantScopedMixin
+from common.model.team_scoped_mixin import TeamScopedMixin
 from delivery_order.const.status import DeliveryStatus
 from leg.const.status import LegStatus, MoveType, ServiceType
 
 
-class LegModel(Base, TenantScopedMixin):
+class LegModel(Base, TeamScopedMixin):
     """Leg = D/O 의 한 단계 운송 (Movement + Assignment 통합)."""
     __tablename__ = "leg"
 
@@ -69,11 +69,11 @@ class LegModel(Base, TenantScopedMixin):
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "id", name="uq_leg_tenant_id_id"),
-        Index("ix_leg_tenant_do",       "tenant_id", "delivery_order_id"),
-        Index("ix_leg_tenant_driver",   "tenant_id", "driver_id"),
-        Index("ix_leg_tenant_status",   "tenant_id", "status"),
-        Index("ix_leg_tenant_pickup",   "tenant_id", "pickup_date"),
-        Index("ix_leg_tenant_active_id","tenant_id", "is_active", "id"),
-        Index("ix_leg_tenant_updated_at","tenant_id", "updated_at"),
+        UniqueConstraint("team_id", "id", name="uq_leg_team_id_id"),
+        Index("ix_leg_team_do",       "team_id", "delivery_order_id"),
+        Index("ix_leg_team_driver",   "team_id", "driver_id"),
+        Index("ix_leg_team_status",   "team_id", "status"),
+        Index("ix_leg_team_pickup",   "team_id", "pickup_date"),
+        Index("ix_leg_team_active_id","team_id", "is_active", "id"),
+        Index("ix_leg_team_updated_at","team_id", "updated_at"),
     )

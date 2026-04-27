@@ -8,7 +8,7 @@ ste/backend_sample 패턴:
   - 예외 핸들러 일괄 등록
   - 도메인 router 명시 등록
 
-TMS Phase A — 시스템 도메인만 등록 (auth/user/tenant/rbac/file).
+TMS Phase A — 시스템 도메인만 등록 (auth/user/team/rbac/file).
 TMS 도메인 router (customer/terminal/vessel/location/driver/delivery_order/leg/
 street_turn/settlement/rate_setting/notification/realtime/ai_intake/driver_mobile)
 는 Phase B 이후 추가.
@@ -42,7 +42,7 @@ from common.middleware.context import LogContextMiddleware
 # ── 시스템 도메인 routers ────────────────────────────────────
 from auth.router import router as auth_router
 from user.router import router as user_router
-from tenant.router import router as tenant_router
+from team.router import router as team_router
 from rbac.router import router as rbac_router
 from file.router import router as file_router
 
@@ -86,7 +86,7 @@ app.add_middleware(
     allow_headers=[
         "Authorization", "Content-Type", "Accept",
         "X-Client-Type", "X-Device-Key", "X-App-Version",
-        "User-Agent", "X-Tenant-Id", "X-Request-ID",
+        "User-Agent", "X-Team-Id", "X-Request-ID",
     ],
 )
 
@@ -106,7 +106,7 @@ app.mount("/public", StaticFiles(directory=PUBLIC_FOLDER_PATH), name="public")
 # 각 router 는 자체 prefix 에 /api/v1 을 직접 박는다 (ste 운영 패턴).
 app.include_router(auth_router)
 app.include_router(user_router)
-app.include_router(tenant_router)
+app.include_router(team_router)
 app.include_router(rbac_router)
 app.include_router(file_router)
 

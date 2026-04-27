@@ -1,4 +1,4 @@
-# tenant/model.py — N:M (ste 패턴 그대로). 한 user 가 여러 tenant 소속 가능.
+# team/model.py — N:M (ste 패턴 그대로). 한 user 가 여러 team 소속 가능.
 from __future__ import annotations
 
 from sqlalchemy import (
@@ -23,8 +23,8 @@ def _PermissionGroup():
     return PermissionGroupModel
 
 
-class TenantModel(Base):
-    __tablename__ = "tenants"
+class TeamModel(Base):
+    __tablename__ = "teams"
 
     name = mapped_column(String(80), nullable=False)
 
@@ -40,7 +40,7 @@ class TenantModel(Base):
     onboarding_step3_done = mapped_column(Boolean, nullable=False, server_default="0")
     onboarding_completed  = mapped_column(Boolean, nullable=False, server_default="0")
 
-    # ── tenant 정보 ────────────────────────────────────
+    # ── team 정보 ────────────────────────────────────
     memo      = mapped_column(String(3000), nullable=True)
     timezone  = mapped_column(String(50), nullable=True, server_default="Asia/Seoul")
     image_url = mapped_column(String(500), nullable=True)
@@ -64,77 +64,77 @@ class TenantModel(Base):
     # 바코드 스캔
     gs1_gtin_enabled = mapped_column(Boolean, nullable=False, server_default="0")
 
-    # ── 관계: Tenant → UserTenant (1:N) ─────────────────────────
+    # ── 관계: Team → UserTeam (1:N) ─────────────────────────
     members = relationship(
-        "UserTenantModel",
-        back_populates="tenant",
+        "UserTeamModel",
+        back_populates="team",
         cascade="all, delete-orphan",
         lazy=settings.ORM_LAZY_DEFAULT,
-        order_by=lambda: UserTenantModel.id.asc(),
+        order_by=lambda: UserTeamModel.id.asc(),
         primaryjoin=lambda: and_(
-            foreign(UserTenantModel.tenant_id) == TenantModel.id,
+            foreign(UserTeamModel.team_id) == TeamModel.id,
         ),
-        foreign_keys="UserTenantModel.tenant_id",
+        foreign_keys="UserTeamModel.team_id",
         passive_deletes=True,
     )
 
-    # ── 관계: Tenant ↔ FileAsset(폴리모픽, view-only) ─────────────
+    # ── 관계: Team ↔ FileAsset(폴리모픽, view-only) ─────────────
     files = relationship(
         FileAssetModel,
         viewonly=True,
         lazy=settings.ORM_LAZY_DEFAULT,
         order_by="FileAssetModel.id.asc()",
         primaryjoin=lambda: and_(
-            FileAssetModel.domain == FileDomain.TENANT,
-            foreign(FileAssetModel.object_id) == TenantModel.id,
+            FileAssetModel.domain == FileDomain.TEAM,
+            foreign(FileAssetModel.object_id) == TeamModel.id,
         ),
     )
 
 
-class UserTenantModel(Base):
-    """User N:M Tenant — ste 패턴 그대로. 한 user 가 여러 tenant 소속 가능."""
-    __tablename__ = "user_tenants"
+class UserTeamModel(Base):
+    """User N:M Team — ste 패턴 그대로. 한 user 가 여러 team 소속 가능."""
+    __tablename__ = "user_team"
     __table_args__ = (
-        # N:M: (user_id, tenant_id) 조합이 유일. 같은 user 가 같은 tenant 에 두 row X
-        UniqueConstraint("user_id", "tenant_id", name="uq_user_tenant"),
-        Index("ix_user_tenants_user_id", "user_id"),
-        Index("ix_user_tenants_tenant_id", "tenant_id"),
-        Index("ix_user_tenants_permission_group_id", "permission_group_id"),
-        Index("ix_user_tenants_tenant_updated_at", "tenant_id", "updated_at"),
+        # N:M: (user_id, team_id) 조합이 유일. 같은 user 가 같은 team 에 두 row X
+        UniqueConstraint("user_id", "team_id", name="uq_user_team"),
+        Index("ix_user_teams_user_id", "user_id"),
+        Index("ix_user_teams_team_id", "team_id"),
+        Index("ix_user_teams_permission_group_id", "permission_group_id"),
+        Index("ix_user_teams_team_updated_at", "team_id", "updated_at"),
     )
 
     user_id = mapped_column(Integer, ForeignKey("user.id",  ondelete="RESTRICT"), nullable=False)
-    tenant_id = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"),  nullable=False)
+    team_id = mapped_column(Integer, ForeignKey("teams.id", ondelete="CASCADE"),  nullable=False)
 
     permission_group_id = mapped_column(
         Integer, ForeignKey("permission_groups.id", ondelete="RESTRICT"),
         nullable=True
     )
 
-    # ── 관계: UserTenant → Tenant (N:1) ─────────────────────────
-    tenant = relationship(
-        "TenantModel",
+    # ── 관계: UserTeam → Team (N:1) ─────────────────────────
+    team = relationship(
+        "TeamModel",
         back_populates="members",
         lazy=settings.ORM_LAZY_DEFAULT,
-        primaryjoin=lambda: foreign(UserTenantModel.tenant_id) == TenantModel.id,
-        foreign_keys=[tenant_id],
+        primaryjoin=lambda: foreign(UserTeamModel.team_id) == TeamModel.id,
+        foreign_keys=[team_id],
         passive_deletes=True,
     )
 
-    # ── 관계: UserTenant → User (N:1) ───────────────────────────
+    # ── 관계: UserTeam → User (N:1) ───────────────────────────
     user = relationship(
         "UserModel",
-        back_populates="tenants",
+        back_populates="teams",
         lazy=settings.ORM_LAZY_DEFAULT,
-        primaryjoin=lambda: foreign(UserTenantModel.user_id) == _User().id,
+        primaryjoin=lambda: foreign(UserTeamModel.user_id) == _User().id,
         foreign_keys=[user_id],
     )
 
-    # ── 관계: UserTenant → PermissionGroup (N:1) ────────────────
+    # ── 관계: UserTeam → PermissionGroup (N:1) ────────────────
     permission_group = relationship(
         "PermissionGroupModel",
-        back_populates="user_tenants",
+        back_populates="user_team",
         lazy=settings.ORM_LAZY_DEFAULT,
-        primaryjoin=lambda: foreign(UserTenantModel.permission_group_id) == _PermissionGroup().id,
+        primaryjoin=lambda: foreign(UserTeamModel.permission_group_id) == _PermissionGroup().id,
         foreign_keys=[permission_group_id],
     )

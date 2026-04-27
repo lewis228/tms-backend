@@ -3,16 +3,16 @@
 
 브로드캐스트:
   도메인 코드 → publish(event)
-                 ↓ Redis PUBLISH (채널: tms:tenant:{tenant_id}:events)
+                 ↓ Redis PUBLISH (채널: tms:team:{team_id}:events)
                  ↓
   ConnectionManager (워커별 1개) — Redis SUBSCRIBE 유지
-                 ↓ 수신 → 해당 tenant 의 활성 WS 들에 enqueue
+                 ↓ 수신 → 해당 team 의 활성 WS 들에 enqueue
                  ↓ 각 WS send-loop 가 send_text
 
 Close codes (4xxx):
 - 4001: 토큰 만료
 - 4002: 토큰 무효
-- 4003: tenant 미해결
+- 4003: team 미해결
 - 4004: ping idle timeout
 """
 from __future__ import annotations
@@ -30,15 +30,15 @@ log = structlog.get_logger(__name__)
 SEND_QUEUE_MAXSIZE = 1000
 
 
-def channel_for(tenant_id: int) -> str:
-    return f"tms:tenant:{tenant_id}:events"
+def channel_for(team_id: int) -> str:
+    return f"tms:team:{team_id}:events"
 
 
 async def publish(event: RealtimeEvent, *, db: Any | None = None) -> int:
     """도메인 → Redis. fan_out 도메인 (notification inbox) 추후 wiring."""
     try:
         return await default_redis.publish(
-            channel_for(event.tenant_id),
+            channel_for(event.team_id),
             event.model_dump_json(by_alias=True),
         )
     except Exception as e:  # noqa: BLE001
@@ -47,11 +47,11 @@ async def publish(event: RealtimeEvent, *, db: Any | None = None) -> int:
 
 
 class _Connection:
-    __slots__ = ("ws", "tenant_id", "user_id", "queue", "dropped")
+    __slots__ = ("ws", "team_id", "user_id", "queue", "dropped")
 
-    def __init__(self, ws, tenant_id: int, user_id: int) -> None:
+    def __init__(self, ws, team_id: int, user_id: int) -> None:
         self.ws = ws
-        self.tenant_id = tenant_id
+        self.team_id = team_id
         self.user_id = user_id
         self.queue: asyncio.Queue[str] = asyncio.Queue(maxsize=SEND_QUEUE_MAXSIZE)
         self.dropped = 0
@@ -65,47 +65,47 @@ class _Connection:
                 self.dropped += 1
                 self.queue.put_nowait(raw)
                 log.warning("realtime.queue_overflow",
-                            tenant_id=self.tenant_id, dropped=self.dropped)
+                            team_id=self.team_id, dropped=self.dropped)
 
 
 class ConnectionManager:
     """워커 내 활성 WS 등록부."""
 
     def __init__(self) -> None:
-        self._by_tenant: dict[int, set[_Connection]] = {}
+        self._by_team: dict[int, set[_Connection]] = {}
         self._subscriber_tasks: dict[int, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
     async def register(self, conn: _Connection) -> None:
         async with self._lock:
-            conns = self._by_tenant.setdefault(conn.tenant_id, set())
+            conns = self._by_team.setdefault(conn.team_id, set())
             conns.add(conn)
-            if conn.tenant_id not in self._subscriber_tasks:
+            if conn.team_id not in self._subscriber_tasks:
                 task = asyncio.create_task(
-                    self._tenant_subscriber(conn.tenant_id),
-                    name=f"realtime-sub-{conn.tenant_id}",
+                    self._team_subscriber(conn.team_id),
+                    name=f"realtime-sub-{conn.team_id}",
                 )
-                self._subscriber_tasks[conn.tenant_id] = task
+                self._subscriber_tasks[conn.team_id] = task
 
     async def unregister(self, conn: _Connection) -> None:
         async with self._lock:
-            conns = self._by_tenant.get(conn.tenant_id)
+            conns = self._by_team.get(conn.team_id)
             if conns:
                 conns.discard(conn)
                 if not conns:
-                    self._by_tenant.pop(conn.tenant_id, None)
-                    task = self._subscriber_tasks.pop(conn.tenant_id, None)
+                    self._by_team.pop(conn.team_id, None)
+                    task = self._subscriber_tasks.pop(conn.team_id, None)
                     if task and not task.done():
                         task.cancel()
                         with contextlib.suppress(asyncio.CancelledError):
                             await task
 
-    def fanout(self, tenant_id: int, raw: str) -> None:
-        for conn in list(self._by_tenant.get(tenant_id, ())):
+    def fanout(self, team_id: int, raw: str) -> None:
+        for conn in list(self._by_team.get(team_id, ())):
             conn.offer(raw)
 
-    async def _tenant_subscriber(self, tenant_id: int) -> None:
-        ch = channel_for(tenant_id)
+    async def _team_subscriber(self, team_id: int) -> None:
+        ch = channel_for(team_id)
         try:
             pubsub = default_redis.pubsub()
             await pubsub.subscribe(ch)
@@ -116,7 +116,7 @@ class ConnectionManager:
                     data = msg.get("data")
                     if isinstance(data, bytes):
                         data = data.decode("utf-8")
-                    self.fanout(tenant_id, data)
+                    self.fanout(team_id, data)
             finally:
                 with contextlib.suppress(Exception):
                     await pubsub.unsubscribe(ch)
@@ -126,12 +126,12 @@ class ConnectionManager:
             raise
         except Exception as e:  # noqa: BLE001
             log.error("realtime.subscriber_crashed",
-                      tenant_id=tenant_id, error=str(e))
+                      team_id=team_id, error=str(e))
 
     def stats(self) -> dict[str, Any]:
         return {
-            "tenants": len(self._by_tenant),
-            "connections": sum(len(s) for s in self._by_tenant.values()),
+            "teams": len(self._by_team),
+            "connections": sum(len(s) for s in self._by_team.values()),
         }
 
     async def shutdown(self) -> None:
@@ -143,7 +143,7 @@ class ConnectionManager:
         async with self._lock:
             tasks = list(self._subscriber_tasks.values())
             self._subscriber_tasks.clear()
-            self._by_tenant.clear()
+            self._by_team.clear()
         for t in tasks:
             if not t.done():
                 t.cancel()

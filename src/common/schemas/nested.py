@@ -23,7 +23,7 @@ from common.schemas.base import ResponseSchema
 class LocationNestedSchema(ResponseSchema):
     """
     LocationModel 중첩 스키마
-    - 모델 컬럼: id, name, note, tenant_id, is_active, ...
+    - 모델 컬럼: id, name, note, team_id, is_active, ...
     - is_active: 소프트 삭제 여부 (False면 취소선 표시)
     """
     id: int
@@ -150,7 +150,7 @@ class PermissionGroupNestedSchema(ResponseSchema):
 class AttributeDefNestedSchema(ResponseSchema):
     """
     AttributeDefModel 중첩 스키마
-    - 모델 컬럼: id, name, kind, sort_order, tenant_id, ...
+    - 모델 컬럼: id, name, kind, sort_order, team_id, ...
     """
     id: int
     name: str
@@ -167,7 +167,7 @@ class AttributeDefNestedSchema(ResponseSchema):
 class AttributeValueNestedSchema(ResponseSchema):
     """
     AttributeValueModel 중첩 스키마
-    - 모델 컬럼: id, product_id, attribute_id, value, tenant_id, ...
+    - 모델 컬럼: id, product_id, attribute_id, value, team_id, ...
     - attribute: 관계(relationship)로 연결된 AttributeDefModel
     """
     id: int
@@ -187,7 +187,7 @@ class AttributeValueNestedSchema(ResponseSchema):
 class StockNestedSchema(ResponseSchema):
     """
     StockModel 중첩 스키마
-    - 모델 컬럼: id, product_id, location_id, qty, tenant_id, ...
+    - 모델 컬럼: id, product_id, location_id, qty, team_id, ...
     - location: 관계(relationship)로 연결된 LocationModel
     
      version 필드 제거됨 (StockLine이 현재 유효한 변동만 보관)
@@ -226,7 +226,7 @@ class ProductBasicNestedSchema(ResponseSchema):
 class BundleComponentNestedSchema(ResponseSchema):
     """
     BundleProductLineModel 중첩 스키마
-    - 모델 컬럼: id, bundle_product_id, component_product_id, qty, tenant_id, ...
+    - 모델 컬럼: id, bundle_product_id, component_product_id, qty, team_id, ...
     - component_product: 관계(relationship)로 연결된 ProductModel
     """
     id: int

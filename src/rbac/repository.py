@@ -22,7 +22,7 @@ from rbac.cache_service import (
 )
 from rbac.model import PermissionGroupModel, PermissionGroupPermission, PermissionModel
 from rbac.schemas.request import PaginatePermissionGroupRequest
-from tenant.model import UserTenantModel
+from team.model import UserTeamModel
 
 
 class RbacRepository:
@@ -30,8 +30,8 @@ class RbacRepository:
     RBAC 데이터 접근 계층
     - Redis 캐시 → DB 폴백
     - 팀 스코프(TeamScoped) 일관성 보장:
-      * PermissionGroupPermission(매핑 테이블)은 반드시 tenant_id를 포함해서 생성/삭제/조회
-      * 그룹의 tenant_id는 DB에서 안전하게 조회(get_group_tenant_id)
+      * PermissionGroupPermission(매핑 테이블)은 반드시 team_id를 포함해서 생성/삭제/조회
+      * 그룹의 team_id는 DB에서 안전하게 조회(get_group_team_id)
     """
     def __init__(self, db: AsyncSession, redis: Redis | None = None):
         self.db = db
@@ -39,11 +39,11 @@ class RbacRepository:
         self.common = CommonService()
 
     # ─────────────────────────────────────────────────────────
-    # 내부 유틸: 그룹의 tenant_id/버전 조회
+    # 내부 유틸: 그룹의 team_id/버전 조회
     # ─────────────────────────────────────────────────────────
-    async def get_group_tenant_id(self, group_id: int) -> Optional[int]:
+    async def get_group_team_id(self, group_id: int) -> Optional[int]:
         return await self.db.scalar(
-            select(PermissionGroupModel.tenant_id).where(PermissionGroupModel.id == group_id)
+            select(PermissionGroupModel.team_id).where(PermissionGroupModel.id == group_id)
         )
 
     async def get_group_version(self, group_id: int) -> Optional[int]:
@@ -70,12 +70,12 @@ class RbacRepository:
 
     async def list_active_member_pairs_of_group(self, group_id: int) -> list[tuple[int, int]]:
         """
-        해당 그룹에 '활성'으로 속한 멤버들의 (user_id, tenant_id) 목록
+        해당 그룹에 '활성'으로 속한 멤버들의 (user_id, team_id) 목록
         """
         rows = await self.db.execute(
-            select(UserTenantModel.user_id, UserTenantModel.tenant_id).where(
-                UserTenantModel.permission_group_id == group_id,
-                UserTenantModel.is_active.is_(True),
+            select(UserTeamModel.user_id, UserTeamModel.team_id).where(
+                UserTeamModel.permission_group_id == group_id,
+                UserTeamModel.is_active.is_(True),
             )
         )
         return [(int(u), int(t)) for (u, t) in rows.all()]
@@ -87,14 +87,14 @@ class RbacRepository:
         self,
         user_id: int,
         *,
-        tenant_id: Optional[int],
+        team_id: Optional[int],
     ) -> Tuple[Optional[Set[str]], Optional[int], Optional[int], bool]:
         """
         반환: (codes, group_id, version, is_admin_group)
           - is_admin_group=True 이면 codes=None (모든 권한 허용)
           - version: PermissionGroupModel.version (없으면 None)
         """
-        if tenant_id is None:
+        if team_id is None:
             return set(), None, None, False
 
         group_id: Optional[int] = None
@@ -103,29 +103,29 @@ class RbacRepository:
 
         # 1) USER_TEAM_META 캐시 조회
         if self.redis:
-            meta = await get_user_team_meta(self.redis, user_id, tenant_id)
+            meta = await get_user_team_meta(self.redis, user_id, team_id)
             if meta:
                 group_id, is_admin_group, version = meta
 
         # 2) 캐시 미스면 DB에서 로드
         if group_id is None and not is_admin_group:
-            user_tenant = await self.db.scalar(
-                select(UserTenantModel).where(
-                    UserTenantModel.user_id == user_id,
-                    UserTenantModel.tenant_id == tenant_id,
-                    UserTenantModel.is_active.is_(True),
+            user_team = await self.db.scalar(
+                select(UserTeamModel).where(
+                    UserTeamModel.user_id == user_id,
+                    UserTeamModel.team_id == team_id,
+                    UserTeamModel.is_active.is_(True),
                 )
             )
-            if not user_tenant:
+            if not user_team:
                 return set(), None, None, False
 
-            group_id = getattr(user_tenant, "permission_group_id", None)
+            group_id = getattr(user_team, "permission_group_id", None)
 
             if group_id is not None:
                 group = await self.db.scalar(
                     select(PermissionGroupModel).where(
                         PermissionGroupModel.id == group_id,
-                        PermissionGroupModel.tenant_id == tenant_id,
+                        PermissionGroupModel.team_id == team_id,
                         PermissionGroupModel.is_active.is_(True),
                     )
                 )
@@ -134,7 +134,7 @@ class RbacRepository:
                     version = int(getattr(group, "version", None)) if getattr(group, "version", None) is not None else None
 
             if self.redis:
-                await cache_set_user_team_meta(self.redis, user_id, tenant_id, group_id, is_admin_group, version)
+                await cache_set_user_team_meta(self.redis, user_id, team_id, group_id, is_admin_group, version)
 
         if is_admin_group:
             return None, group_id, version, True
@@ -148,7 +148,7 @@ class RbacRepository:
             codes = await get_group_codes(self.redis, group_id)
 
         if codes is None:
-            g_tenant_id = await self.get_group_tenant_id(group_id)
+            g_team_id = await self.get_group_team_id(group_id)
             rows = await self.db.execute(
                 select(PermissionModel.code)
                 .select_from(
@@ -160,7 +160,7 @@ class RbacRepository:
                 )
                 .where(
                     PermissionGroupPermission.group_id == group_id,
-                    PermissionGroupPermission.tenant_id == g_tenant_id,
+                    PermissionGroupPermission.team_id == g_team_id,
                     PermissionGroupPermission.is_active.is_(True),
                     PermissionModel.is_active.is_(True),
                 )
@@ -175,17 +175,17 @@ class RbacRepository:
     # ─────────────────────────────────────────────────────────
     # 그룹/코드 관리 쿼리
     # ─────────────────────────────────────────────────────────
-    async def get_group(self, *, group_id: int, tenant_id: int) -> Optional[PermissionGroupModel]:
+    async def get_group(self, *, group_id: int, team_id: int) -> Optional[PermissionGroupModel]:
         return await self.db.scalar(
             select(PermissionGroupModel).where(
                 PermissionGroupModel.id == group_id,
-                PermissionGroupModel.tenant_id == tenant_id,
+                PermissionGroupModel.team_id == team_id,
                 PermissionGroupModel.is_active.is_(True),
             )
         )
 
     async def get_group_codes_set(self, *, group_id: int) -> Set[str]:
-        g_tenant_id = await self.get_group_tenant_id(group_id)
+        g_team_id = await self.get_group_team_id(group_id)
         rows = await self.db.execute(
             select(PermissionModel.code)
             .select_from(
@@ -196,7 +196,7 @@ class RbacRepository:
             )
             .where(
                 PermissionGroupPermission.group_id == group_id,
-                PermissionGroupPermission.tenant_id == g_tenant_id,
+                PermissionGroupPermission.team_id == g_team_id,
                 PermissionGroupPermission.is_active.is_(True),
                 PermissionModel.is_active.is_(True),
             )
@@ -204,12 +204,12 @@ class RbacRepository:
         return {r[0] for r in rows.all() if r and r[0]}
 
     async def create_group(
-        self, *, tenant_id: int, name: str, is_admin: bool = False,
+        self, *, team_id: int, name: str, is_admin: bool = False,
         is_system: bool = False, system_key: Optional[str] = None,
         excluded_attribute_ids: Optional[List[int]] = None,
     ) -> PermissionGroupModel:
         grp = PermissionGroupModel(
-            tenant_id=tenant_id,
+            team_id=team_id,
             name=name,
             is_admin=is_admin,
             is_system=is_system,
@@ -264,10 +264,10 @@ class RbacRepository:
 
     async def count_group_members(self, *, group_id: int) -> int:
         q = (
-            select(func.count(UserTenantModel.user_id))
+            select(func.count(UserTeamModel.user_id))
             .where(
-                UserTenantModel.permission_group_id == group_id,
-                UserTenantModel.is_active.is_(True),
+                UserTeamModel.permission_group_id == group_id,
+                UserTeamModel.is_active.is_(True),
             )
         )
         return (await self.db.execute(q)).scalar_one()
@@ -295,20 +295,20 @@ class RbacRepository:
         add_ids = [id_map[c] for c in to_add if c in id_map]
         del_ids = [id_map[c] for c in to_del if c in id_map]
 
-        g_tenant_id = await self.get_group_tenant_id(group_id)
+        g_team_id = await self.get_group_team_id(group_id)
 
         if del_ids:
             await self.db.execute(
                 delete(PermissionGroupPermission).where(
                     PermissionGroupPermission.group_id == group_id,
-                    PermissionGroupPermission.tenant_id == g_tenant_id,
+                    PermissionGroupPermission.team_id == g_team_id,
                     PermissionGroupPermission.permission_id.in_(del_ids),
                 )
             )
 
         for pid in add_ids:
             self.db.add(PermissionGroupPermission(
-                tenant_id=g_tenant_id,
+                team_id=g_team_id,
                 group_id=group_id,
                 permission_id=pid,
             ))
@@ -323,12 +323,12 @@ class RbacRepository:
         id_map = await self.get_permission_id_map()
         valid = [id_map[c] for c in (codes or []) if c in id_map]
 
-        g_tenant_id = await self.get_group_tenant_id(group_id)
+        g_team_id = await self.get_group_team_id(group_id)
 
         if op == "add":
             for pid in set(valid):
                 self.db.add(PermissionGroupPermission(
-                    tenant_id=g_tenant_id,
+                    team_id=g_team_id,
                     group_id=group_id,
                     permission_id=pid,
                 ))
@@ -338,7 +338,7 @@ class RbacRepository:
                 await self.db.execute(
                     delete(PermissionGroupPermission).where(
                         PermissionGroupPermission.group_id == group_id,
-                        PermissionGroupPermission.tenant_id == g_tenant_id,
+                        PermissionGroupPermission.team_id == g_team_id,
                         PermissionGroupPermission.permission_id.in_(valid),
                     )
                 )
@@ -351,12 +351,12 @@ class RbacRepository:
     # ▼ 커서 페이지네이션
     # ─────────────────────────────────────────────────────────
     async def list_groups_paginated(
-        self, *, tenant_id: int, request: PaginatePermissionGroupRequest
+        self, *, team_id: int, request: PaginatePermissionGroupRequest
     ) -> CursorPaginationResult[PermissionGroupModel]:
         base = (
             select(PermissionGroupModel)
             .where(
-                PermissionGroupModel.tenant_id == tenant_id,
+                PermissionGroupModel.team_id == team_id,
                 PermissionGroupModel.is_active.is_(True),
             )
             .options(
@@ -380,13 +380,13 @@ class RbacRepository:
         )
 
     # ── Delta Sync: 권한 그룹 (hard-delete → all_ids) ──────────────
-    async def sync_delta(self, tenant_id: int, since: datetime):
+    async def sync_delta(self, team_id: int, since: datetime):
         """
         since 이후 변경된 활성 그룹 + 전체 활성 그룹 ID (hard-delete 도메인)
         """
         base = (
             select(PermissionGroupModel)
-            .where(PermissionGroupModel.tenant_id == tenant_id)
+            .where(PermissionGroupModel.team_id == team_id)
             .options(
                 load_only(
                     PermissionGroupModel.id,
@@ -402,7 +402,7 @@ class RbacRepository:
             model=PermissionGroupModel,
             session=self.db,
             since=since,
-            tenant_id=tenant_id,
+            team_id=team_id,
             base_query=base,
             use_soft_delete=False,
         )
@@ -415,14 +415,14 @@ class RbacRepository:
             return {}
         stmt = (
             select(
-                UserTenantModel.permission_group_id,
-                func.count(UserTenantModel.user_id)
+                UserTeamModel.permission_group_id,
+                func.count(UserTeamModel.user_id)
             )
             .where(
-                UserTenantModel.permission_group_id.in_(group_ids),
-                UserTenantModel.is_active.is_(True),
+                UserTeamModel.permission_group_id.in_(group_ids),
+                UserTeamModel.is_active.is_(True),
             )
-            .group_by(UserTenantModel.permission_group_id)
+            .group_by(UserTeamModel.permission_group_id)
         )
         rows = (await self.db.execute(stmt)).all()
         return {int(gid): int(cnt) for gid, cnt in rows}

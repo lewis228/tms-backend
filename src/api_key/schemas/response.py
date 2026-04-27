@@ -14,7 +14,7 @@ class ApiKeyListItemResponseSchema(ResponseSchema):
     """
 
     id: int
-    tenant_id: int
+    team_id: int
     name: str
     description: Optional[str] = None
     prefix: str

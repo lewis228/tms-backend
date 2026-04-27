@@ -22,7 +22,7 @@ class FileDomain(StrEnum):
     TRANSFER = "transfer"                  # 이동 첨부
     ADJUST = "adjust"                      # 조정 첨부
     RETURN_INBOUND = "return_inbound"      # 반품입고 첨부
-    TENANT = "tenant"                          # 팀 이미지
+    TEAM = "team"                          # 팀 이미지
     # TMS Phase F — 운송 도메인
     LEG_DOCUMENT = "leg_document"          # 기사 모바일 leg 첨부 (POD/Receipt)
 

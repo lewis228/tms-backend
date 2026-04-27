@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import load_only
 
-from common.repository.tenant_scoped import TenantScopedRepoMixin
+from common.repository.team_scoped import TeamScopedRepoMixin
 from common.pagination.service import CommonService
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from street_turn.model import StreetTurnModel
@@ -14,16 +14,16 @@ from street_turn.schemas.request import PaginateStreetTurnRequest
 from street_turn.schemas.response import StreetTurnResponseSchema
 
 
-class StreetTurnRepository(TenantScopedRepoMixin):
+class StreetTurnRepository(TeamScopedRepoMixin):
     """
     StreetTurn(거래처) 리포지토리
-    - 팀 스코프 강제(_require_tenant)
+    - 팀 스코프 강제(_require_team)
     - 기본 is_active=True
     - take=-1 이면 전체 로드 (limit 없이 조회)
     """
 
-    def __init__(self, db: AsyncSession, tenant_id: int | None):
-        super().__init__(tenant_id)
+    def __init__(self, db: AsyncSession, team_id: int | None):
+        super().__init__(team_id)
         self.db = db
         self._common_service = CommonService()
 
@@ -36,7 +36,7 @@ class StreetTurnRepository(TenantScopedRepoMixin):
         payload: dict,
         actor_user_id: int | None = None,
     ) -> StreetTurnModel:
-        payload["tenant_id"] = self._require_tenant()
+        payload["team_id"] = self._require_team()
         if actor_user_id is not None:
             payload["created_by_user_id"] = actor_user_id
         row = StreetTurnModel(**payload)
@@ -53,10 +53,10 @@ class StreetTurnRepository(TenantScopedRepoMixin):
         """
         벌크 생성 (단순 반복 - 개별 에러 처리는 Service에서)
         """
-        tenant_id = self._require_tenant()
+        team_id = self._require_team()
         rows = []
         for payload in payloads:
-            payload["tenant_id"] = tenant_id
+            payload["team_id"] = team_id
             if actor_user_id is not None:
                 payload["created_by_user_id"] = actor_user_id
             row = StreetTurnModel(**payload)
@@ -78,7 +78,7 @@ class StreetTurnRepository(TenantScopedRepoMixin):
         q = (
             select(StreetTurnModel)
             .where(
-                StreetTurnModel.tenant_id == self._require_tenant(),
+                StreetTurnModel.team_id == self._require_team(),
                 StreetTurnModel.id == street_turn_id,
                 StreetTurnModel.is_active.is_(True),
             )
@@ -107,7 +107,7 @@ class StreetTurnRepository(TenantScopedRepoMixin):
         q = (
             select(StreetTurnModel)
             .where(
-                StreetTurnModel.tenant_id == self._require_tenant(),
+                StreetTurnModel.team_id == self._require_team(),
                 StreetTurnModel.id.in_(street_turn_ids),
                 StreetTurnModel.is_active.is_(True),
             )
@@ -136,10 +136,10 @@ class StreetTurnRepository(TenantScopedRepoMixin):
 
         필터: where__* → CommonService에서 처리
         """
-        tenant_id = self._require_tenant()
+        team_id = self._require_team()
 
-        # 기본 쿼리 (tenant_id, 옵션에 따른 is_active)
-        base_conditions = [StreetTurnModel.tenant_id == tenant_id]
+        # 기본 쿼리 (team_id, 옵션에 따른 is_active)
+        base_conditions = [StreetTurnModel.team_id == team_id]
         if not request.include_inactive:
             base_conditions.append(StreetTurnModel.is_active.is_(True))
 
@@ -194,7 +194,7 @@ class StreetTurnRepository(TenantScopedRepoMixin):
         q = (
             select(StreetTurnModel)
             .where(
-                StreetTurnModel.tenant_id == self._require_tenant(),
+                StreetTurnModel.team_id == self._require_team(),
                 StreetTurnModel.id == street_turn_id,
                 StreetTurnModel.is_active.is_(True),
             )
@@ -203,7 +203,7 @@ class StreetTurnRepository(TenantScopedRepoMixin):
         if not row:
             return None
 
-        protected = {"id", "tenant_id", "is_active", "created_at", "created_by_user_id"}
+        protected = {"id", "team_id", "is_active", "created_at", "created_by_user_id"}
         
         for k, v in payload.items():
             if k in protected:
@@ -226,7 +226,7 @@ class StreetTurnRepository(TenantScopedRepoMixin):
         """단건 하드 삭제"""
         await self.db.execute(
             delete(StreetTurnModel).where(
-                StreetTurnModel.tenant_id == self._require_tenant(),
+                StreetTurnModel.team_id == self._require_team(),
                 StreetTurnModel.id == street_turn_id,
             )
         )
@@ -251,7 +251,7 @@ class StreetTurnRepository(TenantScopedRepoMixin):
         await self.db.execute(
             update(StreetTurnModel)
             .where(
-                StreetTurnModel.tenant_id == self._require_tenant(),
+                StreetTurnModel.team_id == self._require_team(),
                 StreetTurnModel.id == street_turn_id,
                 StreetTurnModel.is_active.is_(True),
             )
@@ -272,7 +272,7 @@ class StreetTurnRepository(TenantScopedRepoMixin):
         stmt = (
             select(StreetTurnModel.id)
             .where(
-                StreetTurnModel.tenant_id == self._require_tenant(),
+                StreetTurnModel.team_id == self._require_team(),
                 StreetTurnModel.is_active.is_(True),
                 StreetTurnModel.id.in_(id_list),
             )
@@ -291,11 +291,11 @@ class StreetTurnRepository(TenantScopedRepoMixin):
         - items: is_active=True & updated_at >= since
         - deleted_ids: is_active=False & updated_at >= since
         """
-        tenant_id = self._require_tenant()
+        team_id = self._require_team()
 
         base_query = (
             select(StreetTurnModel)
-            .where(StreetTurnModel.tenant_id == tenant_id)
+            .where(StreetTurnModel.team_id == team_id)
             .options(
                 load_only(
                     StreetTurnModel.id,
@@ -313,7 +313,7 @@ class StreetTurnRepository(TenantScopedRepoMixin):
             model=StreetTurnModel,
             session=self.db,
             since=since,
-            tenant_id=tenant_id,
+            team_id=team_id,
             base_query=base_query,
             use_soft_delete=True,
         )

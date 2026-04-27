@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from common.pagination.service import CommonService
-from tenant.model import TenantModel, UserTenantModel
+from team.model import TeamModel, UserTeamModel
 from user.model import UserModel
 from user.schemas.request import PaginateUserRequestSchema
 from auth.const.providers import AuthProviderEnum
@@ -56,20 +56,20 @@ class UserRepository:
                 UserModel.updated_at,
             ),
             # User → Teams(활성만) → Team(최소 컬럼)
-            selectinload(UserModel.tenants).options(
+            selectinload(UserModel.teams).options(
                 load_only(
-                    UserTenantModel.id,
-                    UserTenantModel.tenant_id,
-                    UserTenantModel.permission_group_id,
+                    UserTeamModel.id,
+                    UserTeamModel.team_id,
+                    UserTeamModel.permission_group_id,
                 ),
-                selectinload(UserTenantModel.tenant).options(
+                selectinload(UserTeamModel.team).options(
                     load_only(
-                        TenantModel.id,
-                        TenantModel.name,
-                        TenantModel.onboarding_completed,
-                        TenantModel.onboarding_step1_done,
-                        TenantModel.onboarding_step2_done,
-                        TenantModel.onboarding_step3_done,
+                        TeamModel.id,
+                        TeamModel.name,
+                        TeamModel.onboarding_completed,
+                        TeamModel.onboarding_step1_done,
+                        TeamModel.onboarding_step2_done,
+                        TeamModel.onboarding_step3_done,
                     )
                 ),
             ),
@@ -88,7 +88,7 @@ class UserRepository:
                 )
             ),
             # 하위 리소스 활성 필터
-            with_loader_criteria(UserTenantModel, UserTenantModel.is_active.is_(True), include_aliases=True),
+            with_loader_criteria(UserTeamModel, UserTeamModel.is_active.is_(True), include_aliases=True),
             with_loader_criteria(FileAssetModel, FileAssetModel.is_active.is_(True), include_aliases=True),
         )
 
@@ -107,20 +107,20 @@ class UserRepository:
                 UserModel.event_notification_enabled,
                 UserModel.language,                    #  i18n
             ),
-            selectinload(UserModel.tenants).options(
+            selectinload(UserModel.teams).options(
                 load_only(
-                    UserTenantModel.id,
-                    UserTenantModel.tenant_id,
-                    UserTenantModel.permission_group_id,
+                    UserTeamModel.id,
+                    UserTeamModel.team_id,
+                    UserTeamModel.permission_group_id,
                 ),
-                selectinload(UserTenantModel.tenant).options(
+                selectinload(UserTeamModel.team).options(
                     load_only(
-                        TenantModel.id,
-                        TenantModel.name,
-                        TenantModel.onboarding_completed,
-                        TenantModel.onboarding_step1_done,
-                        TenantModel.onboarding_step2_done,
-                        TenantModel.onboarding_step3_done,
+                        TeamModel.id,
+                        TeamModel.name,
+                        TeamModel.onboarding_completed,
+                        TeamModel.onboarding_step1_done,
+                        TeamModel.onboarding_step2_done,
+                        TeamModel.onboarding_step3_done,
                     )
                 ),
             ),
@@ -137,7 +137,7 @@ class UserRepository:
                     FileAssetModel.logical_path,
                 )
             ),
-            with_loader_criteria(UserTenantModel, UserTenantModel.is_active.is_(True), include_aliases=True),
+            with_loader_criteria(UserTeamModel, UserTeamModel.is_active.is_(True), include_aliases=True),
             with_loader_criteria(FileAssetModel, FileAssetModel.is_active.is_(True), include_aliases=True),
         )
 
@@ -321,17 +321,17 @@ class UserRepository:
             .values(is_active=False)
         )
 
-    async def get_user_tenant_ids(self, user_id: int) -> List[int]:
+    async def get_user_team_ids(self, user_id: int) -> List[int]:
         """팀 유틸: 사용자가 속한 팀 ID 목록"""
-        stmt = select(UserTenantModel.tenant_id).where(UserTenantModel.user_id == user_id)
+        stmt = select(UserTeamModel.team_id).where(UserTeamModel.user_id == user_id)
         rows = (await self.db.execute(stmt)).all()
         return [row[0] for row in rows]
 
     async def deactivate_memberships_by_user(self, user_id: int) -> None:
         """팀 유틸: 해당 사용자의 모든 활성 멤버십 비활성화"""
         await self.db.execute(
-            update(UserTenantModel)
-            .where(UserTenantModel.user_id == user_id, UserTenantModel.is_active.is_(True))
+            update(UserTeamModel)
+            .where(UserTeamModel.user_id == user_id, UserTeamModel.is_active.is_(True))
             .values(is_active=False)
         )
 

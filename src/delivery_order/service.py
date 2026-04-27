@@ -40,9 +40,9 @@ class DeliveryOrderService:
     - 사전 검증 실패 → 전체 실패 (트랜잭션 롤백)
     - 생성/수정: 전체 성공 or 전체 실패
     """
-    def __init__(self, db: AsyncSession, tenant_id: int):
+    def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
-        self.repo = DeliveryOrderRepository(db, tenant_id)
+        self.repo = DeliveryOrderRepository(db, team_id)
 
     # ═══════════════════════════════════════════════════════════════
     # Create (단건)
@@ -311,9 +311,9 @@ class DeliveryOrderService:
         성공 시 status 변경 + Realtime publish 트리거 (do.status_changed).
         """
         # 1) D/O 조회 (raw model — repository.get 은 schema 반환)
-        team_id = self.repo._require_tenant()
+        team_id = self.repo._require_team()
         stmt = select(DeliveryOrderModel).where(
-            DeliveryOrderModel.tenant_id == team_id,
+            DeliveryOrderModel.team_id == team_id,
             DeliveryOrderModel.id == delivery_order_id,
             DeliveryOrderModel.is_active.is_(True),
         )
@@ -325,7 +325,7 @@ class DeliveryOrderService:
         legs_stmt = (
             select(LegModel)
             .where(
-                LegModel.tenant_id == team_id,
+                LegModel.team_id == team_id,
                 LegModel.delivery_order_id == do.id,
                 LegModel.is_active.is_(True),
             )
@@ -336,7 +336,7 @@ class DeliveryOrderService:
         delivery_loc = None
         if do.delivery_location_id:
             loc_stmt = select(LocationModel).where(
-                LocationModel.tenant_id == team_id,
+                LocationModel.team_id == team_id,
                 LocationModel.id == do.delivery_location_id,
             )
             delivery_loc = (await self.db.execute(loc_stmt)).scalar_one_or_none()
@@ -344,7 +344,7 @@ class DeliveryOrderService:
         return_loc = None
         if do.return_location_id:
             loc_stmt = select(LocationModel).where(
-                LocationModel.tenant_id == team_id,
+                LocationModel.team_id == team_id,
                 LocationModel.id == do.return_location_id,
             )
             return_loc = (await self.db.execute(loc_stmt)).scalar_one_or_none()
@@ -372,7 +372,7 @@ class DeliveryOrderService:
             from realtime.schemas.event import RealtimeEvent
             await publish(RealtimeEvent.now(
                 type="do.status_changed",
-                tenant_id=team_id,
+                team_id=team_id,
                 actor_id=actor_user_id,
                 payload={
                     "deliveryOrderId": do.id,

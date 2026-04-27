@@ -7,7 +7,7 @@ from auth.tokens.access_token import access_token
 from database.dependencies import get_read_db, get_write_db
 from rbac.const.const import SETTLEMENT_WRITE
 from rbac.dependencies.guards import permission_guard
-from tenant.dependencies.get_tenant_scope import get_tenant_scope
+from team.dependencies.get_team_scope import get_team_scope
 from user.dependencies.current_user import get_current_user
 from user.schemas.response import UserResponseSchema
 
@@ -37,7 +37,7 @@ async def create_settlement(
     body: SettlementCreateRequest,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(SETTLEMENT_WRITE)),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -45,7 +45,7 @@ async def create_settlement(
     거래처 생성
     - 쓰기 권한 필요
     """
-    return await SettlementService(db, tenant_id).create(
+    return await SettlementService(db, team_id).create(
         body,
         actor_user_id=int(me.id),
     )
@@ -55,7 +55,7 @@ async def create_settlement(
 async def list_settlements(
     request: PaginateSettlementRequest = Depends(),
     _1: None = Depends(access_token),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_read_db),
 ):
     """
@@ -63,7 +63,7 @@ async def list_settlements(
     - 기본 활성만; include_inactive=True 로 비활성 포함
     - 정렬/필터는 DTO의 order__/where__ 파라미터 사용
     """
-    return await SettlementService(db, tenant_id).list_paginated(request)
+    return await SettlementService(db, team_id).list_paginated(request)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -75,7 +75,7 @@ async def list_settlements(
 async def sync_settlements(
     since: str,
     _1: None = Depends(access_token),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_read_db),
 ):
     """
@@ -83,20 +83,20 @@ async def sync_settlements(
 
     - since 이후 변경된 활성 아이템 + soft-delete된 아이템 ID 반환
     """
-    return await SettlementService(db, tenant_id).sync_delta(since)
+    return await SettlementService(db, team_id).sync_delta(since)
 
 
 @router.get("/{settlement_id}", response_model=SettlementResponseSchema)
 async def get_settlement(
     settlement_id: int,
     _1: None = Depends(access_token),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_read_db),
 ):
     """
     거래처 단건 조회(활성만)
     """
-    return await SettlementService(db, tenant_id).get(settlement_id)
+    return await SettlementService(db, team_id).get(settlement_id)
 
 
 @router.put("/{settlement_id}", response_model=SettlementResponseSchema)
@@ -105,7 +105,7 @@ async def update_settlement(
     body: SettlementUpdateRequest,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(SETTLEMENT_WRITE)),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -113,7 +113,7 @@ async def update_settlement(
     거래처 수정(활성만)
     - 쓰기 권한 필요
     """
-    return await SettlementService(db, tenant_id).update(
+    return await SettlementService(db, team_id).update(
         settlement_id,
         body,
         actor_user_id=int(me.id),
@@ -125,7 +125,7 @@ async def delete_settlement(
     settlement_id: int,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(SETTLEMENT_WRITE)),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -133,7 +133,7 @@ async def delete_settlement(
     거래처 삭제
     - 하드 삭제 우선, FK 제약 시 소프트 비활성화
     """
-    return await SettlementService(db, tenant_id).delete(
+    return await SettlementService(db, team_id).delete(
         settlement_id,
         actor_user_id=int(me.id),
     )
@@ -148,7 +148,7 @@ async def create_settlements_bulk(
     body: SettlementBulkCreateRequest,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(SETTLEMENT_WRITE)),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -157,7 +157,7 @@ async def create_settlements_bulk(
     - 개별 항목별 성공/실패 처리
     - 부분 성공 허용
     """
-    return await SettlementService(db, tenant_id).create_bulk(
+    return await SettlementService(db, team_id).create_bulk(
         body,
         actor_user_id=int(me.id),
     )
@@ -168,7 +168,7 @@ async def update_settlements_bulk(
     body: SettlementBulkUpdateRequest,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(SETTLEMENT_WRITE)),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -177,7 +177,7 @@ async def update_settlements_bulk(
     - 개별 항목별 성공/실패 처리
     - 존재하지 않는 ID는 실패 처리
     """
-    return await SettlementService(db, tenant_id).update_bulk(
+    return await SettlementService(db, team_id).update_bulk(
         body,
         actor_user_id=int(me.id),
     )
@@ -188,7 +188,7 @@ async def delete_settlements_bulk(
     body: SettlementBulkDeleteRequest,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(SETTLEMENT_WRITE)),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -197,7 +197,7 @@ async def delete_settlements_bulk(
     - 개별 항목별 성공/실패 처리
     - 하드 삭제 우선, FK 제약 시 소프트 삭제
     """
-    return await SettlementService(db, tenant_id).delete_bulk(
+    return await SettlementService(db, team_id).delete_bulk(
         body,
         actor_user_id=int(me.id),
     )
@@ -212,11 +212,11 @@ async def calculate_settlement(
     body: "SettlementCalculateRequest",
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard("SETTLEMENT_CALCULATE")),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
-    return await SettlementService(db, tenant_id).calculate(
+    return await SettlementService(db, team_id).calculate(
         settlement_id, body, actor_user_id=int(me.id),
     )
 
@@ -227,11 +227,11 @@ async def adjust_settlement(
     body: "SettlementAdjustRequest",
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard("SETTLEMENT_ADJUST")),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
-    return await SettlementService(db, tenant_id).adjust(
+    return await SettlementService(db, team_id).adjust(
         settlement_id, body, actor_user_id=int(me.id),
     )
 
@@ -242,11 +242,11 @@ async def approve_settlement(
     body: "SettlementApproveRequest",
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard("SETTLEMENT_APPROVE")),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
-    return await SettlementService(db, tenant_id).approve(
+    return await SettlementService(db, team_id).approve(
         settlement_id, body, actor_user_id=int(me.id),
     )
 
@@ -257,10 +257,10 @@ async def unapprove_settlement(
     body: "SettlementUnapproveRequest",
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard("SETTLEMENT_UNAPPROVE")),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
-    return await SettlementService(db, tenant_id).unapprove(
+    return await SettlementService(db, team_id).unapprove(
         settlement_id, body, actor_user_id=int(me.id),
     )

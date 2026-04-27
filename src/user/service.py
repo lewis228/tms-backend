@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func
 
 from common.pagination.schemas.pagination_response import CursorPaginationResult
-from tenant.model import UserTenantModel
+from team.model import UserTeamModel
 from user.repository import UserRepository
 from user.model import UserModel
 from user.schemas.request import PaginateUserRequestSchema
@@ -17,8 +17,8 @@ from user.schemas.response import (
 )
 from common.exceptions.base import NotFoundException, ConflictException
 
-from tenant.service import TenantService
-from tenant.repository import TenantRepository
+from team.service import TeamService
+from team.repository import TeamRepository
 
 from file.service import FileService
 from file.const.domains import FileDomain
@@ -37,15 +37,15 @@ class UserService:
     - 파일도 유지 (복구 시 필요)
     
      파일 처리:
-    - User는 플랫폼 전역이므로 tenant_id=None 사용
+    - User는 플랫폼 전역이므로 team_id=None 사용
     - 경로: private/user/{user_id}/profile/...
     """
 
     def __init__(self, db: AsyncSession):
         self.db = db
         self.repo = UserRepository(db)
-        self.team_repo = TenantRepository(db)
-        self.tenant_svc = TenantService(db)
+        self.team_repo = TeamRepository(db)
+        self.team_svc = TeamService(db)
         self.file_svc = FileService(db)
 
     # ─────────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ class UserService:
         - remove_file_ids: 삭제할 기존 이미지 ID
         
          파일 처리:
-        - User는 플랫폼 전역이므로 tenant_id=None 사용
+        - User는 플랫폼 전역이므로 team_id=None 사용
         - 경로: private/user/{user_id}/profile/...
         """
         user = await self.repo.get_user_by_id(user_id)
@@ -174,11 +174,11 @@ class UserService:
         # ─────────────────────────────────────────────────────────
         #  파일 처리 (추가 + 삭제를 한 번에)
         # Product 패턴과 동일하게 FileService.commit() 사용
-        # User는 플랫폼 전역이므로 tenant_id=None 사용
+        # User는 플랫폼 전역이므로 team_id=None 사용
         # ─────────────────────────────────────────────────────────
         if temp_keys or remove_file_ids:
             await self.file_svc.commit(
-                tenant_id=None,  #  User는 플랫폼 전역
+                team_id=None,  #  User는 플랫폼 전역
                 domain=FileDomain.USER,
                 object_id=user_id,
                 subdir="profile",
@@ -214,11 +214,11 @@ class UserService:
             raise NotFoundException("User")
 
         # 나중 팀 정리를 위해 소속 팀 선조회
-        tenant_ids = await self.repo.get_user_tenant_ids(target_user_id)
+        team_ids = await self.repo.get_user_team_ids(target_user_id)
 
         # 파일 소프트삭제 (Product와 동일)
         await self.file_svc.soft_deactivate_by_object(
-            tenant_id=None,  # User는 플랫폼 전역
+            team_id=None,  # User는 플랫폼 전역
             domain=FileDomain.USER,
             object_id=target_user_id,
             actor_user_id=target_user_id,
@@ -228,11 +228,11 @@ class UserService:
         await self.repo.soft_deactivate_user_by_id(target_user_id)
         await self.repo.deactivate_memberships_by_user(target_user_id)
 
-        # 멤버 0명 팀 소거 (소프트/예약 정책은 TenantService에 위임)
+        # 멤버 0명 팀 소거 (소프트/예약 정책은 TeamService에 위임)
         teams_cleaned = 0
-        for tid in set(tenant_ids):
+        for tid in set(team_ids):
             if await self._count_active_members(tid) == 0:
-                await self.tenant_svc.delete_tenant(tenant_id=tid)
+                await self.team_svc.delete_team(team_id=tid)
                 teams_cleaned += 1
 
         return UserDeleteResponseSchema(
@@ -245,10 +245,10 @@ class UserService:
     # ─────────────────────────────────────────────────────────────
     # 내부 유틸: 활성 멤버수 집계 (팀 정리 판단용)
     # ─────────────────────────────────────────────────────────────
-    async def _count_active_members(self, tenant_id: int) -> int:
+    async def _count_active_members(self, team_id: int) -> int:
         from sqlalchemy import select
-        q = select(func.count(UserTenantModel.user_id)).where(
-            UserTenantModel.tenant_id == tenant_id,
-            UserTenantModel.is_active.is_(True)
+        q = select(func.count(UserTeamModel.user_id)).where(
+            UserTeamModel.team_id == team_id,
+            UserTeamModel.is_active.is_(True)
         )
         return (await self.db.execute(q)).scalar_one()

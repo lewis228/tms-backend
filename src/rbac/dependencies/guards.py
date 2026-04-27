@@ -12,15 +12,15 @@ from user.dependencies.current_user import get_current_user
 from user.schemas.response import UserResponseSchema
 
 
-def _extract_tenant_id(request: Request) -> Optional[int]:
+def _extract_team_id(request: Request) -> Optional[int]:
     """
     우선순위: path param -> query -> header
-    /tenant/{tenant_id}, ?tenantId=123, X-Tenant-Id
+    /team/{team_id}, ?teamId=123, X-Team-Id
     """
     raw = (
-        request.path_params.get("tenant_id")
-        or request.query_params.get("tenantId")
-        or request.headers.get("X-Tenant-Id")
+        request.path_params.get("team_id")
+        or request.query_params.get("teamId")
+        or request.headers.get("X-Team-Id")
     )
     if raw is None:
         return None
@@ -33,8 +33,8 @@ def _extract_tenant_id(request: Request) -> Optional[int]:
 def permission_guard(*required_codes: str):
     """
     - 플랫폼 운영자(SUPER_ADMIN) 면 무조건 통과
-    - tenant 의 admin_group(is_admin_group=True) 이면 통과
-    - tenant 컨텍스트 없음/미소속 → 403(TENANT_REQUIRED)
+    - team 의 admin_group(is_admin_group=True) 이면 통과
+    - team 컨텍스트 없음/미소속 → 403(TEAM_REQUIRED)
     - 필요한 코드 하나도 없으면 → 403(PERMISSION_DENIED) + groupId, groupVersion 제공
     """
     required: Set[str] = set(required_codes)
@@ -45,30 +45,30 @@ def permission_guard(*required_codes: str):
         db: AsyncSession = Depends(get_db),
         redis: Redis = Depends(get_redis),
     ):
-        # 플랫폼 운영자는 모든 권한 통과 (tenant 없이도)
+        # 플랫폼 운영자는 모든 권한 통과 (team 없이도)
         from user.const.roles import RolesEnum
         if getattr(getattr(me, "role", None), "value", getattr(me, "role", "")) == RolesEnum.SUPER_ADMIN.value:
             return
 
-        tenant_id = _extract_tenant_id(request)
+        team_id = _extract_team_id(request)
 
         repo = RbacRepository(db, redis)
         codes, group_id, version, is_admin_group = await repo.get_user_perm_meta(
             int(me.id),
-            tenant_id=tenant_id,
+            team_id=team_id,
         )
 
-        # tenant 어드민 그룹이면 통과
+        # team 어드민 그룹이면 통과
         if is_admin_group:
             return
 
-        # tenant 컨텍스트 없거나 멤버가 아닌 경우
-        if tenant_id is None or codes is None:
+        # team 컨텍스트 없거나 멤버가 아닌 경우
+        if team_id is None or codes is None:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
-                    "code": "TENANT_REQUIRED",
-                    "message": "tenant 컨텍스트가 필요합니다.",
+                    "code": "TEAM_REQUIRED",
+                    "message": "team 컨텍스트가 필요합니다.",
                 },
             )
 
@@ -89,26 +89,26 @@ def permission_guard(*required_codes: str):
 
 
 # ═══════════════════════════════════════════════════════════════
-# tenant 관리자 전용 가드 (admin_group 만 허용)
+# team 관리자 전용 가드 (admin_group 만 허용)
 # ═══════════════════════════════════════════════════════════════
 
-async def tenant_admin_guard(
+async def team_admin_guard(
     request: Request,
     me: UserResponseSchema = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
     """
-    tenant 내 admin_group 또는 SUPER_ADMIN 만 허용.
+    team 내 admin_group 또는 SUPER_ADMIN 만 허용.
     """
     from user.const.roles import RolesEnum
     if getattr(getattr(me, "role", None), "value", getattr(me, "role", "")) == RolesEnum.SUPER_ADMIN.value:
         return
 
-    tenant_id = _extract_tenant_id(request)
+    team_id = _extract_team_id(request)
     repo = RbacRepository(db, redis)
     codes, group_id, version, is_admin = await repo.get_user_perm_meta(
-        int(me.id), tenant_id=tenant_id,
+        int(me.id), team_id=team_id,
     )
     if is_admin:
         return

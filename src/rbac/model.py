@@ -7,21 +7,21 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import mapped_column, relationship, Mapped, foreign
 from common.model.base_model import Base
-from common.model.tenant_scoped_mixin import TenantScopedMixin
+from common.model.team_scoped_mixin import TeamScopedMixin
 from common.const.settings import settings
-from tenant.model import UserTenantModel
+from team.model import UserTeamModel
 
 # ─────────────────────────────────────────────────────────
 # 지연 임포트 헬퍼 (순환참조 안전)
 # ─────────────────────────────────────────────────────────
 def _Team():
-    from tenant.model import TenantModel
-    return TenantModel
+    from team.model import TeamModel
+    return TeamModel
 
-def _UserTenant():
+def _UserTeam():
     """순환 회피용 lazy 참조."""
-    from tenant.model import UserTenantModel
-    return UserTenantModel
+    from team.model import UserTeamModel
+    return UserTeamModel
 
 
 # ─────────────────────────────────────────────────────────
@@ -55,20 +55,20 @@ class PermissionModel(Base):
 # ─────────────────────────────────────────────────────────
 # 권한 그룹 (팀 스코프)
 # ─────────────────────────────────────────────────────────
-class PermissionGroupModel(Base, TenantScopedMixin):
+class PermissionGroupModel(Base, TeamScopedMixin):
     __tablename__ = "permission_groups"
     __table_args__ = (
         # 팀 내 시스템키 유니크(ADMIN/MEMBER/VIEWER 보호용)
-        UniqueConstraint("tenant_id", "system_key", name="uq_permgroup_system_key"),
+        UniqueConstraint("team_id", "system_key", name="uq_permgroup_system_key"),
 
         # 팀 스코프 공통 패턴(커서/조인 안정화)
-        UniqueConstraint("tenant_id", "id", name="uq_permission_groups_tenant_id_id"),
-        Index("ix_permission_groups_tenant_id_id", "tenant_id", "id"),
+        UniqueConstraint("team_id", "id", name="uq_permission_groups_team_id_id"),
+        Index("ix_permission_groups_team_id_id", "team_id", "id"),
 
         # 자주 쓰는 조회/정렬 경로
-        Index("ix_permission_groups_tenant_name", "tenant_id", "name"),
-        Index("ix_permission_groups_team_is_system", "tenant_id", "is_system"),
-        Index("ix_permission_groups_team_updated_at", "tenant_id", "updated_at"),
+        Index("ix_permission_groups_team_name", "team_id", "name"),
+        Index("ix_permission_groups_team_is_system", "team_id", "is_system"),
+        Index("ix_permission_groups_team_updated_at", "team_id", "updated_at"),
     )
 
     name       = mapped_column(String(255), nullable=False)
@@ -92,50 +92,50 @@ class PermissionGroupModel(Base, TenantScopedMixin):
         lazy=settings.ORM_LAZY_DEFAULT,
         order_by=lambda: PermissionGroupPermission.id.asc(),
         primaryjoin=lambda: (
-            (foreign(PermissionGroupPermission.tenant_id) == PermissionGroupModel.tenant_id) &
+            (foreign(PermissionGroupPermission.team_id) == PermissionGroupModel.team_id) &
             (foreign(PermissionGroupPermission.group_id) == PermissionGroupModel.id)
         ),
         # 문자열 foreign_keys 제거
     )
 
-    # 권한 그룹 → UserTenant (1:N)
-    # FK는 user_tenants.permission_group_id (RESTRICT — 멤버십 있으면 그룹 삭제 금지)
-    user_tenants: Mapped[list["UserTenantModel"]] = relationship(
-        "UserTenantModel",
+    # 권한 그룹 → UserTeam (1:N)
+    # FK는 user_team.permission_group_id (RESTRICT — 멤버십 있으면 그룹 삭제 금지)
+    user_team: Mapped[list["UserTeamModel"]] = relationship(
+        "UserTeamModel",
         back_populates="permission_group",
         lazy=settings.ORM_LAZY_DEFAULT,
-        order_by=lambda: _UserTenant().id.asc(),
-        primaryjoin=lambda: foreign(_UserTenant().permission_group_id) == PermissionGroupModel.id,
+        order_by=lambda: _UserTeam().id.asc(),
+        primaryjoin=lambda: foreign(_UserTeam().permission_group_id) == PermissionGroupModel.id,
     )
 
 
 # ─────────────────────────────────────────────────────────
 # 권한 그룹 ↔ 권한 코드 매핑(Association, 팀 스코프)
 # ─────────────────────────────────────────────────────────
-class PermissionGroupPermission(Base, TenantScopedMixin):
+class PermissionGroupPermission(Base, TeamScopedMixin):
     __tablename__ = "permission_group_permissions"
 
-    # 조인 테이블이므로 TenantScopedMixin의 tenant 관계를 끈다
-    __with_tenant_rel__ = False
+    # 조인 테이블이므로 TeamScopedMixin의 team 관계를 끈다
+    __with_team_rel__ = False
 
     __table_args__ = (
-        # (tenant_id, id) 커서/조인 안정화 패턴
-        UniqueConstraint("tenant_id", "id", name="uq_pgperm_tenant_id_id"),
-        Index("ix_pgperm_tenant_id_id", "tenant_id", "id"),
+        # (team_id, id) 커서/조인 안정화 패턴
+        UniqueConstraint("team_id", "id", name="uq_pgperm_team_id_id"),
+        Index("ix_pgperm_team_id_id", "team_id", "id"),
 
         # 팀 단위 중복 매핑 방지
-        UniqueConstraint("tenant_id", "group_id", "permission_id", name="uq_pgperm_team_group_perm"),
+        UniqueConstraint("team_id", "group_id", "permission_id", name="uq_pgperm_team_group_perm"),
 
         # 자주 쓰는 조회/집계 경로
-        Index("ix_pgperm_team_group", "tenant_id", "group_id"),
-        Index("ix_pgperm_team_permission", "tenant_id", "permission_id"),
+        Index("ix_pgperm_team_group", "team_id", "group_id"),
+        Index("ix_pgperm_team_permission", "team_id", "permission_id"),
 
-        # 복합 FK: (tenant_id, group_id) → permission_groups(tenant_id, id)
+        # 복합 FK: (team_id, group_id) → permission_groups(team_id, id)
         ForeignKeyConstraint(
-            ["tenant_id", "group_id"],
-            ["permission_groups.tenant_id", "permission_groups.id"],
+            ["team_id", "group_id"],
+            ["permission_groups.team_id", "permission_groups.id"],
             ondelete="CASCADE",
-            name="fk_pgperm_group_tenant_id_id",
+            name="fk_pgperm_group_team_id_id",
         ),
     )
 
@@ -154,7 +154,7 @@ class PermissionGroupPermission(Base, TenantScopedMixin):
         back_populates="permissions",
         lazy=settings.ORM_LAZY_DEFAULT,
         primaryjoin=lambda: (
-            (foreign(PermissionGroupPermission.tenant_id) == PermissionGroupModel.tenant_id) &
+            (foreign(PermissionGroupPermission.team_id) == PermissionGroupModel.team_id) &
             (foreign(PermissionGroupPermission.group_id) == PermissionGroupModel.id)
         ),
         foreign_keys=(group_id,),   # 여기서는 실제 Column 객체이므로 OK

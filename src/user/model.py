@@ -89,15 +89,15 @@ class UserModel(Base):
         nullable=True,
     )
 
-    # ── 관계: User ↔ UserTenant (1:N — N:M 멤버십) ──────────────
-    # 한 user 가 여러 tenant 소속 가능. 각 멤버십에 별도 permission_group 매핑.
-    tenants = relationship(
-        "UserTenantModel",
+    # ── 관계: User ↔ UserTeam (1:N — N:M 멤버십) ──────────────
+    # 한 user 가 여러 team 소속 가능. 각 멤버십에 별도 permission_group 매핑.
+    teams = relationship(
+        "UserTeamModel",
         back_populates="user",
         cascade="all, delete-orphan",
         lazy=settings.ORM_LAZY_DEFAULT,
-        order_by="UserTenantModel.id.asc()",
-        primaryjoin=lambda: foreign(__import__("tenant.model", fromlist=["UserTenantModel"]).UserTenantModel.user_id)
+        order_by="UserTeamModel.id.asc()",
+        primaryjoin=lambda: foreign(__import__("team.model", fromlist=["UserTeamModel"]).UserTeamModel.user_id)
         == UserModel.id,
     )
 

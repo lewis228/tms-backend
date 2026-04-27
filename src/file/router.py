@@ -18,7 +18,7 @@ MinIO 기반 파일 API 라우터
 - 파일 자체에 대한 별도 권한 코드(FILE_READ/FILE_WRITE) 없음
 - 파일은 항상 부모 엔티티(제품, 발주서 등)의 맥락에서 사용되므로
   부모 엔티티의 권한(PRODUCT_WRITE, PURCHASE_MANAGE 등)이 접근을 제어함
-- 파일 엔드포인트는 access_token + tenant_scope만 확인
+- 파일 엔드포인트는 access_token + team_scope만 확인
 """
 from __future__ import annotations
 from typing import List
@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.tokens.access_token import access_token
 from common.pagination.schemas.pagination_response import CursorPaginationResult
-from tenant.dependencies.get_tenant_scope import get_tenant_scope
+from team.dependencies.get_team_scope import get_team_scope
 from database.dependencies import get_read_db, get_write_db
 from user.dependencies.current_user import get_current_user
 from user.schemas.response import UserResponseSchema
@@ -55,14 +55,14 @@ router = APIRouter(prefix="/api/v1/files", tags=["files"])
 async def list_files(
     request: PaginateFileListRequestSchema = Depends(),
     _1: None = Depends(access_token),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_read_db),
 ):
     """
     파일 목록 조회 (커서 페이지네이션)
     """
     svc = FileService(db)
-    return await svc.list_paginated(tenant_id=tenant_id, request=request)
+    return await svc.list_paginated(team_id=team_id, request=request)
 
 
 # ─────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ async def list_files(
 async def get_upload_urls(
     body: UploadUrlRequestSchema,
     _1: None = Depends(access_token),
-    _tenant_id: int = Depends(get_tenant_scope),  # tenant 멤버십 검증 (cross-tenant 차단)
+    _team_id: int = Depends(get_team_scope),  # team 멤버십 검증 (cross-team 차단)
     db: AsyncSession = Depends(get_read_db),
 ):
     """
@@ -105,7 +105,7 @@ async def get_upload_urls(
 async def commit_files(
     body: FileCommitRequestSchema,
     _1: None = Depends(access_token),
-    tenant_id_ctx: int = Depends(get_tenant_scope),
+    team_id_ctx: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -115,12 +115,12 @@ async def commit_files(
     - add_temp_tokens: 업로드 후 받은 token 목록
     - remove_file_ids: 기존 파일 중 제거할 ID들
     """
-    if body.tenant_id != tenant_id_ctx:
-        raise HTTPException(status_code=403, detail="tenant scope mismatch")
+    if body.team_id != team_id_ctx:
+        raise HTTPException(status_code=403, detail="team scope mismatch")
 
     svc = FileService(db)
     saved = await svc.commit(
-        tenant_id=body.tenant_id,
+        team_id=body.team_id,
         domain=body.domain,
         object_id=body.object_id,
         subdir=body.subdir or "",
@@ -141,8 +141,8 @@ async def commit_files(
 @router.get("/download-url", response_model=DownloadUrlResponseSchema)
 async def get_download_url(
     _1: None = Depends(access_token),
-    tenant_id_ctx: int = Depends(get_tenant_scope),
-    path: str = Query(..., description="논리경로 e.g. private/tenant-123/product/45/images/a.jpg"),
+    team_id_ctx: int = Depends(get_team_scope),
+    path: str = Query(..., description="논리경로 e.g. private/team-123/product/45/images/a.jpg"),
     db: AsyncSession = Depends(get_read_db),
 ):
     """
@@ -151,18 +151,18 @@ async def get_download_url(
     클라이언트는 반환된 url로 직접 MinIO에서 다운로드하면 됨.
     서명 검증은 MinIO가 자동으로 처리.
     """
-    # path의 tenant-<id>와 컨텍스트 일치 검증
+    # path의 team-<id>와 컨텍스트 일치 검증
     try:
-        # path: "private/tenant-123/..." 또는 "public/tenant-123/..."
+        # path: "private/team-123/..." 또는 "public/team-123/..."
         seg = path.split("/", 3)
-        if len(seg) < 2 or not seg[1].startswith("tenant-"):
+        if len(seg) < 2 or not seg[1].startswith("team-"):
             raise ValueError
-        tenant_id_in_path = int(seg[1].split("-", 1)[1])
+        team_id_in_path = int(seg[1].split("-", 1)[1])
     except Exception:
         raise HTTPException(status_code=400, detail="bad logical path")
 
-    if tenant_id_in_path != tenant_id_ctx:
-        raise HTTPException(status_code=403, detail="tenant scope mismatch")
+    if team_id_in_path != team_id_ctx:
+        raise HTTPException(status_code=403, detail="team scope mismatch")
 
     svc = FileService(db)
     url = svc.generate_download_url(path)
@@ -177,12 +177,12 @@ async def get_download_url(
 async def delete_files(
     file_ids: List[int] = Query(..., description="삭제할 파일 ID 목록"),
     _1: None = Depends(access_token),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
 ):
     """
     파일 삭제 (DB 메타 + MinIO 오브젝트)
     """
     svc = FileService(db)
-    await svc._remove_files(tenant_id=tenant_id, file_ids=file_ids)
+    await svc._remove_files(team_id=team_id, file_ids=file_ids)
     return {"deleted": file_ids}

@@ -1,4 +1,4 @@
-# src/tenant/schemas/response.py
+# src/team/schemas/response.py
 from __future__ import annotations
 from typing import Optional, Literal, List
 from datetime import datetime
@@ -11,7 +11,7 @@ from common.schemas.nested import (
 )
 
 
-class TenantResponseSchema(ResponseSchema):
+class TeamResponseSchema(ResponseSchema):
     """단일 팀 응답(경량) — id, name, 온보딩 상태"""
     id: int
     name: str
@@ -22,12 +22,12 @@ class TenantResponseSchema(ResponseSchema):
     onboarding_completed: bool = False
 
 
-class TenantListItemResponseSchema(TenantResponseSchema):
+class TeamListItemResponseSchema(TeamResponseSchema):
     """마이 팀 목록의 한 항목(목록 카드용)"""
     files: List[FileNestedSchema] = []
 
 
-class TenantDetailResponseSchema(TenantResponseSchema):
+class TeamDetailResponseSchema(TeamResponseSchema):
     """
     상세 응답 — 팀 설정 페이지에서 사용
     """
@@ -62,10 +62,10 @@ class TenantDetailResponseSchema(TenantResponseSchema):
 # ─────────────────────────────────────────────────────────
 # ▼ 커서 페이지네이션: 멤버 응답 (서비스 변환기 불필요)
 # ─────────────────────────────────────────────────────────
-class UserTenantResponseSchema(ResponseSchema):
+class UserTeamResponseSchema(ResponseSchema):
     """
     팀 멤버 한 명의 응답 형태
-    - ORM: UserTenantModel 한 줄을 from_attributes=True로 직변환
+    - ORM: UserTeamModel 한 줄을 from_attributes=True로 직변환
     - user / permission_group 관계는 중첩 ResponseSchema로 반환
     """
     id: int
@@ -84,23 +84,23 @@ class UserTenantResponseSchema(ResponseSchema):
 class TeamRenameResponseSchema(ResponseSchema):
     """팀 이름 변경 응답"""
     id: int
-    object: Literal["tenant"] = "tenant"
+    object: Literal["team"] = "team"
     renamed: bool = True
     name: str  # 변경된 이름
 
 
-class TenantDeleteResponseSchema(ResponseSchema):
+class TeamDeleteResponseSchema(ResponseSchema):
     """팀 삭제(소프트) 응답"""
     id: int
-    object: Literal["tenant"] = "tenant"
+    object: Literal["team"] = "team"
     deleted: bool = True
     purge_at: Optional[datetime] = None  # 영구 삭제 예정 시각
 
 
-class TenantReactivateResponseSchema(ResponseSchema):
+class TeamReactivateResponseSchema(ResponseSchema):
     """팀 재활성화 응답"""
     id: int
-    object: Literal["tenant"] = "tenant"
+    object: Literal["team"] = "team"
     reactivated: bool = True
 
 
@@ -109,7 +109,7 @@ class TenantReactivateResponseSchema(ResponseSchema):
 # ─────────────────────────────────────────────────────────
 class TeamMemberInviteResponseSchema(ResponseSchema):
     """멤버 초대 응답"""
-    tenant_id: int
+    team_id: int
     user_id: int
     object: Literal["team_member"] = "team_member"
     invited: bool = True
@@ -118,7 +118,7 @@ class TeamMemberInviteResponseSchema(ResponseSchema):
 
 class TeamMemberRemoveResponseSchema(ResponseSchema):
     """멤버 제거/탈퇴 응답"""
-    tenant_id: int
+    team_id: int
     user_id: int
     object: Literal["team_member"] = "team_member"
     removed: bool = True
@@ -126,7 +126,7 @@ class TeamMemberRemoveResponseSchema(ResponseSchema):
 
 class TeamMemberPermissionResponseSchema(ResponseSchema):
     """멤버 권한 그룹 변경 응답"""
-    tenant_id: int
+    team_id: int
     user_id: int
     object: Literal["team_member"] = "team_member"
     updated: bool = True
@@ -139,7 +139,7 @@ class TeamMemberPermissionResponseSchema(ResponseSchema):
 class OnboardingUpdateResponseSchema(ResponseSchema):
     """온보딩 상태 업데이트 응답"""
     id: int
-    object: Literal["tenant"] = "tenant"
+    object: Literal["team"] = "team"
     updated: bool = True
     onboarding_step1_done: bool
     onboarding_step2_done: bool
@@ -153,7 +153,7 @@ class OnboardingUpdateResponseSchema(ResponseSchema):
 class TeamSettingsUpdateResponseSchema(ResponseSchema):
     """팀 설정 업데이트 응답"""
     id: int
-    object: Literal["tenant"] = "tenant"
+    object: Literal["team"] = "team"
     updated: bool = True
 
 

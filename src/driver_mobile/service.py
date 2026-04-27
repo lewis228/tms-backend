@@ -13,14 +13,14 @@ from leg.model import LegModel
 
 
 class DriverMobileService:
-    def __init__(self, db: AsyncSession, tenant_id: int) -> None:
+    def __init__(self, db: AsyncSession, team_id: int) -> None:
         self.db = db
-        self.tenant_id = tenant_id
+        self.team_id = team_id
 
     async def resolve_driver_id(self, user_id: int) -> int:
-        """User → 그 tenant 의 Driver row.id 매핑."""
+        """User → 그 team 의 Driver row.id 매핑."""
         stmt = select(DriverModel.id).where(
-            DriverModel.tenant_id == self.tenant_id,
+            DriverModel.team_id == self.team_id,
             DriverModel.user_id == user_id,
             DriverModel.is_active.is_(True),
         )
@@ -38,7 +38,7 @@ class DriverMobileService:
         stmt = (
             select(LegModel)
             .where(
-                LegModel.tenant_id == self.tenant_id,
+                LegModel.team_id == self.team_id,
                 LegModel.driver_id == driver_id,
                 LegModel.is_active.is_(True),
                 # pickup_date 또는 delivery_date 가 오늘 범위 또는 진행 중
@@ -74,7 +74,7 @@ class DriverMobileService:
         driver_id = await self.resolve_driver_id(user_id)
         # 본인 leg 인지 검증
         stmt = select(LegModel).where(
-            LegModel.tenant_id == self.tenant_id,
+            LegModel.team_id == self.team_id,
             LegModel.id == leg_id,
             LegModel.is_active.is_(True),
         )
@@ -88,7 +88,7 @@ class DriverMobileService:
                 status_code=403,
             )
 
-        svc = LegService(self.db, self.tenant_id)
+        svc = LegService(self.db, self.team_id)
         result = await svc.transition(
             leg_id, target,
             failure_reason=failure_reason,

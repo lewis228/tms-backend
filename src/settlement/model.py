@@ -9,11 +9,11 @@ from sqlalchemy import (
 )
 
 from common.model.base_model import Base
-from common.model.tenant_scoped_mixin import TenantScopedMixin
+from common.model.team_scoped_mixin import TeamScopedMixin
 from settlement.const.status import SettlementStatus, SettlementAuditAction
 
 
-class SettlementModel(Base, TenantScopedMixin):
+class SettlementModel(Base, TeamScopedMixin):
     """Leg 의 정산 (1:1)."""
     __tablename__ = "settlement"
 
@@ -51,16 +51,16 @@ class SettlementModel(Base, TenantScopedMixin):
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "id", name="uq_settlement_tenant_id_id"),
+        UniqueConstraint("team_id", "id", name="uq_settlement_team_id_id"),
         UniqueConstraint("leg_id", name="uq_settlement_leg_unique"),
-        Index("ix_settlement_tenant_status",      "tenant_id", "settlement_status"),
-        Index("ix_settlement_tenant_has_flag",    "tenant_id", "has_flag"),
-        Index("ix_settlement_tenant_active_id",   "tenant_id", "is_active", "id"),
-        Index("ix_settlement_tenant_updated_at",  "tenant_id", "updated_at"),
+        Index("ix_settlement_team_status",      "team_id", "settlement_status"),
+        Index("ix_settlement_team_has_flag",    "team_id", "has_flag"),
+        Index("ix_settlement_team_active_id",   "team_id", "is_active", "id"),
+        Index("ix_settlement_team_updated_at",  "team_id", "updated_at"),
     )
 
 
-class ExtraChargeModel(Base, TenantScopedMixin):
+class ExtraChargeModel(Base, TeamScopedMixin):
     """Settlement 의 추가 청구 (DEMURRAGE, DETENTION, FUEL 등 자유 코드)."""
     __tablename__ = "extra_charge"
 
@@ -72,14 +72,14 @@ class ExtraChargeModel(Base, TenantScopedMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "id", name="uq_extra_charge_tenant_id_id"),
-        Index("ix_extra_charge_tenant_settlement", "tenant_id", "settlement_id"),
-        Index("ix_extra_charge_tenant_type",       "tenant_id", "type"),
-        Index("ix_extra_charge_tenant_active_id",  "tenant_id", "is_active", "id"),
+        UniqueConstraint("team_id", "id", name="uq_extra_charge_team_id_id"),
+        Index("ix_extra_charge_team_settlement", "team_id", "settlement_id"),
+        Index("ix_extra_charge_team_type",       "team_id", "type"),
+        Index("ix_extra_charge_team_active_id",  "team_id", "is_active", "id"),
     )
 
 
-class SettlementAuditLogModel(Base, TenantScopedMixin):
+class SettlementAuditLogModel(Base, TeamScopedMixin):
     """Settlement 변경 감사 로그 — append-only."""
     __tablename__ = "settlement_audit_log"
 
@@ -97,9 +97,9 @@ class SettlementAuditLogModel(Base, TenantScopedMixin):
     reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "id", name="uq_settlement_audit_tenant_id_id"),
-        Index("ix_settlement_audit_tenant_settlement", "tenant_id", "settlement_id"),
-        Index("ix_settlement_audit_tenant_action",     "tenant_id", "action"),
-        Index("ix_settlement_audit_tenant_active_id",  "tenant_id", "is_active", "id"),
-        Index("ix_settlement_audit_tenant_created_at", "tenant_id", "created_at"),
+        UniqueConstraint("team_id", "id", name="uq_settlement_audit_team_id_id"),
+        Index("ix_settlement_audit_team_settlement", "team_id", "settlement_id"),
+        Index("ix_settlement_audit_team_action",     "team_id", "action"),
+        Index("ix_settlement_audit_team_active_id",  "team_id", "is_active", "id"),
+        Index("ix_settlement_audit_team_created_at", "team_id", "created_at"),
     )

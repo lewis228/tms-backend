@@ -8,10 +8,10 @@ from sqlalchemy import (
 )
 
 from common.model.base_model import Base
-from common.model.tenant_scoped_mixin import TenantScopedMixin
+from common.model.team_scoped_mixin import TeamScopedMixin
 
 
-class LocationPingModel(Base, TenantScopedMixin):
+class LocationPingModel(Base, TeamScopedMixin):
     """Driver mobile 의 GPS 핑 — 15분 간격 batch insert."""
     __tablename__ = "location_ping"
 
@@ -26,9 +26,9 @@ class LocationPingModel(Base, TenantScopedMixin):
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "id", name="uq_location_ping_tenant_id_id"),
-        Index("ix_location_ping_tenant_driver_time",
-              "tenant_id", "driver_id", "occurred_at"),
-        Index("ix_location_ping_tenant_active_id",
-              "tenant_id", "is_active", "id"),
+        UniqueConstraint("team_id", "id", name="uq_location_ping_team_id_id"),
+        Index("ix_location_ping_team_driver_time",
+              "team_id", "driver_id", "occurred_at"),
+        Index("ix_location_ping_team_active_id",
+              "team_id", "is_active", "id"),
     )

@@ -7,10 +7,10 @@ from sqlalchemy import (
 )
 
 from common.model.base_model import Base
-from common.model.tenant_scoped_mixin import TenantScopedMixin
+from common.model.team_scoped_mixin import TeamScopedMixin
 
 
-class PushTokenModel(Base, TenantScopedMixin):
+class PushTokenModel(Base, TeamScopedMixin):
     """FCM / APNs push 토큰. 같은 driver+platform 의 동일 token 은 1 행."""
     __tablename__ = "push_token"
 
@@ -24,9 +24,9 @@ class PushTokenModel(Base, TenantScopedMixin):
     )
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "id", name="uq_push_token_tenant_id_id"),
+        UniqueConstraint("team_id", "id", name="uq_push_token_team_id_id"),
         UniqueConstraint("driver_id", "platform", "token",
                           name="uq_push_token_driver_platform_token"),
-        Index("ix_push_token_tenant_driver", "tenant_id", "driver_id"),
-        Index("ix_push_token_tenant_active_id", "tenant_id", "is_active", "id"),
+        Index("ix_push_token_team_driver", "team_id", "driver_id"),
+        Index("ix_push_token_team_active_id", "team_id", "is_active", "id"),
     )

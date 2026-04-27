@@ -7,9 +7,9 @@ MinIO 기반 파일 저장소 설정 및 유틸리티
 - Presigned URL로 업로드/다운로드
 - 로컬 경로 대신 오브젝트 키(key) 사용
 
- tenant_id=None 지원:
-- User 도메인은 팀과 무관하므로 tenant_id=NULL
-- 경로: private/{domain}/{object_id}/... (tenant- prefix 없음)
+ team_id=None 지원:
+- User 도메인은 팀과 무관하므로 team_id=NULL
+- 경로: private/{domain}/{object_id}/... (team- prefix 없음)
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -130,17 +130,17 @@ class ObjectKeyBuilder:
     """
     MinIO 오브젝트 키(경로) 생성기
     
-     tenant_id 유무에 따른 경로 구조:
+     team_id 유무에 따른 경로 구조:
     
-    tenant_id 있음 (Product, Partner 등):
-        {visibility}/tenant-{tenant_id}/{domain}/{object_id}/{subdir}/{filename}
-        예: private/tenant-7/product/123/images/photo.jpg
+    team_id 있음 (Product, Partner 등):
+        {visibility}/team-{team_id}/{domain}/{object_id}/{subdir}/{filename}
+        예: private/team-7/product/123/images/photo.jpg
     
-    tenant_id=None (User):
+    team_id=None (User):
         {visibility}/{domain}/{object_id}/{subdir}/{filename}
         예: private/user/456/profile/photo.jpg
     """
-    tenant_id: Optional[int]  #  None 허용
+    team_id: Optional[int]  #  None 허용
     domain: FileDomain
     object_id: int
     subdir: str = ""
@@ -155,15 +155,15 @@ class ObjectKeyBuilder:
         """
         디렉터리(prefix) 수준의 키 (파일명 제외)
         
-        예 (tenant_id 있음): "private/tenant-7/product/123/images"
-        예 (tenant_id=None): "private/user/456/profile"
+        예 (team_id 있음): "private/team-7/product/123/images"
+        예 (team_id=None): "private/user/456/profile"
         """
-        #  tenant_id 유무에 따라 경로 분기
-        if self.tenant_id is not None:
+        #  team_id 유무에 따라 경로 분기
+        if self.team_id is not None:
             # Product, Partner 등 (팀 소속)
-            base = f"{self.visibility}/tenant-{self.tenant_id}/{self.domain.value}/{self.object_id}"
+            base = f"{self.visibility}/team-{self.team_id}/{self.domain.value}/{self.object_id}"
         else:
-            # User (플랫폼 전역) - tenant- prefix 없음
+            # User (플랫폼 전역) - team- prefix 없음
             base = f"{self.visibility}/{self.domain.value}/{self.object_id}"
         
         if self.subdir:
@@ -174,8 +174,8 @@ class ObjectKeyBuilder:
         """
         전체 오브젝트 키 (파일명 포함)
         
-        예 (tenant_id 있음): "private/tenant-7/product/123/images/photo.jpg"
-        예 (tenant_id=None): "private/user/456/profile/photo.jpg"
+        예 (team_id 있음): "private/team-7/product/123/images/photo.jpg"
+        예 (team_id=None): "private/user/456/profile/photo.jpg"
         """
         prefix = self.key_prefix()
         return f"{prefix}/{filename}" if filename else prefix

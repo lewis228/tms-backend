@@ -10,20 +10,20 @@ from leg.service import LegService
 from settlement.model import SettlementModel
 
 from tests.integration.factories import (
-    make_customer, make_delivery_order, make_driver, make_leg, make_tenant,
+    make_customer, make_delivery_order, make_driver, make_leg, make_team,
 )
 
 
 @pytest.mark.asyncio
 async def test_pending_to_in_transit_sets_started_at(db_session):
-    tenant = await make_tenant(db_session)
-    customer = await make_customer(db_session, tenant=tenant)
-    do = await make_delivery_order(db_session, tenant=tenant, customer=customer)
-    driver = await make_driver(db_session, tenant=tenant)
-    leg = await make_leg(db_session, tenant=tenant, do=do, driver_id=driver.id)
+    team = await make_team(db_session)
+    customer = await make_customer(db_session, team=team)
+    do = await make_delivery_order(db_session, team=team, customer=customer)
+    driver = await make_driver(db_session, team=team)
+    leg = await make_leg(db_session, team=team, do=do, driver_id=driver.id)
     await db_session.commit()
 
-    svc = LegService(db_session, tenant.id)
+    svc = LegService(db_session, team.id)
     await svc.transition(leg.id, LegStatus.IN_TRANSIT)
 
     refreshed = (await db_session.execute(
@@ -36,17 +36,17 @@ async def test_pending_to_in_transit_sets_started_at(db_session):
 
 @pytest.mark.asyncio
 async def test_in_transit_to_completed_creates_settlement(db_session):
-    tenant = await make_tenant(db_session)
-    customer = await make_customer(db_session, tenant=tenant)
-    do = await make_delivery_order(db_session, tenant=tenant, customer=customer)
-    driver = await make_driver(db_session, tenant=tenant)
+    team = await make_team(db_session)
+    customer = await make_customer(db_session, team=team)
+    do = await make_delivery_order(db_session, team=team, customer=customer)
+    driver = await make_driver(db_session, team=team)
     leg = await make_leg(
-        db_session, tenant=tenant, do=do, driver_id=driver.id,
+        db_session, team=team, do=do, driver_id=driver.id,
         status=LegStatus.IN_TRANSIT,
     )
     await db_session.commit()
 
-    svc = LegService(db_session, tenant.id)
+    svc = LegService(db_session, team.id)
     await svc.transition(leg.id, LegStatus.COMPLETED)
 
     refreshed = (await db_session.execute(
@@ -61,24 +61,24 @@ async def test_in_transit_to_completed_creates_settlement(db_session):
         select(SettlementModel).where(SettlementModel.leg_id == leg.id)
     )).scalar_one_or_none()
     assert s is not None
-    assert s.tenant_id == tenant.id
+    assert s.team_id == team.id
 
 
 @pytest.mark.asyncio
 async def test_failed_requires_failure_reason(db_session):
     from common.exceptions.base import BadRequestException
 
-    tenant = await make_tenant(db_session)
-    customer = await make_customer(db_session, tenant=tenant)
-    do = await make_delivery_order(db_session, tenant=tenant, customer=customer)
-    driver = await make_driver(db_session, tenant=tenant)
+    team = await make_team(db_session)
+    customer = await make_customer(db_session, team=team)
+    do = await make_delivery_order(db_session, team=team, customer=customer)
+    driver = await make_driver(db_session, team=team)
     leg = await make_leg(
-        db_session, tenant=tenant, do=do, driver_id=driver.id,
+        db_session, team=team, do=do, driver_id=driver.id,
         status=LegStatus.IN_TRANSIT,
     )
     await db_session.commit()
 
-    svc = LegService(db_session, tenant.id)
+    svc = LegService(db_session, team.id)
     with pytest.raises(BadRequestException, match="failure_reason"):
         await svc.transition(leg.id, LegStatus.FAILED)
 
@@ -87,13 +87,13 @@ async def test_failed_requires_failure_reason(db_session):
 async def test_invalid_transition_rejected(db_session):
     from common.exceptions.base import AppException
 
-    tenant = await make_tenant(db_session)
-    customer = await make_customer(db_session, tenant=tenant)
-    do = await make_delivery_order(db_session, tenant=tenant, customer=customer)
-    leg = await make_leg(db_session, tenant=tenant, do=do)  # PENDING
+    team = await make_team(db_session)
+    customer = await make_customer(db_session, team=team)
+    do = await make_delivery_order(db_session, team=team, customer=customer)
+    leg = await make_leg(db_session, team=team, do=do)  # PENDING
     await db_session.commit()
 
-    svc = LegService(db_session, tenant.id)
+    svc = LegService(db_session, team.id)
     # PENDING → COMPLETED 직접 차단
     with pytest.raises(AppException):
         await svc.transition(leg.id, LegStatus.COMPLETED)
@@ -102,20 +102,20 @@ async def test_invalid_transition_rejected(db_session):
 @pytest.mark.asyncio
 async def test_completed_settlement_idempotent(db_session):
     """이미 Settlement 있으면 중복 생성 안 함."""
-    tenant = await make_tenant(db_session)
-    customer = await make_customer(db_session, tenant=tenant)
-    do = await make_delivery_order(db_session, tenant=tenant, customer=customer)
-    driver = await make_driver(db_session, tenant=tenant)
+    team = await make_team(db_session)
+    customer = await make_customer(db_session, team=team)
+    do = await make_delivery_order(db_session, team=team, customer=customer)
+    driver = await make_driver(db_session, team=team)
     leg = await make_leg(
-        db_session, tenant=tenant, do=do, driver_id=driver.id,
+        db_session, team=team, do=do, driver_id=driver.id,
         status=LegStatus.IN_TRANSIT,
     )
     # 사전에 settlement 1개 미리 생성
     from tests.integration.factories import make_settlement
-    pre = await make_settlement(db_session, tenant=tenant, leg=leg)
+    pre = await make_settlement(db_session, team=team, leg=leg)
     await db_session.commit()
 
-    svc = LegService(db_session, tenant.id)
+    svc = LegService(db_session, team.id)
     await svc.transition(leg.id, LegStatus.COMPLETED)
 
     rows = (await db_session.execute(

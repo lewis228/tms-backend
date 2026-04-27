@@ -12,7 +12,7 @@ from auth.tokens.access_token import access_token
 from common.exceptions.base import NotFoundException
 from common.const.settings import settings
 from database.dependencies import get_read_db, get_write_db
-from tenant.dependencies.get_tenant_scope import get_tenant_scope
+from team.dependencies.get_team_scope import get_team_scope
 from user.dependencies.current_user import get_current_user
 from user.const.roles import RolesEnum
 from user.schemas.response import UserResponseSchema
@@ -49,11 +49,11 @@ def require_driver(me: UserResponseSchema = Depends(get_current_user)) -> UserRe
 async def tasks_today(
     _1: None = Depends(access_token),
     me: UserResponseSchema = Depends(require_driver),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_read_db),
 ):
     """오늘 할당된 Leg 목록 (PENDING/IN_TRANSIT)."""
-    legs = await DriverMobileService(db, tenant_id).today_legs(int(me.id))
+    legs = await DriverMobileService(db, team_id).today_legs(int(me.id))
     return TodayTasksResponse(
         legs=[LegResponseSchema.model_validate(l) for l in legs],
     )
@@ -65,11 +65,11 @@ async def checkpoint(
     body: CheckpointRequest,
     _1: None = Depends(access_token),
     me: UserResponseSchema = Depends(require_driver),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
 ):
     """Leg 상태 전이 (PENDING → IN_TRANSIT 등). 본인 leg 검증 + leg.service.transition."""
-    return await DriverMobileService(db, tenant_id).checkpoint_leg(
+    return await DriverMobileService(db, team_id).checkpoint_leg(
         leg_id, body.target,
         user_id=int(me.id), failure_reason=body.failure_reason,
     )
@@ -80,18 +80,18 @@ async def location_batch(
     body: LocationBatchRequest,
     _1: None = Depends(access_token),
     me: UserResponseSchema = Depends(require_driver),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
 ):
     """GPS batch — pings 를 location_ping 테이블에 bulk insert."""
     from location_ping.model import LocationPingModel
     if not body.pings:
         return None
-    svc = DriverMobileService(db, tenant_id)
+    svc = DriverMobileService(db, team_id)
     driver_id = await svc.resolve_driver_id(int(me.id))
     for p in body.pings:
         db.add(LocationPingModel(
-            tenant_id=tenant_id,
+            team_id=team_id,
             driver_id=driver_id,
             latitude=p.latitude,
             longitude=p.longitude,
@@ -110,20 +110,20 @@ async def upsert_push_token(
     body: PushTokenRequest,
     _1: None = Depends(access_token),
     me: UserResponseSchema = Depends(require_driver),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
 ):
     """FCM/APNs 토큰 upsert (driver+platform+token unique)."""
     from sqlalchemy import select
     from push_token.model import PushTokenModel
 
-    svc = DriverMobileService(db, tenant_id)
+    svc = DriverMobileService(db, team_id)
     driver_id = await svc.resolve_driver_id(int(me.id))
 
     now = datetime.now(timezone.utc)
     existing = (await db.execute(
         select(PushTokenModel).where(
-            PushTokenModel.tenant_id == tenant_id,
+            PushTokenModel.team_id == team_id,
             PushTokenModel.driver_id == driver_id,
             PushTokenModel.platform == body.platform,
             PushTokenModel.token == body.token,
@@ -139,7 +139,7 @@ async def upsert_push_token(
         row = existing
     else:
         row = PushTokenModel(
-            tenant_id=tenant_id,
+            team_id=team_id,
             driver_id=driver_id,
             platform=body.platform,
             token=body.token,
@@ -166,7 +166,7 @@ async def upload_leg_document(
     kind: Annotated[str, Form()],
     _1: None = Depends(access_token),
     me: UserResponseSchema = Depends(require_driver),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
 ):
     """POD/Receipt 등 leg 첨부 — multipart 1회. file.service 활용.
@@ -189,12 +189,12 @@ async def upload_leg_document(
             "message": f"max {MAX_DOCUMENT_BYTES} bytes"})
 
     # 본인 leg 검증
-    svc = DriverMobileService(db, tenant_id)
+    svc = DriverMobileService(db, team_id)
     driver_id = await svc.resolve_driver_id(int(me.id))
     from leg.model import LegModel
     leg = (await db.execute(
         select(LegModel).where(
-            LegModel.tenant_id == tenant_id,
+            LegModel.team_id == team_id,
             LegModel.id == leg_id,
             LegModel.is_active.is_(True),
         )
@@ -211,7 +211,7 @@ async def upload_leg_document(
     from file.const.domains import FileDomain
     file_svc = FileService(db)
     asset = await file_svc.direct_upload(
-        tenant_id=tenant_id,
+        team_id=team_id,
         domain=FileDomain.LEG_DOCUMENT,
         object_id=leg_id,
         file_bytes=body,

@@ -31,9 +31,9 @@ class LocationService:
     - 사전 검증 실패 → 전체 실패 (트랜잭션 롤백)
     - 생성/수정: 전체 성공 or 전체 실패
     """
-    def __init__(self, db: AsyncSession, tenant_id: int):
+    def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
-        self.repo = LocationRepository(db, tenant_id)
+        self.repo = LocationRepository(db, team_id)
 
     # ═══════════════════════════════════════════════════════════════
     # Create (단건)

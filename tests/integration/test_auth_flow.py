@@ -14,7 +14,7 @@ from auth.const.providers import AuthProviderEnum
 from common.const.settings import settings
 from main import app
 from rbac.model import PermissionGroupModel
-from tenant.model import TenantModel, UserTenantModel
+from team.model import TeamModel, UserTeamModel
 from user.const.roles import RolesEnum
 from user.model import UserModel
 
@@ -45,13 +45,13 @@ async def http(db_session):
 
 
 async def _seed_admin_user(db, *, email: str = "owner@tms.dev", password: str = "Password!1"):
-    """ADMIN 사용자 + tenant + admin perm group + 멤버십 1세트."""
-    tenant = TenantModel(name="Test Tenant")
-    db.add(tenant)
+    """ADMIN 사용자 + team + admin perm group + 멤버십 1세트."""
+    team = TeamModel(name="Test Team")
+    db.add(team)
     await db.flush()
 
     group = PermissionGroupModel(
-        tenant_id=tenant.id, name="Admin",
+        team_id=team.id, name="Admin",
         is_admin=True, is_system=True, system_key="ADMIN",
     )
     db.add(group)
@@ -67,17 +67,17 @@ async def _seed_admin_user(db, *, email: str = "owner@tms.dev", password: str = 
     db.add(user)
     await db.flush()
 
-    db.add(UserTenantModel(
-        user_id=user.id, tenant_id=tenant.id,
+    db.add(UserTeamModel(
+        user_id=user.id, team_id=team.id,
         permission_group_id=group.id,
     ))
     await db.commit()
-    return tenant, user
+    return team, user
 
 
 @pytest.mark.asyncio
 async def test_login_basic_auth_returns_access_token(db_session, http):
-    tenant, user = await _seed_admin_user(db_session)
+    team, user = await _seed_admin_user(db_session)
 
     resp = await http.post(
         "/api/v1/auth/login",
@@ -92,7 +92,7 @@ async def test_login_basic_auth_returns_access_token(db_session, http):
 
 @pytest.mark.asyncio
 async def test_login_wrong_password_401(db_session, http):
-    tenant, user = await _seed_admin_user(db_session)
+    team, user = await _seed_admin_user(db_session)
     resp = await http.post(
         "/api/v1/auth/login",
         auth=(user.email, "WrongPassword!"),
@@ -107,8 +107,8 @@ async def test_login_wrong_password_401(db_session, http):
 # pytest-xdist 로 process 분리하는 게 정공법 — 추후 작업.
 @pytest.mark.xfail(reason="event-loop pollution between ASGI tests; runs alone OK", strict=False)
 @pytest.mark.asyncio
-async def test_users_me_returns_camelcase_with_tenants(db_session, http):
-    tenant, user = await _seed_admin_user(db_session)
+async def test_users_me_returns_camelcase_with_teams(db_session, http):
+    team, user = await _seed_admin_user(db_session)
     login = await http.post(
         "/api/v1/auth/login",
         auth=(user.email, "Password!1"),
@@ -130,5 +130,5 @@ async def test_users_me_returns_camelcase_with_tenants(db_session, http):
     # camelCase
     assert "authProvider" in body
     assert "isActive" in body
-    assert isinstance(body["tenants"], list)
-    assert body["tenants"][0]["tenantId"] == tenant.id
+    assert isinstance(body["teams"], list)
+    assert body["teams"][0]["teamId"] == team.id

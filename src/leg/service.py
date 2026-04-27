@@ -31,9 +31,9 @@ class LegService:
     - 사전 검증 실패 → 전체 실패 (트랜잭션 롤백)
     - 생성/수정: 전체 성공 or 전체 실패
     """
-    def __init__(self, db: AsyncSession, tenant_id: int):
+    def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
-        self.repo = LegRepository(db, tenant_id)
+        self.repo = LegRepository(db, team_id)
 
     # ═══════════════════════════════════════════════════════════════
     # Create (단건)
@@ -329,9 +329,9 @@ class LegService:
         }
 
         target_enum = target if isinstance(target, LegStatus) else LegStatus(target)
-        team_id = self.repo._require_tenant()
+        team_id = self.repo._require_team()
         stmt = select(LegModel).where(
-            LegModel.tenant_id == team_id,
+            LegModel.team_id == team_id,
             LegModel.id == leg_id,
             LegModel.is_active.is_(True),
         )
@@ -373,7 +373,7 @@ class LegService:
             from realtime.schemas.event import RealtimeEvent
             await publish(RealtimeEvent.now(
                 type="leg.status_changed",
-                tenant_id=team_id,
+                team_id=team_id,
                 actor_id=actor_user_id,
                 payload={
                     "legId": leg.id,
@@ -394,16 +394,16 @@ class LegService:
         from settlement.model import SettlementModel
         from settlement.const.status import SettlementStatus
 
-        team_id = self.repo._require_tenant()
+        team_id = self.repo._require_team()
         stmt = select(SettlementModel).where(
-            SettlementModel.tenant_id == team_id,
+            SettlementModel.team_id == team_id,
             SettlementModel.leg_id == leg.id,
         )
         existing = (await self.db.execute(stmt)).scalar_one_or_none()
         if existing:
             return
         s = SettlementModel(
-            tenant_id=team_id,
+            team_id=team_id,
             leg_id=leg.id,
             settlement_status=SettlementStatus.PENDING,
             is_settled=False,

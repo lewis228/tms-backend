@@ -4,14 +4,14 @@
 
 migrations/env.py 가 이 모듈을 import 해서 Base.metadata 를 가져감.
 
-Phase A — 시스템 도메인 (auth/user/tenant/rbac/file) 만.
+Phase A — 시스템 도메인 (auth/user/team/rbac/file) 만.
 Phase B+ 에서 TMS 도메인 추가.
 """
 from common.model.base_model import Base  # noqa: F401  (re-export — env.py 가 사용)
 
 # ── 시스템 도메인 ─────────────────────────────────────────────
 from user.model import UserModel  # noqa: F401
-from tenant.model import TenantModel, UserTenantModel  # noqa: F401
+from team.model import TeamModel, UserTeamModel  # noqa: F401
 from rbac.model import (  # noqa: F401
     PermissionModel,
     PermissionGroupModel,

@@ -8,13 +8,13 @@ from sqlalchemy import (
 )
 
 from common.model.base_model import Base
-from common.model.tenant_scoped_mixin import TenantScopedMixin
+from common.model.team_scoped_mixin import TeamScopedMixin
 from rate_setting.const.rate_type import RateType
 
 
-class RateSettingModel(Base, TenantScopedMixin):
+class RateSettingModel(Base, TeamScopedMixin):
     """
-    요율 정의 (Tenant-Scoped).
+    요율 정의 (Team-Scoped).
 
     rate_type 별로 활성화되는 amount 컬럼이 다름:
     - FLAT_RATE  → flat_amount
@@ -37,9 +37,9 @@ class RateSettingModel(Base, TenantScopedMixin):
     description:    Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "id", name="uq_rate_setting_tenant_id_id"),
-        Index("ix_rate_setting_tenant_active_id", "tenant_id", "is_active", "id"),
-        Index("ix_rate_setting_tenant_name",       "tenant_id", "name"),
-        Index("ix_rate_setting_tenant_effective",  "tenant_id", "effective_date"),
-        Index("ix_rate_setting_tenant_updated_at", "tenant_id", "updated_at"),
+        UniqueConstraint("team_id", "id", name="uq_rate_setting_team_id_id"),
+        Index("ix_rate_setting_team_active_id", "team_id", "is_active", "id"),
+        Index("ix_rate_setting_team_name",       "team_id", "name"),
+        Index("ix_rate_setting_team_effective",  "team_id", "effective_date"),
+        Index("ix_rate_setting_team_updated_at", "team_id", "updated_at"),
     )

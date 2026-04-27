@@ -1,4 +1,4 @@
-# src/tenant/schemas/request.py
+# src/team/schemas/request.py
 from __future__ import annotations
 from typing import Optional, Literal, List
 from pydantic import Field
@@ -7,12 +7,12 @@ from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
 
 
-class TenantCreateRequestSchema(RequestSchema):
+class TeamCreateRequestSchema(RequestSchema):
     """팀 생성 요청 바디"""
     name: str = Field(min_length=1, description="팀 이름")
 
 
-class TenantRenameRequestSchema(RequestSchema):
+class TeamRenameRequestSchema(RequestSchema):
     """팀 이름 변경 요청 바디"""
     name: str = Field(min_length=1, description="새 팀 이름")
 

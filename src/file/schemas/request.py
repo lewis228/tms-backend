@@ -28,7 +28,7 @@ class FileCommitRequestSchema(RequestSchema):
 
     기존과 동일 - 변경 없음
     """
-    tenant_id: int
+    team_id: int
     domain: FileDomain
     object_id: int
     subdir: Optional[str] = ""

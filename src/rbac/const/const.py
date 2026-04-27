@@ -2,9 +2,9 @@
 # ────────────────────────────────────────────────
 # RBAC 권한 코드 정의 (TMS) — 단일 소스
 #
-# tenant 스코프. SUPER_ADMIN 은 permission_guard 에서 자동 통과.
-# tenant 의 admin_group 도 자동 통과 (rbac.permission_groups.is_admin_group=True).
-# 그 외 tenant 멤버는 permission_group → 권한 코드 집합으로 게이트됨.
+# team 스코프. SUPER_ADMIN 은 permission_guard 에서 자동 통과.
+# team 의 admin_group 도 자동 통과 (rbac.permission_groups.is_admin_group=True).
+# 그 외 team 멤버는 permission_group → 권한 코드 집합으로 게이트됨.
 # ────────────────────────────────────────────────
 
 # ===== Master Data =====
@@ -36,13 +36,13 @@ NOTIFICATION_WRITE    = "NOTIFICATION_WRITE"     # 알림 mark_read 등 본인 i
 # ===== Analytics =====
 ANALYTICS_DASH_VIEW   = "ANALYTICS_DASH_VIEW"    # 대시보드 조회
 
-# ===== Tenant / Members (관리자 전용 - 커스텀 권한 UI에 노출하지 않음) =====
-TENANT_RENAME                   = "TENANT_RENAME"                   # tenant 이름/설정 변경
-TENANT_DELETE                   = "TENANT_DELETE"                   # tenant 삭제 (purge)
-TENANT_MEMBER_INVITE            = "TENANT_MEMBER_INVITE"            # 멤버 초대
-TENANT_MEMBER_REMOVE            = "TENANT_MEMBER_REMOVE"            # 멤버 제거
-TENANT_MEMBER_ROLE_WRITE        = "TENANT_MEMBER_ROLE_WRITE"        # 멤버 역할 변경
-TENANT_MEMBER_PERMISSION_ASSIGN = "TENANT_MEMBER_PERMISSION_ASSIGN" # 권한 그룹 지정
+# ===== Team / Members (관리자 전용 - 커스텀 권한 UI에 노출하지 않음) =====
+TEAM_RENAME                   = "TEAM_RENAME"                   # team 이름/설정 변경
+TEAM_DELETE                   = "TEAM_DELETE"                   # team 삭제 (purge)
+TEAM_MEMBER_INVITE            = "TEAM_MEMBER_INVITE"            # 멤버 초대
+TEAM_MEMBER_REMOVE            = "TEAM_MEMBER_REMOVE"            # 멤버 제거
+TEAM_MEMBER_ROLE_WRITE        = "TEAM_MEMBER_ROLE_WRITE"        # 멤버 역할 변경
+TEAM_MEMBER_PERMISSION_ASSIGN = "TEAM_MEMBER_PERMISSION_ASSIGN" # 권한 그룹 지정
 
 # ===== API Keys (관리자 전용 - 발급/회수) =====
 API_KEY_WRITE                   = "API_KEY_WRITE"                   # API 키 발급/수정/회수
@@ -70,16 +70,16 @@ ALL_PERMISSION_CODES = _unique([
     NOTIFICATION_WRITE,
     # Analytics
     ANALYTICS_DASH_VIEW,
-    # Tenant / Members
-    TENANT_RENAME, TENANT_DELETE,
-    TENANT_MEMBER_INVITE, TENANT_MEMBER_REMOVE,
-    TENANT_MEMBER_ROLE_WRITE, TENANT_MEMBER_PERMISSION_ASSIGN,
+    # Team / Members
+    TEAM_RENAME, TEAM_DELETE,
+    TEAM_MEMBER_INVITE, TEAM_MEMBER_REMOVE,
+    TEAM_MEMBER_ROLE_WRITE, TEAM_MEMBER_PERMISSION_ASSIGN,
     # API Keys
     API_KEY_WRITE,
 ])
 
 
-# ── 시스템 그룹별 기본 권한 세트 (tenant 생성 시 자동 시드) ─────────
+# ── 시스템 그룹별 기본 권한 세트 (team 생성 시 자동 시드) ─────────
 DEFAULT_ADMIN_CODES = ALL_PERMISSION_CODES[:]  # 관리자: 전체
 
 DEFAULT_MEMBER_CODES = [
@@ -101,7 +101,7 @@ DEFAULT_VIEWER_CODES = [
 ]
 
 
-# ── system_key → 기본 권한 매핑 (tenant 생성 시 사용) ─────────────
+# ── system_key → 기본 권한 매핑 (team 생성 시 사용) ─────────────
 GROUP_DEFAULTS_BY_SYSTEM_KEY = {
     "ADMIN":  DEFAULT_ADMIN_CODES,
     "MEMBER": DEFAULT_MEMBER_CODES,
@@ -117,8 +117,8 @@ IMPLICIT_NON_VIEWER_CODES = [
 
 
 # ── 커스텀 권한 UI 노출 가능한 코드 ───────────────────────────────
-# tenant 의 admin 이 그룹 만들 때 토글로 선택 가능한 코드 화이트리스트.
-# TENANT_* 같은 시스템 권한은 admin_group 만 가능 (UI 에 노출 X).
+# team 의 admin 이 그룹 만들 때 토글로 선택 가능한 코드 화이트리스트.
+# TEAM_* 같은 시스템 권한은 admin_group 만 가능 (UI 에 노출 X).
 CUSTOMIZABLE_CODES = [
     # Master Data
     CUSTOMER_WRITE, TERMINAL_WRITE, VESSEL_WRITE, LOCATION_WRITE, DRIVER_WRITE,

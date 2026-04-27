@@ -7,7 +7,7 @@ from auth.tokens.access_token import access_token
 from database.dependencies import get_read_db, get_write_db
 from rbac.const.const import DO_WRITE
 from rbac.dependencies.guards import permission_guard
-from tenant.dependencies.get_tenant_scope import get_tenant_scope
+from team.dependencies.get_team_scope import get_team_scope
 from user.dependencies.current_user import get_current_user
 from user.schemas.response import UserResponseSchema
 
@@ -36,7 +36,7 @@ async def create_delivery_order(
     body: DeliveryOrderCreateRequest,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(DO_WRITE)),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -44,7 +44,7 @@ async def create_delivery_order(
     거래처 생성
     - 쓰기 권한 필요
     """
-    return await DeliveryOrderService(db, tenant_id).create(
+    return await DeliveryOrderService(db, team_id).create(
         body,
         actor_user_id=int(me.id),
     )
@@ -54,7 +54,7 @@ async def create_delivery_order(
 async def list_delivery_orders(
     request: PaginateDeliveryOrderRequest = Depends(),
     _1: None = Depends(access_token),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_read_db),
 ):
     """
@@ -62,7 +62,7 @@ async def list_delivery_orders(
     - 기본 활성만; include_inactive=True 로 비활성 포함
     - 정렬/필터는 DTO의 order__/where__ 파라미터 사용
     """
-    return await DeliveryOrderService(db, tenant_id).list_paginated(request)
+    return await DeliveryOrderService(db, team_id).list_paginated(request)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -74,7 +74,7 @@ async def list_delivery_orders(
 async def sync_delivery_orders(
     since: str,
     _1: None = Depends(access_token),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_read_db),
 ):
     """
@@ -82,20 +82,20 @@ async def sync_delivery_orders(
 
     - since 이후 변경된 활성 아이템 + soft-delete된 아이템 ID 반환
     """
-    return await DeliveryOrderService(db, tenant_id).sync_delta(since)
+    return await DeliveryOrderService(db, team_id).sync_delta(since)
 
 
 @router.get("/{delivery_order_id}", response_model=DeliveryOrderResponseSchema)
 async def get_delivery_order(
     delivery_order_id: int,
     _1: None = Depends(access_token),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_read_db),
 ):
     """
     거래처 단건 조회(활성만)
     """
-    return await DeliveryOrderService(db, tenant_id).get(delivery_order_id)
+    return await DeliveryOrderService(db, team_id).get(delivery_order_id)
 
 
 @router.put("/{delivery_order_id}", response_model=DeliveryOrderResponseSchema)
@@ -104,7 +104,7 @@ async def update_delivery_order(
     body: DeliveryOrderUpdateRequest,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(DO_WRITE)),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -112,7 +112,7 @@ async def update_delivery_order(
     거래처 수정(활성만)
     - 쓰기 권한 필요
     """
-    return await DeliveryOrderService(db, tenant_id).update(
+    return await DeliveryOrderService(db, team_id).update(
         delivery_order_id,
         body,
         actor_user_id=int(me.id),
@@ -124,7 +124,7 @@ async def delete_delivery_order(
     delivery_order_id: int,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(DO_WRITE)),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -132,7 +132,7 @@ async def delete_delivery_order(
     거래처 삭제
     - 하드 삭제 우선, FK 제약 시 소프트 비활성화
     """
-    return await DeliveryOrderService(db, tenant_id).delete(
+    return await DeliveryOrderService(db, team_id).delete(
         delivery_order_id,
         actor_user_id=int(me.id),
     )
@@ -147,7 +147,7 @@ async def create_delivery_orders_bulk(
     body: DeliveryOrderBulkCreateRequest,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(DO_WRITE)),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -156,7 +156,7 @@ async def create_delivery_orders_bulk(
     - 개별 항목별 성공/실패 처리
     - 부분 성공 허용
     """
-    return await DeliveryOrderService(db, tenant_id).create_bulk(
+    return await DeliveryOrderService(db, team_id).create_bulk(
         body,
         actor_user_id=int(me.id),
     )
@@ -167,7 +167,7 @@ async def update_delivery_orders_bulk(
     body: DeliveryOrderBulkUpdateRequest,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(DO_WRITE)),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -176,7 +176,7 @@ async def update_delivery_orders_bulk(
     - 개별 항목별 성공/실패 처리
     - 존재하지 않는 ID는 실패 처리
     """
-    return await DeliveryOrderService(db, tenant_id).update_bulk(
+    return await DeliveryOrderService(db, team_id).update_bulk(
         body,
         actor_user_id=int(me.id),
     )
@@ -187,7 +187,7 @@ async def delete_delivery_orders_bulk(
     body: DeliveryOrderBulkDeleteRequest,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(DO_WRITE)),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
@@ -196,7 +196,7 @@ async def delete_delivery_orders_bulk(
     - 개별 항목별 성공/실패 처리
     - 하드 삭제 우선, FK 제약 시 소프트 삭제
     """
-    return await DeliveryOrderService(db, tenant_id).delete_bulk(
+    return await DeliveryOrderService(db, team_id).delete_bulk(
         body,
         actor_user_id=int(me.id),
     )
@@ -211,11 +211,11 @@ async def transition_delivery_order(
     body: "DeliveryOrderTransitionRequest",
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard("DO_TRANSITION")),
-    tenant_id: int = Depends(get_tenant_scope),
+    team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
     """D/O 상태 전이. 게이트 검증은 service 가 수행."""
-    return await DeliveryOrderService(db, tenant_id).transition(
+    return await DeliveryOrderService(db, team_id).transition(
         delivery_order_id, body.target, actor_user_id=int(me.id),
     )

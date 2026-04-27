@@ -43,3 +43,6 @@ from notification.model import NotificationModel  # noqa: F401
 # ── TMS Phase F — Driver mobile satellite ───────────────────
 from location_ping.model import LocationPingModel  # noqa: F401
 from push_token.model import PushTokenModel  # noqa: F401
+
+# ── API Keys ────────────────────────────────────────────────
+from api_key.model import ApiKeyModel  # noqa: F401

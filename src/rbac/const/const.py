@@ -44,6 +44,9 @@ TENANT_MEMBER_REMOVE            = "TENANT_MEMBER_REMOVE"            # 멤버 제
 TENANT_MEMBER_ROLE_WRITE        = "TENANT_MEMBER_ROLE_WRITE"        # 멤버 역할 변경
 TENANT_MEMBER_PERMISSION_ASSIGN = "TENANT_MEMBER_PERMISSION_ASSIGN" # 권한 그룹 지정
 
+# ===== API Keys (관리자 전용 - 발급/회수) =====
+API_KEY_WRITE                   = "API_KEY_WRITE"                   # API 키 발급/수정/회수
+
 
 def _unique(seq: list[str]) -> list[str]:
     seen = set()
@@ -71,6 +74,8 @@ ALL_PERMISSION_CODES = _unique([
     TENANT_RENAME, TENANT_DELETE,
     TENANT_MEMBER_INVITE, TENANT_MEMBER_REMOVE,
     TENANT_MEMBER_ROLE_WRITE, TENANT_MEMBER_PERMISSION_ASSIGN,
+    # API Keys
+    API_KEY_WRITE,
 ])
 
 

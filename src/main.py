@@ -66,6 +66,9 @@ from realtime.router import router as realtime_router
 from ai_intake.router import router as ai_intake_router
 from driver_mobile.router import router as driver_mobile_router
 
+# ── TMS API Keys (개발자 통합용) ─────────────────────────────
+from api_key.router import router as api_key_router
+
 
 app = FastAPI(lifespan=lifespan, root_path=settings.ROOT_PATH)
 
@@ -126,6 +129,9 @@ app.include_router(notification_router)
 app.include_router(realtime_router)
 app.include_router(ai_intake_router)
 app.include_router(driver_mobile_router)
+
+# ── TMS API Keys ─────────────────────────────────────────────
+app.include_router(api_key_router)
 
 
 @app.get("/", include_in_schema=False)

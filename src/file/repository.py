@@ -51,21 +51,6 @@ class FileRepository:
                 FileAssetModel.domain == request.domain,
                 FileAssetModel.object_id == request.object_id,
             )
-            .options(
-                load_only(
-                    FileAssetModel.id,
-                    FileAssetModel.team_id,
-                    FileAssetModel.domain,
-                    FileAssetModel.object_id,
-                    FileAssetModel.subdir,
-                    FileAssetModel.filename,
-                    FileAssetModel.size,
-                    FileAssetModel.mime,
-                    FileAssetModel.is_public,
-                    FileAssetModel.logical_path,
-                    FileAssetModel.updated_at,
-                )
-            )
         )
 
         if request.subdir is not None:
@@ -99,21 +84,6 @@ class FileRepository:
                 self._team_id_condition(team_id),  #  NULL 처리
                 FileAssetModel.domain == domain,
                 FileAssetModel.object_id == object_id,
-            )
-            .options(
-                load_only(
-                    FileAssetModel.id,
-                    FileAssetModel.team_id,
-                    FileAssetModel.domain,
-                    FileAssetModel.object_id,
-                    FileAssetModel.subdir,
-                    FileAssetModel.filename,
-                    FileAssetModel.size,
-                    FileAssetModel.mime,
-                    FileAssetModel.is_public,
-                    FileAssetModel.logical_path,
-                    FileAssetModel.updated_at,
-                )
             )
         )
         if subdir is not None:
@@ -151,21 +121,6 @@ class FileRepository:
             .where(
                 FileAssetModel.id.in_(ids), 
                 self._team_id_condition(team_id)  #  NULL 처리
-            )
-            .options(
-                load_only(
-                    FileAssetModel.id,
-                    FileAssetModel.team_id,
-                    FileAssetModel.domain,
-                    FileAssetModel.object_id,
-                    FileAssetModel.subdir,
-                    FileAssetModel.filename,
-                    FileAssetModel.size,
-                    FileAssetModel.mime,
-                    FileAssetModel.is_public,
-                    FileAssetModel.logical_path,
-                    FileAssetModel.updated_at,
-                )
             )
         )
         res = await self.db.scalars(stmt)

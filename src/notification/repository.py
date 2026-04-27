@@ -82,19 +82,6 @@ class NotificationRepository(TeamScopedRepoMixin):
                 NotificationModel.id == notification_id,
                 NotificationModel.is_active.is_(True),
             )
-            .options(
-                load_only(
-                    NotificationModel.id,
-                    NotificationModel.event_type,
-                    NotificationModel.body,
-                    NotificationModel.user_id,
-                    NotificationModel.channel,
-                    NotificationModel.status,
-                    NotificationModel.title,
-                    NotificationModel.is_read,
-                    NotificationModel.is_active,
-                )
-            )
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
@@ -112,19 +99,6 @@ class NotificationRepository(TeamScopedRepoMixin):
                 NotificationModel.team_id == self._require_team(),
                 NotificationModel.id.in_(notification_ids),
                 NotificationModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    NotificationModel.id,
-                    NotificationModel.event_type,
-                    NotificationModel.body,
-                    NotificationModel.user_id,
-                    NotificationModel.channel,
-                    NotificationModel.status,
-                    NotificationModel.title,
-                    NotificationModel.is_read,
-                    NotificationModel.is_active,
-                )
             )
         )
         result = await self.db.execute(q)
@@ -150,19 +124,6 @@ class NotificationRepository(TeamScopedRepoMixin):
         base_query = (
             select(NotificationModel)
             .where(*base_conditions)
-            .options(
-                load_only(
-                    NotificationModel.id,
-                    NotificationModel.event_type,
-                    NotificationModel.body,
-                    NotificationModel.user_id,
-                    NotificationModel.channel,
-                    NotificationModel.status,
-                    NotificationModel.title,
-                    NotificationModel.is_read,
-                    NotificationModel.is_active,
-                )
-            )
         )
 
         # CommonService로 페이지네이션
@@ -302,19 +263,6 @@ class NotificationRepository(TeamScopedRepoMixin):
         base_query = (
             select(NotificationModel)
             .where(NotificationModel.team_id == team_id)
-            .options(
-                load_only(
-                    NotificationModel.id,
-                    NotificationModel.event_type,
-                    NotificationModel.body,
-                    NotificationModel.user_id,
-                    NotificationModel.channel,
-                    NotificationModel.status,
-                    NotificationModel.title,
-                    NotificationModel.is_read,
-                    NotificationModel.is_active,
-                )
-            )
         )
 
         return await self._common_service.sync_delta(

@@ -82,19 +82,6 @@ class RateSettingRepository(TeamScopedRepoMixin):
                 RateSettingModel.id == rate_setting_id,
                 RateSettingModel.is_active.is_(True),
             )
-            .options(
-                load_only(
-                    RateSettingModel.id,
-                    RateSettingModel.name,
-                    RateSettingModel.rate_type,
-                    RateSettingModel.description,
-                    RateSettingModel.flat_amount,
-                    RateSettingModel.rate_percent,
-                    RateSettingModel.rate_per_mile,
-                    RateSettingModel.effective_date,
-                    RateSettingModel.is_active,
-                )
-            )
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
@@ -112,19 +99,6 @@ class RateSettingRepository(TeamScopedRepoMixin):
                 RateSettingModel.team_id == self._require_team(),
                 RateSettingModel.id.in_(rate_setting_ids),
                 RateSettingModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    RateSettingModel.id,
-                    RateSettingModel.name,
-                    RateSettingModel.rate_type,
-                    RateSettingModel.description,
-                    RateSettingModel.flat_amount,
-                    RateSettingModel.rate_percent,
-                    RateSettingModel.rate_per_mile,
-                    RateSettingModel.effective_date,
-                    RateSettingModel.is_active,
-                )
             )
         )
         result = await self.db.execute(q)
@@ -150,19 +124,6 @@ class RateSettingRepository(TeamScopedRepoMixin):
         base_query = (
             select(RateSettingModel)
             .where(*base_conditions)
-            .options(
-                load_only(
-                    RateSettingModel.id,
-                    RateSettingModel.name,
-                    RateSettingModel.rate_type,
-                    RateSettingModel.description,
-                    RateSettingModel.flat_amount,
-                    RateSettingModel.rate_percent,
-                    RateSettingModel.rate_per_mile,
-                    RateSettingModel.effective_date,
-                    RateSettingModel.is_active,
-                )
-            )
         )
 
         # CommonService로 페이지네이션
@@ -302,19 +263,6 @@ class RateSettingRepository(TeamScopedRepoMixin):
         base_query = (
             select(RateSettingModel)
             .where(RateSettingModel.team_id == team_id)
-            .options(
-                load_only(
-                    RateSettingModel.id,
-                    RateSettingModel.name,
-                    RateSettingModel.rate_type,
-                    RateSettingModel.description,
-                    RateSettingModel.flat_amount,
-                    RateSettingModel.rate_percent,
-                    RateSettingModel.rate_per_mile,
-                    RateSettingModel.effective_date,
-                    RateSettingModel.is_active,
-                )
-            )
         )
 
         return await self._common_service.sync_delta(

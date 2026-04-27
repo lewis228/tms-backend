@@ -82,16 +82,6 @@ class VesselRepository(TeamScopedRepoMixin):
                 VesselModel.id == vessel_id,
                 VesselModel.is_active.is_(True),
             )
-            .options(
-                load_only(
-                    VesselModel.id,
-                    VesselModel.name,
-                    VesselModel.imo_number,
-                    VesselModel.note,
-                    VesselModel.line,
-                    VesselModel.is_active,
-                )
-            )
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
@@ -109,16 +99,6 @@ class VesselRepository(TeamScopedRepoMixin):
                 VesselModel.team_id == self._require_team(),
                 VesselModel.id.in_(vessel_ids),
                 VesselModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    VesselModel.id,
-                    VesselModel.name,
-                    VesselModel.imo_number,
-                    VesselModel.note,
-                    VesselModel.line,
-                    VesselModel.is_active,
-                )
             )
         )
         result = await self.db.execute(q)
@@ -144,16 +124,6 @@ class VesselRepository(TeamScopedRepoMixin):
         base_query = (
             select(VesselModel)
             .where(*base_conditions)
-            .options(
-                load_only(
-                    VesselModel.id,
-                    VesselModel.name,
-                    VesselModel.imo_number,
-                    VesselModel.note,
-                    VesselModel.line,
-                    VesselModel.is_active,
-                )
-            )
         )
 
         # CommonService로 페이지네이션
@@ -293,16 +263,6 @@ class VesselRepository(TeamScopedRepoMixin):
         base_query = (
             select(VesselModel)
             .where(VesselModel.team_id == team_id)
-            .options(
-                load_only(
-                    VesselModel.id,
-                    VesselModel.name,
-                    VesselModel.imo_number,
-                    VesselModel.note,
-                    VesselModel.line,
-                    VesselModel.is_active,
-                )
-            )
         )
 
         return await self._common_service.sync_delta(

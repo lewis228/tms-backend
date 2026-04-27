@@ -62,31 +62,10 @@ class UserRepository:
                     UserTeamModel.team_id,
                     UserTeamModel.permission_group_id,
                 ),
-                selectinload(UserTeamModel.team).options(
-                    load_only(
-                        TeamModel.id,
-                        TeamModel.name,
-                        TeamModel.onboarding_completed,
-                        TeamModel.onboarding_step1_done,
-                        TeamModel.onboarding_step2_done,
-                        TeamModel.onboarding_step3_done,
-                    )
-                ),
+                selectinload(UserTeamModel.team),
             ),
             # User → Files(활성만, view-only)
-            selectinload(UserModel.files).options(
-                load_only(
-                    FileAssetModel.id,
-                    FileAssetModel.domain,
-                    FileAssetModel.object_id,
-                    FileAssetModel.subdir,
-                    FileAssetModel.filename,
-                    FileAssetModel.size,
-                    FileAssetModel.mime,
-                    FileAssetModel.is_public,
-                    FileAssetModel.logical_path,
-                )
-            ),
+            selectinload(UserModel.files),
             # 하위 리소스 활성 필터
             with_loader_criteria(UserTeamModel, UserTeamModel.is_active.is_(True), include_aliases=True),
             with_loader_criteria(FileAssetModel, FileAssetModel.is_active.is_(True), include_aliases=True),
@@ -113,30 +92,9 @@ class UserRepository:
                     UserTeamModel.team_id,
                     UserTeamModel.permission_group_id,
                 ),
-                selectinload(UserTeamModel.team).options(
-                    load_only(
-                        TeamModel.id,
-                        TeamModel.name,
-                        TeamModel.onboarding_completed,
-                        TeamModel.onboarding_step1_done,
-                        TeamModel.onboarding_step2_done,
-                        TeamModel.onboarding_step3_done,
-                    )
-                ),
+                selectinload(UserTeamModel.team),
             ),
-            selectinload(UserModel.files).options(
-                load_only(
-                    FileAssetModel.id,
-                    FileAssetModel.domain,
-                    FileAssetModel.object_id,
-                    FileAssetModel.subdir,
-                    FileAssetModel.filename,
-                    FileAssetModel.size,
-                    FileAssetModel.mime,
-                    FileAssetModel.is_public,
-                    FileAssetModel.logical_path,
-                )
-            ),
+            selectinload(UserModel.files),
             with_loader_criteria(UserTeamModel, UserTeamModel.is_active.is_(True), include_aliases=True),
             with_loader_criteria(FileAssetModel, FileAssetModel.is_active.is_(True), include_aliases=True),
         )
@@ -158,23 +116,6 @@ class UserRepository:
                 UserModel.email == _norm(email),
                 UserModel.auth_provider == AuthProviderEnum.EMAIL.value,  #  이메일 가입자만
                 UserModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    UserModel.id,
-                    UserModel.email,
-                    UserModel.password,  # 로그인 전용
-                    UserModel.role,
-                    UserModel.name,
-                    UserModel.phone,
-                    UserModel.auth_provider,
-                    UserModel.oauth_id,
-                    UserModel.notification_email,
-                    UserModel.event_notification_enabled,
-                    UserModel.created_at,
-                    UserModel.updated_at,
-                    UserModel.is_active,
-                )
             )
         )
         return await self.db.scalar(stmt)
@@ -211,13 +152,6 @@ class UserRepository:
             .where(
                 UserModel.email == _norm(email),
                 UserModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    UserModel.id,
-                    UserModel.email,
-                    UserModel.auth_provider,
-                )
             )
         )
         return await self.db.scalar(stmt)

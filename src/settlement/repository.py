@@ -82,19 +82,6 @@ class SettlementRepository(TeamScopedRepoMixin):
                 SettlementModel.id == settlement_id,
                 SettlementModel.is_active.is_(True),
             )
-            .options(
-                load_only(
-                    SettlementModel.id,
-                    SettlementModel.settlement_status,
-                    SettlementModel.note,
-                    SettlementModel.leg_id,
-                    SettlementModel.system_total,
-                    SettlementModel.final_amount,
-                    SettlementModel.has_flag,
-                    SettlementModel.is_settled,
-                    SettlementModel.is_active,
-                )
-            )
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
@@ -112,19 +99,6 @@ class SettlementRepository(TeamScopedRepoMixin):
                 SettlementModel.team_id == self._require_team(),
                 SettlementModel.id.in_(settlement_ids),
                 SettlementModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    SettlementModel.id,
-                    SettlementModel.settlement_status,
-                    SettlementModel.note,
-                    SettlementModel.leg_id,
-                    SettlementModel.system_total,
-                    SettlementModel.final_amount,
-                    SettlementModel.has_flag,
-                    SettlementModel.is_settled,
-                    SettlementModel.is_active,
-                )
             )
         )
         result = await self.db.execute(q)
@@ -150,19 +124,6 @@ class SettlementRepository(TeamScopedRepoMixin):
         base_query = (
             select(SettlementModel)
             .where(*base_conditions)
-            .options(
-                load_only(
-                    SettlementModel.id,
-                    SettlementModel.settlement_status,
-                    SettlementModel.note,
-                    SettlementModel.leg_id,
-                    SettlementModel.system_total,
-                    SettlementModel.final_amount,
-                    SettlementModel.has_flag,
-                    SettlementModel.is_settled,
-                    SettlementModel.is_active,
-                )
-            )
         )
 
         # CommonService로 페이지네이션
@@ -302,19 +263,6 @@ class SettlementRepository(TeamScopedRepoMixin):
         base_query = (
             select(SettlementModel)
             .where(SettlementModel.team_id == team_id)
-            .options(
-                load_only(
-                    SettlementModel.id,
-                    SettlementModel.settlement_status,
-                    SettlementModel.note,
-                    SettlementModel.leg_id,
-                    SettlementModel.system_total,
-                    SettlementModel.final_amount,
-                    SettlementModel.has_flag,
-                    SettlementModel.is_settled,
-                    SettlementModel.is_active,
-                )
-            )
         )
 
         return await self._common_service.sync_delta(

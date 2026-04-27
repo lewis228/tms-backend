@@ -359,16 +359,6 @@ class RbacRepository:
                 PermissionGroupModel.team_id == team_id,
                 PermissionGroupModel.is_active.is_(True),
             )
-            .options(
-                load_only(
-                    PermissionGroupModel.id,
-                    PermissionGroupModel.name,
-                    PermissionGroupModel.is_admin,
-                    PermissionGroupModel.is_system,
-                    PermissionGroupModel.system_key,
-                    PermissionGroupModel.version,  # ← 목록에도 버전 포함하면 유용
-                )
-            )
         )
 
         return await self.common.paginate(
@@ -387,16 +377,6 @@ class RbacRepository:
         base = (
             select(PermissionGroupModel)
             .where(PermissionGroupModel.team_id == team_id)
-            .options(
-                load_only(
-                    PermissionGroupModel.id,
-                    PermissionGroupModel.name,
-                    PermissionGroupModel.is_admin,
-                    PermissionGroupModel.is_system,
-                    PermissionGroupModel.system_key,
-                    PermissionGroupModel.version,
-                )
-            )
         )
         return await self.common.sync_delta(
             model=PermissionGroupModel,

@@ -82,14 +82,6 @@ class LocationRepository(TeamScopedRepoMixin):
                 LocationModel.id == location_id,
                 LocationModel.is_active.is_(True),
             )
-            .options(
-                load_only(
-                    LocationModel.id,
-                    LocationModel.name,
-                    LocationModel.kind,
-                    LocationModel.is_active,
-                )
-            )
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
@@ -107,14 +99,6 @@ class LocationRepository(TeamScopedRepoMixin):
                 LocationModel.team_id == self._require_team(),
                 LocationModel.id.in_(location_ids),
                 LocationModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    LocationModel.id,
-                    LocationModel.name,
-                    LocationModel.kind,
-                    LocationModel.is_active,
-                )
             )
         )
         result = await self.db.execute(q)
@@ -140,14 +124,6 @@ class LocationRepository(TeamScopedRepoMixin):
         base_query = (
             select(LocationModel)
             .where(*base_conditions)
-            .options(
-                load_only(
-                    LocationModel.id,
-                    LocationModel.name,
-                    LocationModel.kind,
-                    LocationModel.is_active,
-                )
-            )
         )
 
         # CommonService로 페이지네이션
@@ -287,14 +263,6 @@ class LocationRepository(TeamScopedRepoMixin):
         base_query = (
             select(LocationModel)
             .where(LocationModel.team_id == team_id)
-            .options(
-                load_only(
-                    LocationModel.id,
-                    LocationModel.name,
-                    LocationModel.kind,
-                    LocationModel.is_active,
-                )
-            )
         )
 
         return await self._common_service.sync_delta(

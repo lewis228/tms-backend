@@ -82,18 +82,6 @@ class DeliveryOrderRepository(TeamScopedRepoMixin):
                 DeliveryOrderModel.id == delivery_order_id,
                 DeliveryOrderModel.is_active.is_(True),
             )
-            .options(
-                load_only(
-                    DeliveryOrderModel.id,
-                    DeliveryOrderModel.status,
-                    DeliveryOrderModel.internal_note,
-                    DeliveryOrderModel.direction,
-                    DeliveryOrderModel.customer_id,
-                    DeliveryOrderModel.container_number,
-                    DeliveryOrderModel.container_size,
-                    DeliveryOrderModel.is_active,
-                )
-            )
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
@@ -111,18 +99,6 @@ class DeliveryOrderRepository(TeamScopedRepoMixin):
                 DeliveryOrderModel.team_id == self._require_team(),
                 DeliveryOrderModel.id.in_(delivery_order_ids),
                 DeliveryOrderModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    DeliveryOrderModel.id,
-                    DeliveryOrderModel.status,
-                    DeliveryOrderModel.internal_note,
-                    DeliveryOrderModel.direction,
-                    DeliveryOrderModel.customer_id,
-                    DeliveryOrderModel.container_number,
-                    DeliveryOrderModel.container_size,
-                    DeliveryOrderModel.is_active,
-                )
             )
         )
         result = await self.db.execute(q)
@@ -148,18 +124,6 @@ class DeliveryOrderRepository(TeamScopedRepoMixin):
         base_query = (
             select(DeliveryOrderModel)
             .where(*base_conditions)
-            .options(
-                load_only(
-                    DeliveryOrderModel.id,
-                    DeliveryOrderModel.status,
-                    DeliveryOrderModel.internal_note,
-                    DeliveryOrderModel.direction,
-                    DeliveryOrderModel.customer_id,
-                    DeliveryOrderModel.container_number,
-                    DeliveryOrderModel.container_size,
-                    DeliveryOrderModel.is_active,
-                )
-            )
         )
 
         # CommonService로 페이지네이션
@@ -299,18 +263,6 @@ class DeliveryOrderRepository(TeamScopedRepoMixin):
         base_query = (
             select(DeliveryOrderModel)
             .where(DeliveryOrderModel.team_id == team_id)
-            .options(
-                load_only(
-                    DeliveryOrderModel.id,
-                    DeliveryOrderModel.status,
-                    DeliveryOrderModel.internal_note,
-                    DeliveryOrderModel.direction,
-                    DeliveryOrderModel.customer_id,
-                    DeliveryOrderModel.container_number,
-                    DeliveryOrderModel.container_size,
-                    DeliveryOrderModel.is_active,
-                )
-            )
         )
 
         return await self._common_service.sync_delta(

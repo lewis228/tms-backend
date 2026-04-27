@@ -82,17 +82,6 @@ class DriverRepository(TeamScopedRepoMixin):
                 DriverModel.id == driver_id,
                 DriverModel.is_active.is_(True),
             )
-            .options(
-                load_only(
-                    DriverModel.id,
-                    DriverModel.user_id,
-                    DriverModel.note,
-                    DriverModel.license_number,
-                    DriverModel.license_state,
-                    DriverModel.truck_number,
-                    DriverModel.is_active,
-                )
-            )
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
@@ -110,17 +99,6 @@ class DriverRepository(TeamScopedRepoMixin):
                 DriverModel.team_id == self._require_team(),
                 DriverModel.id.in_(driver_ids),
                 DriverModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    DriverModel.id,
-                    DriverModel.user_id,
-                    DriverModel.note,
-                    DriverModel.license_number,
-                    DriverModel.license_state,
-                    DriverModel.truck_number,
-                    DriverModel.is_active,
-                )
             )
         )
         result = await self.db.execute(q)
@@ -146,17 +124,6 @@ class DriverRepository(TeamScopedRepoMixin):
         base_query = (
             select(DriverModel)
             .where(*base_conditions)
-            .options(
-                load_only(
-                    DriverModel.id,
-                    DriverModel.user_id,
-                    DriverModel.note,
-                    DriverModel.license_number,
-                    DriverModel.license_state,
-                    DriverModel.truck_number,
-                    DriverModel.is_active,
-                )
-            )
         )
 
         # CommonService로 페이지네이션
@@ -296,17 +263,6 @@ class DriverRepository(TeamScopedRepoMixin):
         base_query = (
             select(DriverModel)
             .where(DriverModel.team_id == team_id)
-            .options(
-                load_only(
-                    DriverModel.id,
-                    DriverModel.user_id,
-                    DriverModel.note,
-                    DriverModel.license_number,
-                    DriverModel.license_state,
-                    DriverModel.truck_number,
-                    DriverModel.is_active,
-                )
-            )
         )
 
         return await self._common_service.sync_delta(

@@ -82,19 +82,6 @@ class LegRepository(TeamScopedRepoMixin):
                 LegModel.id == leg_id,
                 LegModel.is_active.is_(True),
             )
-            .options(
-                load_only(
-                    LegModel.id,
-                    LegModel.status,
-                    LegModel.note,
-                    LegModel.delivery_order_id,
-                    LegModel.driver_id,
-                    LegModel.step,
-                    LegModel.move_type,
-                    LegModel.service_type,
-                    LegModel.is_active,
-                )
-            )
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
@@ -112,19 +99,6 @@ class LegRepository(TeamScopedRepoMixin):
                 LegModel.team_id == self._require_team(),
                 LegModel.id.in_(leg_ids),
                 LegModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    LegModel.id,
-                    LegModel.status,
-                    LegModel.note,
-                    LegModel.delivery_order_id,
-                    LegModel.driver_id,
-                    LegModel.step,
-                    LegModel.move_type,
-                    LegModel.service_type,
-                    LegModel.is_active,
-                )
             )
         )
         result = await self.db.execute(q)
@@ -150,19 +124,6 @@ class LegRepository(TeamScopedRepoMixin):
         base_query = (
             select(LegModel)
             .where(*base_conditions)
-            .options(
-                load_only(
-                    LegModel.id,
-                    LegModel.status,
-                    LegModel.note,
-                    LegModel.delivery_order_id,
-                    LegModel.driver_id,
-                    LegModel.step,
-                    LegModel.move_type,
-                    LegModel.service_type,
-                    LegModel.is_active,
-                )
-            )
         )
 
         # CommonService로 페이지네이션
@@ -302,19 +263,6 @@ class LegRepository(TeamScopedRepoMixin):
         base_query = (
             select(LegModel)
             .where(LegModel.team_id == team_id)
-            .options(
-                load_only(
-                    LegModel.id,
-                    LegModel.status,
-                    LegModel.note,
-                    LegModel.delivery_order_id,
-                    LegModel.driver_id,
-                    LegModel.step,
-                    LegModel.move_type,
-                    LegModel.service_type,
-                    LegModel.is_active,
-                )
-            )
         )
 
         return await self._common_service.sync_delta(

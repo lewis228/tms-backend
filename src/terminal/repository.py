@@ -82,14 +82,6 @@ class TerminalRepository(TeamScopedRepoMixin):
                 TerminalModel.id == terminal_id,
                 TerminalModel.is_active.is_(True),
             )
-            .options(
-                load_only(
-                    TerminalModel.id,
-                    TerminalModel.name,
-                    TerminalModel.code,
-                    TerminalModel.is_active,
-                )
-            )
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
@@ -107,14 +99,6 @@ class TerminalRepository(TeamScopedRepoMixin):
                 TerminalModel.team_id == self._require_team(),
                 TerminalModel.id.in_(terminal_ids),
                 TerminalModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    TerminalModel.id,
-                    TerminalModel.name,
-                    TerminalModel.code,
-                    TerminalModel.is_active,
-                )
             )
         )
         result = await self.db.execute(q)
@@ -140,14 +124,6 @@ class TerminalRepository(TeamScopedRepoMixin):
         base_query = (
             select(TerminalModel)
             .where(*base_conditions)
-            .options(
-                load_only(
-                    TerminalModel.id,
-                    TerminalModel.name,
-                    TerminalModel.code,
-                    TerminalModel.is_active,
-                )
-            )
         )
 
         # CommonService로 페이지네이션
@@ -287,14 +263,6 @@ class TerminalRepository(TeamScopedRepoMixin):
         base_query = (
             select(TerminalModel)
             .where(TerminalModel.team_id == team_id)
-            .options(
-                load_only(
-                    TerminalModel.id,
-                    TerminalModel.name,
-                    TerminalModel.code,
-                    TerminalModel.is_active,
-                )
-            )
         )
 
         return await self._common_service.sync_delta(

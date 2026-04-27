@@ -82,20 +82,6 @@ class CustomerRepository(TeamScopedRepoMixin):
                 CustomerModel.id == customer_id,
                 CustomerModel.is_active.is_(True),
             )
-            .options(
-                load_only(
-                    CustomerModel.id,
-                    CustomerModel.name,
-                    CustomerModel.code,
-                    CustomerModel.contact_phone,
-                    CustomerModel.contact_email,
-                    CustomerModel.billing_address,
-                    CustomerModel.note,
-                    CustomerModel.contact_name,
-                    
-                    CustomerModel.is_active,
-                )
-            )
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
@@ -113,20 +99,6 @@ class CustomerRepository(TeamScopedRepoMixin):
                 CustomerModel.team_id == self._require_team(),
                 CustomerModel.id.in_(customer_ids),
                 CustomerModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    CustomerModel.id,
-                    CustomerModel.name,
-                    CustomerModel.code,
-                    CustomerModel.contact_phone,
-                    CustomerModel.contact_email,
-                    CustomerModel.billing_address,
-                    CustomerModel.note,
-                    CustomerModel.contact_name,
-                    
-                    CustomerModel.is_active,
-                )
             )
         )
         result = await self.db.execute(q)
@@ -152,20 +124,6 @@ class CustomerRepository(TeamScopedRepoMixin):
         base_query = (
             select(CustomerModel)
             .where(*base_conditions)
-            .options(
-                load_only(
-                    CustomerModel.id,
-                    CustomerModel.name,
-                    CustomerModel.code,
-                    
-                    CustomerModel.contact_phone,
-                    CustomerModel.contact_email,
-                    CustomerModel.billing_address,
-                    CustomerModel.note,
-                    CustomerModel.contact_name,
-                    CustomerModel.is_active,
-                )
-            )
         )
 
         # CommonService로 페이지네이션
@@ -305,20 +263,6 @@ class CustomerRepository(TeamScopedRepoMixin):
         base_query = (
             select(CustomerModel)
             .where(CustomerModel.team_id == team_id)
-            .options(
-                load_only(
-                    CustomerModel.id,
-                    CustomerModel.name,
-                    CustomerModel.code,
-                    CustomerModel.contact_phone,
-                    CustomerModel.contact_email,
-                    CustomerModel.billing_address,
-                    CustomerModel.note,
-                    CustomerModel.contact_name,
-                    
-                    CustomerModel.is_active,
-                )
-            )
         )
 
         return await self._common_service.sync_delta(

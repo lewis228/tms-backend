@@ -82,17 +82,6 @@ class StreetTurnRepository(TeamScopedRepoMixin):
                 StreetTurnModel.id == street_turn_id,
                 StreetTurnModel.is_active.is_(True),
             )
-            .options(
-                load_only(
-                    StreetTurnModel.id,
-                    StreetTurnModel.name,
-                    StreetTurnModel.link_type,
-                    StreetTurnModel.container_number,
-                    StreetTurnModel.import_order_id,
-                    StreetTurnModel.export_order_id,
-                    StreetTurnModel.is_active,
-                )
-            )
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
@@ -110,17 +99,6 @@ class StreetTurnRepository(TeamScopedRepoMixin):
                 StreetTurnModel.team_id == self._require_team(),
                 StreetTurnModel.id.in_(street_turn_ids),
                 StreetTurnModel.is_active.is_(True),
-            )
-            .options(
-                load_only(
-                    StreetTurnModel.id,
-                    StreetTurnModel.name,
-                    StreetTurnModel.link_type,
-                    StreetTurnModel.container_number,
-                    StreetTurnModel.import_order_id,
-                    StreetTurnModel.export_order_id,
-                    StreetTurnModel.is_active,
-                )
             )
         )
         result = await self.db.execute(q)
@@ -146,17 +124,6 @@ class StreetTurnRepository(TeamScopedRepoMixin):
         base_query = (
             select(StreetTurnModel)
             .where(*base_conditions)
-            .options(
-                load_only(
-                    StreetTurnModel.id,
-                    StreetTurnModel.name,
-                    StreetTurnModel.link_type,
-                    StreetTurnModel.container_number,
-                    StreetTurnModel.import_order_id,
-                    StreetTurnModel.export_order_id,
-                    StreetTurnModel.is_active,
-                )
-            )
         )
 
         # CommonService로 페이지네이션
@@ -296,17 +263,6 @@ class StreetTurnRepository(TeamScopedRepoMixin):
         base_query = (
             select(StreetTurnModel)
             .where(StreetTurnModel.team_id == team_id)
-            .options(
-                load_only(
-                    StreetTurnModel.id,
-                    StreetTurnModel.name,
-                    StreetTurnModel.link_type,
-                    StreetTurnModel.container_number,
-                    StreetTurnModel.import_order_id,
-                    StreetTurnModel.export_order_id,
-                    StreetTurnModel.is_active,
-                )
-            )
         )
 
         return await self._common_service.sync_delta(

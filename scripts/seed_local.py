@@ -41,11 +41,13 @@ from user.model import UserModel
 
 PASSWORD = "Password!1"
 TENANT_NAME = "TMS Demo"
+# (email, name, role, is_tenant_member, password_override)
 USERS = [
-    ("admin@tms.dev",   "Super Admin", RolesEnum.SUPER_ADMIN, False),  # tenant 멤버 X
-    ("owner@tms.dev",   "Tenant Owner", RolesEnum.ADMIN,      True),
-    ("dispatch@tms.dev", "Dispatcher",  RolesEnum.DISPATCHER, True),
-    ("driver@tms.dev",  "Driver",      RolesEnum.DRIVER,      True),
+    ("admin@tms.dev",   "Super Admin", RolesEnum.SUPER_ADMIN, False, None),  # tenant 멤버 X
+    ("owner@tms.dev",   "Tenant Owner", RolesEnum.ADMIN,      True,  None),
+    ("dispatch@tms.dev", "Dispatcher",  RolesEnum.DISPATCHER, True,  None),
+    ("driver@tms.dev",  "Driver",      RolesEnum.DRIVER,      True,  None),
+    ("test@test.com",   "Test Super",  RolesEnum.SUPER_ADMIN, True,  "1234"),
 ]
 
 
@@ -63,14 +65,16 @@ async def get_or_create_tenant(db) -> TenantModel:
     return t
 
 
-async def get_or_create_user(db, email: str, name: str, role: RolesEnum) -> UserModel:
+async def get_or_create_user(
+    db, email: str, name: str, role: RolesEnum, password: str | None = None,
+) -> UserModel:
     existing = (await db.execute(
         select(UserModel).where(UserModel.email == email)
     )).scalar_one_or_none()
     if existing:
         print(f"[skip] user {email} (id={existing.id}, role={existing.role})")
         return existing
-    pw_hash = bcrypt.using(rounds=settings.BCRYPT_ROUNDS).hash(PASSWORD)
+    pw_hash = bcrypt.using(rounds=settings.BCRYPT_ROUNDS).hash(password or PASSWORD)
     u = UserModel(
         email=email,
         password=pw_hash,
@@ -155,8 +159,8 @@ async def main() -> None:
         tenant = await get_or_create_tenant(db)
         admin_group = await get_or_create_admin_group(db, tenant)
 
-        for email, name, role, is_member in USERS:
-            user = await get_or_create_user(db, email, name, role)
+        for email, name, role, is_member, pw in USERS:
+            user = await get_or_create_user(db, email, name, role, password=pw)
             if is_member:
                 # ADMIN/DISPATCHER → admin perm group, DRIVER → null (모바일 라우트는 role 가드)
                 pg = admin_group.id if role != RolesEnum.DRIVER else None
@@ -167,9 +171,10 @@ async def main() -> None:
         await db.commit()
 
     print("\n=== Seed 완료 ===")
-    print(f"공통 비밀번호: {PASSWORD}")
-    for email, _, role, _ in USERS:
-        print(f"  - {email:25} ({role.value})")
+    print(f"공통 비밀번호: {PASSWORD} (override 없는 경우)")
+    for email, _, role, _, pw in USERS:
+        suffix = f"  pw={pw}" if pw else ""
+        print(f"  - {email:25} ({role.value}){suffix}")
 
 
 if __name__ == "__main__":

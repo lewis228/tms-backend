@@ -68,6 +68,7 @@ from chassis_event.router import router as chassis_event_router
 from leg_charge.router import router as leg_charge_router
 from street_turn.router import router as street_turn_router
 from settlement.router import router as settlement_router
+from analytics.router import router as analytics_router
 
 # ── TMS Phase D routers (Notification / Realtime / AI Intake / Driver Mobile) ──
 from notification.router import router as notification_router
@@ -141,6 +142,7 @@ app.include_router(chassis_event_router)
 app.include_router(leg_charge_router)
 app.include_router(street_turn_router)
 app.include_router(settlement_router)
+app.include_router(analytics_router)
 
 # ── TMS Phase D router 등록 ──────────────────────────────────
 app.include_router(notification_router)

@@ -45,7 +45,29 @@ class StreetTurnService:
         payload: StreetTurnCreateRequest,
         actor_user_id: int | None = None,
     ) -> StreetTurnResponseSchema:
+        from sqlalchemy import select as _select, or_
         from street_turn.const.status import StreetTurnStatus
+        from street_turn.model import StreetTurnModel as _StreetTurn
+        from common.exceptions.base import AppException
+
+        # 같은 import_order_id / export_order_id 로 활성 row 가 이미 있으면 거부
+        # (DB unique 제약 보강 + 친절한 에러 메시지)
+        dup_q = _select(_StreetTurn.id).where(
+            _StreetTurn.team_id == self.team_id,
+            _StreetTurn.is_active.is_(True),
+            or_(
+                _StreetTurn.import_order_id == payload.import_order_id,
+                _StreetTurn.export_order_id == payload.export_order_id,
+            ),
+        ).limit(1)
+        existing = (await self.db.execute(dup_q)).scalar_one_or_none()
+        if existing is not None:
+            raise AppException(
+                code="ERR_STREET_TURN_DUPLICATE",
+                message="이미 해당 D/O 로 생성된 Street Turn 이 있습니다.",
+                status_code=409,
+            )
+
         data = payload.model_dump()
         data["status"] = StreetTurnStatus.REQUESTED
         data["requested_by"] = actor_user_id
@@ -143,6 +165,115 @@ class StreetTurnService:
         await self.db.flush()
         await self.db.refresh(row)
         return StreetTurnResponseSchema.model_validate(row)
+
+    # ═══════════════════════════════════════════════════════════════
+    # 추천 후보 (H-11) — 매칭 가능한 IMPORT 컨테이너 X EXPORT D/O
+    # ═══════════════════════════════════════════════════════════════
+
+    async def candidates(self, limit: int = 20):
+        """
+        Street Turn 후보 추천:
+        - 활성/요청/거절 상태가 아닌 컨테이너의 IMPORT D/O × open EXPORT D/O
+        - 같은 customer / 같은 size 우선
+        """
+        from decimal import Decimal as _Decimal
+        from sqlalchemy import select as _select, and_, or_, not_
+        from delivery_order.const.status import DeliveryStatus, ShipmentDirection
+        from delivery_order.model import DeliveryOrderModel
+        from container.model import ContainerModel
+        from street_turn.const.status import StreetTurnStatus
+        from street_turn.model import StreetTurnModel
+        from street_turn.schemas.candidates import (
+            StreetTurnCandidate, StreetTurnCandidatesResponse,
+        )
+
+        SAVING_PER_TURN = _Decimal("155.00")
+
+        # unique constraint 가 status 와 무관하게 적용되므로 활성 row 면 모두 제외
+        used_imp = (await self.db.execute(
+            _select(StreetTurnModel.import_order_id).where(
+                StreetTurnModel.team_id == self.team_id,
+                StreetTurnModel.is_active.is_(True),
+            )
+        )).scalars().all()
+        used_exp = (await self.db.execute(
+            _select(StreetTurnModel.export_order_id).where(
+                StreetTurnModel.team_id == self.team_id,
+                StreetTurnModel.is_active.is_(True),
+            )
+        )).scalars().all()
+
+        # 후보 IMPORT 컨테이너 (미완료, 기존 street_turn 에 묶이지 않은 D/O)
+        imp_q = (
+            _select(
+                ContainerModel.id.label("container_id"),
+                ContainerModel.container_number,
+                ContainerModel.size,
+                DeliveryOrderModel.id.label("do_id"),
+                DeliveryOrderModel.customer_id,
+                DeliveryOrderModel.terminal_id,
+            )
+            .select_from(ContainerModel)
+            .join(DeliveryOrderModel,
+                  DeliveryOrderModel.id == ContainerModel.delivery_order_id)
+            .where(
+                ContainerModel.team_id == self.team_id,
+                ContainerModel.is_active.is_(True),
+                ContainerModel.status != DeliveryStatus.COMPLETED,
+                DeliveryOrderModel.direction == ShipmentDirection.IMPORT,
+                DeliveryOrderModel.is_active.is_(True),
+                not_(DeliveryOrderModel.id.in_(used_imp)) if used_imp else True,
+            )
+        )
+        imp_rows = (await self.db.execute(imp_q)).all()
+
+        # 후보 EXPORT D/O (open, 기존 street_turn 에 묶이지 않음)
+        exp_q = (
+            _select(
+                DeliveryOrderModel.id,
+                DeliveryOrderModel.customer_id,
+                DeliveryOrderModel.terminal_id,
+            )
+            .where(
+                DeliveryOrderModel.team_id == self.team_id,
+                DeliveryOrderModel.is_active.is_(True),
+                DeliveryOrderModel.direction == ShipmentDirection.EXPORT,
+                DeliveryOrderModel.status != DeliveryStatus.COMPLETED,
+                not_(DeliveryOrderModel.id.in_(used_exp)) if used_exp else True,
+            )
+        )
+        exp_rows = (await self.db.execute(exp_q)).all()
+
+        candidates: list[StreetTurnCandidate] = []
+        for ir in imp_rows:
+            for er in exp_rows:
+                score = 0
+                if ir.customer_id == er.customer_id:
+                    score += 2
+                if ir.terminal_id and ir.terminal_id == er.terminal_id:
+                    score += 1
+                # 사이즈 정보 없으면 score=0 일 수도 → 그래도 후보로 둠
+                if score <= 0:
+                    continue
+                candidates.append(StreetTurnCandidate(
+                    import_order_id=ir.do_id,
+                    export_order_id=er.id,
+                    container_id=ir.container_id,
+                    container_number=ir.container_number,
+                    customer_id=ir.customer_id,
+                    container_size=ir.size.value if ir.size else None,
+                    score=score,
+                    estimated_saving=SAVING_PER_TURN,
+                ))
+
+        # score 내림차순 → limit
+        candidates.sort(key=lambda c: c.score, reverse=True)
+        truncated = candidates[: max(1, min(limit, 100))]
+        return StreetTurnCandidatesResponse(
+            candidates=truncated,
+            total=len(candidates),
+            saving_per_turn=SAVING_PER_TURN,
+        )
 
     # ═══════════════════════════════════════════════════════════════
     # Create (벌크) - 전체 성공 or 전체 실패

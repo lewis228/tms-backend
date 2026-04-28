@@ -44,6 +44,7 @@ class SettlementService:
     """
     def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
+        self.team_id = team_id
         self.repo = SettlementRepository(db, team_id)
 
     # ═══════════════════════════════════════════════════════════════
@@ -109,6 +110,29 @@ class SettlementService:
         if not row:
             raise NotFoundException("거래처")
         return SettlementResponseSchema.model_validate(row)
+
+    async def get_audit_log(self, settlement_id: int):
+        """H-12: settlement 의 audit log 시간 오름차순 반환."""
+        from sqlalchemy import select as _select
+        from settlement.model import SettlementAuditLogModel
+        from settlement.schemas.response import SettlementAuditLogResponseSchema
+
+        # 검증: 해당 settlement 존재 + 같은 team
+        s = await self.repo.get(settlement_id)
+        if not s:
+            raise NotFoundException("Settlement")
+
+        q = (
+            _select(SettlementAuditLogModel)
+            .where(
+                SettlementAuditLogModel.team_id == self.team_id,
+                SettlementAuditLogModel.settlement_id == settlement_id,
+                SettlementAuditLogModel.is_active.is_(True),
+            )
+            .order_by(SettlementAuditLogModel.created_at.asc())
+        )
+        rows = list((await self.db.execute(q)).scalars().all())
+        return [SettlementAuditLogResponseSchema.model_validate(r) for r in rows]
 
     async def list_paginated(
         self, request: PaginateSettlementRequest

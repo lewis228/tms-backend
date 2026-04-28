@@ -63,10 +63,10 @@ class AuthService:
         except InvalidTokenError:
             raise UnauthorizedException("잘못된 토큰입니다.")
 
-    def sign_token(self, *, sub: int, sid: str, did: str, is_refresh: bool) -> str:
+    def sign_token(self, *, sub: int, sid: str, did: str, is_refresh: bool, role: str | None = None) -> str:
         """access/refresh 토큰 발급 공통 메서드."""
         ttl = settings.REFRESH_TTL if is_refresh else settings.ACCESS_TTL
-        payload = {
+        payload: dict = {
             "sub": str(sub),
             "sid": sid,
             "did": did,
@@ -75,6 +75,9 @@ class AuthService:
             "iat": utc_ts(),
             "exp": exp_in(ttl),
         }
+        # WS / 미들웨어가 토큰만으로 role 판정 가능하게 access 토큰엔 role 포함.
+        if role and not is_refresh:
+            payload["role"] = role
         return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.ALGORITHM)
 
     async def rotate_token(self, refresh_token: str, *, is_refresh: bool) -> tuple[str, Optional[str]]:
@@ -98,7 +101,15 @@ class AuthService:
         if not saved or saved != refresh_token:
             raise UnauthorizedException("리프레시 토큰이 유효하지 않습니다.")
 
-        new_access = self.sign_token(sub=uid, sid=sid, did=did, is_refresh=False)
+        # rotate 시 user role 을 다시 조회해 새 access 토큰에 박는다 (WS 가 토큰만으로 판정).
+        user = await self.user_repository.get_user_by_id(uid)
+        role_value = (
+            getattr(getattr(user, "role", None), "value", None)
+            if user is not None else None
+        )
+        new_access = self.sign_token(
+            sub=uid, sid=sid, did=did, is_refresh=False, role=role_value,
+        )
 
         new_refresh = None
         if is_refresh:

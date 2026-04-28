@@ -23,7 +23,9 @@ from settlement.schemas.request import (
 from settlement.schemas.response import (
     SettlementResponseSchema, SettlementDeleteResponseSchema,
     SettlementBulkCreateResponseSchema, SettlementBulkUpdateResponseSchema, SettlementBulkDeleteResponseSchema,
+    SettlementAuditLogResponseSchema,
 )
+from typing import List as _List
 
 router = APIRouter(prefix="/api/v1/settlements", tags=["settlements"])
 
@@ -97,6 +99,23 @@ async def get_settlement(
     거래처 단건 조회(활성만)
     """
     return await SettlementService(db, team_id).get(settlement_id)
+
+
+@router.get(
+    "/{settlement_id}/audit-logs",
+    response_model=_List[SettlementAuditLogResponseSchema],
+)
+async def get_settlement_audit_log(
+    settlement_id: int,
+    _1: None = Depends(access_token),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """
+    Settlement 의 변경 감사 로그 (H-12).
+    - 시간 오름차순 (가장 오래된 것부터)
+    """
+    return await SettlementService(db, team_id).get_audit_log(settlement_id)
 
 
 @router.put("/{settlement_id}", response_model=SettlementResponseSchema)

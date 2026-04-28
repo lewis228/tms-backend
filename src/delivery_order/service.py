@@ -131,12 +131,117 @@ class DeliveryOrderService:
         self, request: PaginateDeliveryOrderRequest
     ) -> CursorPaginationResult[DeliveryOrderResponseSchema]:
         """
-        커서 기반 페이지네이션:
-          - meta.count / meta.hasMore / data(DeliveryOrderResponseSchema[])
+        커서 기반 페이지네이션 + H-10 enrich:
+          - container_count / container_completed_count
+          - margin_preview (revenue - payouts from leg_charge)
+          - eta_status (OVERDUE / URGENT / OK / NONE)
         """
         result = await self.repo.get_paginated(request)
-        result.data = [DeliveryOrderResponseSchema.model_validate(r) for r in result.data]
+        rows = list(result.data)
+        ids = [r.id for r in rows]
+
+        derived = await self._compute_list_derived(ids) if ids else {}
+        out = []
+        for r in rows:
+            schema = DeliveryOrderResponseSchema.model_validate(r).model_copy(
+                update=derived.get(r.id, {}),
+            )
+            out.append(schema)
+        result.data = out
         return result
+
+    async def _compute_list_derived(self, ids: list[int]) -> dict[int, dict]:
+        """List 페이지 단위로 파생 필드 일괄 계산. team_id 스코프."""
+        from datetime import timezone, timedelta
+        from decimal import Decimal as _Decimal
+        from sqlalchemy import func, case
+        from charge_code.const.status import PartyKind
+        from container.model import ContainerModel
+        from leg_charge.model import LegChargeModel
+        from delivery_order.schemas.response import EtaStatus
+
+        # 1) 컨테이너 카운트 (전체 / 도착완료)
+        c_total = func.count(ContainerModel.id).label("c_total")
+        c_done = func.sum(case(
+            (ContainerModel.status == DeliveryStatus.COMPLETED, 1), else_=0,
+        )).label("c_done")
+        next_eta = func.min(case(
+            (ContainerModel.status != DeliveryStatus.COMPLETED,
+             ContainerModel.delivery_appointment),
+        )).label("next_eta")
+        cq = (
+            select(
+                ContainerModel.delivery_order_id, c_total, c_done, next_eta,
+            )
+            .where(
+                ContainerModel.team_id == self.team_id,
+                ContainerModel.is_active.is_(True),
+                ContainerModel.delivery_order_id.in_(ids),
+            )
+            .group_by(ContainerModel.delivery_order_id)
+        )
+        cmap: dict[int, dict] = {}
+        for r in (await self.db.execute(cq)).all():
+            cmap[r.delivery_order_id] = {
+                "c_total": int(r.c_total or 0),
+                "c_done": int(r.c_done or 0),
+                "next_eta": r.next_eta,
+            }
+
+        # 2) margin (leg_charge): revenue - payouts where leg.delivery_order_id in ids
+        rev = func.sum(case(
+            (LegChargeModel.payer_kind == PartyKind.CUSTOMER, LegChargeModel.amount),
+            else_=0,
+        )).label("rev")
+        pay = func.sum(case(
+            (LegChargeModel.payee_kind.in_([
+                PartyKind.DRIVER, PartyKind.CARRIER, PartyKind.POOL,
+            ]), LegChargeModel.amount),
+            else_=0,
+        )).label("pay")
+        mq = (
+            select(LegModel.delivery_order_id, rev, pay)
+            .select_from(LegChargeModel)
+            .join(LegModel, LegModel.id == LegChargeModel.leg_id)
+            .where(
+                LegChargeModel.team_id == self.team_id,
+                LegChargeModel.is_active.is_(True),
+                LegModel.delivery_order_id.in_(ids),
+            )
+            .group_by(LegModel.delivery_order_id)
+        )
+        mmap: dict[int, _Decimal] = {}
+        for r in (await self.db.execute(mq)).all():
+            mmap[r.delivery_order_id] = _Decimal(r.rev or 0) - _Decimal(r.pay or 0)
+
+        # 3) ETA status — DB 의 naive datetime 과 비교를 위해 양쪽 다 naive 로
+        now = datetime.utcnow()
+        urgent_cutoff = now + timedelta(hours=24)
+
+        def _naive(d):
+            if d is None:
+                return None
+            return d.replace(tzinfo=None) if d.tzinfo is not None else d
+
+        out: dict[int, dict] = {}
+        for do_id in ids:
+            c = cmap.get(do_id, {"c_total": 0, "c_done": 0, "next_eta": None})
+            eta = _naive(c["next_eta"])
+            if eta is None:
+                eta_status = EtaStatus.NONE
+            elif eta < now:
+                eta_status = EtaStatus.OVERDUE
+            elif eta < urgent_cutoff:
+                eta_status = EtaStatus.URGENT
+            else:
+                eta_status = EtaStatus.OK
+            out[do_id] = {
+                "container_count": c["c_total"],
+                "container_completed_count": c["c_done"],
+                "margin_preview": mmap.get(do_id, _Decimal(0)),
+                "eta_status": eta_status,
+            }
+        return out
 
     # ═══════════════════════════════════════════════════════════════
     # Delta Sync

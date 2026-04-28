@@ -1,12 +1,21 @@
 # src/delivery_order/schemas/response.py
 from __future__ import annotations
 from datetime import datetime
+from decimal import Decimal
+from enum import StrEnum
 from typing import Literal, List, Optional
 from common.schemas.base import ResponseSchema
 from delivery_order.const.status import (
     DeliveryStatus, ShipmentDirection,
 )
 from container.schemas.response import ContainerResponseSchema
+
+
+class EtaStatus(StrEnum):
+    OVERDUE = "OVERDUE"
+    URGENT = "URGENT"
+    OK = "OK"
+    NONE = "NONE"
 
 
 class DeliveryOrderResponseSchema(ResponseSchema):
@@ -23,6 +32,12 @@ class DeliveryOrderResponseSchema(ResponseSchema):
     bl_released: bool
     internal_note: str | None = None
     is_active: bool
+
+    # H-10: list 응답에만 채워지는 파생 필드 (단건 조회는 None)
+    container_count: int | None = None
+    container_completed_count: int | None = None
+    margin_preview: Decimal | None = None
+    eta_status: EtaStatus | None = None
 
 
 class DeliveryOrderDetailResponseSchema(DeliveryOrderResponseSchema):

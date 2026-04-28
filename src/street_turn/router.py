@@ -23,6 +23,7 @@ from street_turn.schemas.response import (
     StreetTurnResponseSchema, StreetTurnDeleteResponseSchema,
     StreetTurnBulkCreateResponseSchema, StreetTurnBulkUpdateResponseSchema, StreetTurnBulkDeleteResponseSchema,
 )
+from street_turn.schemas.candidates import StreetTurnCandidatesResponse
 
 router = APIRouter(prefix="/api/v1/street-turns", tags=["street-turns"])
 
@@ -69,6 +70,21 @@ async def list_street_turns(
 # Delta Sync
 # /{street_turn_id}보다 먼저 정의해야 "sync"가 street_turn_id로 파싱되지 않음
 # ═══════════════════════════════════════════════════════════════
+
+@router.get("/candidates", response_model=StreetTurnCandidatesResponse)
+async def list_street_turn_candidates(
+    limit: int = 20,
+    _1: None = Depends(access_token),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """
+    Street Turn 후보 추천 (H-11)
+    - 매칭 가능한 IMPORT 컨테이너 X EXPORT D/O 페어
+    - score 내림차순. estimated_saving 포함.
+    """
+    return await StreetTurnService(db, team_id).candidates(limit)
+
 
 @router.get("/sync", response_model=SyncResponse[StreetTurnResponseSchema])
 async def sync_street_turns(

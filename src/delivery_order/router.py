@@ -20,7 +20,7 @@ from delivery_order.schemas.request import (
     DeliveryOrderBulkCreateRequest, DeliveryOrderBulkUpdateRequest, DeliveryOrderBulkDeleteRequest,
 )
 from delivery_order.schemas.response import (
-    DeliveryOrderResponseSchema, DeliveryOrderDeleteResponseSchema,
+    DeliveryOrderResponseSchema, DeliveryOrderDetailResponseSchema, DeliveryOrderDeleteResponseSchema,
     DeliveryOrderBulkCreateResponseSchema, DeliveryOrderBulkUpdateResponseSchema, DeliveryOrderBulkDeleteResponseSchema,
 )
 
@@ -31,7 +31,7 @@ router = APIRouter(prefix="/api/v1/delivery-orders", tags=["delivery-orders"])
 # 단건 CRUD
 # ═══════════════════════════════════════════════════════════════
 
-@router.post("", response_model=DeliveryOrderResponseSchema)
+@router.post("", response_model=DeliveryOrderDetailResponseSchema)
 async def create_delivery_order(
     body: DeliveryOrderCreateRequest,
     _1: None = Depends(access_token),
@@ -85,7 +85,7 @@ async def sync_delivery_orders(
     return await DeliveryOrderService(db, team_id).sync_delta(since)
 
 
-@router.get("/{delivery_order_id}", response_model=DeliveryOrderResponseSchema)
+@router.get("/{delivery_order_id}", response_model=DeliveryOrderDetailResponseSchema)
 async def get_delivery_order(
     delivery_order_id: int,
     _1: None = Depends(access_token),

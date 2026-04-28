@@ -1,32 +1,57 @@
 # src/driver/schemas/request.py
 from __future__ import annotations
+from datetime import date
+from decimal import Decimal
 from typing import Optional, Literal, List
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, EmailStr
 from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
+from driver.const.status import EmploymentKind, PaymentTermsKind
 
 
 class DriverCreateRequest(RequestSchema):
-    """기사 생성 — User 행도 함께 만들어진다 (service 가 처리)."""
-    user_id: int  # 이미 생성된 User.id (DRIVER role) 와 link
+    """기사 생성 — service 가 user 도 자동 생성. truck 은 별도 truck 마스터 (H-3)."""
+    email: EmailStr
+    name: str = Field(min_length=1, max_length=100)
+    phone: str | None = Field(default=None, max_length=64)
     license_number: str | None = Field(default=None, max_length=64)
     license_state: str | None = Field(default=None, max_length=8)
-    truck_number: str | None = Field(default=None, max_length=32)
     note: str | None = Field(default=None, max_length=3000)
+    # H-5
+    employment_kind: EmploymentKind = EmploymentKind.IN_HOUSE
+    carrier_id: int | None = None
+    payment_terms_kind: PaymentTermsKind | None = None
+    payment_terms_value: Decimal | None = None
+    default_truck_id: int | None = None
+    default_chassis_id: int | None = None
+    license_expires_at: date | None = None
+    medical_cert_expires_at: date | None = None
 
 
 class DriverUpdateRequest(RequestSchema):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    phone: str | None = Field(default=None, max_length=64)
     license_number: str | None = Field(default=None, max_length=64)
     license_state: str | None = Field(default=None, max_length=8)
-    truck_number: str | None = Field(default=None, max_length=32)
+    is_active: bool | None = None
     note: str | None = Field(default=None, max_length=3000)
+    # H-5
+    employment_kind: EmploymentKind | None = None
+    carrier_id: int | None = None
+    payment_terms_kind: PaymentTermsKind | None = None
+    payment_terms_value: Decimal | None = None
+    default_truck_id: int | None = None
+    default_chassis_id: int | None = None
+    license_expires_at: date | None = None
+    medical_cert_expires_at: date | None = None
 
 
 class PaginateDriverRequest(BasePaginationSchema):
     order__id: Optional[Literal['ASC', 'DESC']] = 'ASC'
     include_inactive: bool = False
-    where__truck_number__i_like: Optional[str] = None
     where__license_number__i_like: Optional[str] = None
+    where__employment_kind__equal: Optional[EmploymentKind] = None
+    where__carrier_id__equal: Optional[int] = None
 
 
 class DriverBulkCreateRequest(RequestSchema):
@@ -35,9 +60,11 @@ class DriverBulkCreateRequest(RequestSchema):
 
 class DriverBulkUpdateItem(RequestSchema):
     id: int
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    phone: str | None = Field(default=None, max_length=64)
     license_number: str | None = Field(default=None, max_length=64)
     license_state: str | None = Field(default=None, max_length=8)
-    truck_number: str | None = Field(default=None, max_length=32)
+    is_active: bool | None = None
     note: str | None = Field(default=None, max_length=3000)
 
 

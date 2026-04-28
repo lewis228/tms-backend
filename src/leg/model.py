@@ -10,7 +10,7 @@ from sqlalchemy import (
 from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
 from delivery_order.const.status import DeliveryStatus
-from leg.const.status import LegStatus, MoveType, ServiceType
+from leg.const.status import LegStatus, MoveType, ServiceType, LegKind
 
 
 class LegModel(Base, TeamScopedMixin):
@@ -19,6 +19,11 @@ class LegModel(Base, TeamScopedMixin):
 
     delivery_order_id: Mapped[int] = mapped_column(
         ForeignKey("delivery_order.id", ondelete="CASCADE"), nullable=False,
+    )
+
+    # 컨테이너 단위 leg (Bobtail / Dry-Run leg 는 NULL 허용)
+    container_id: Mapped[int | None] = mapped_column(
+        ForeignKey("container.id", ondelete="SET NULL"), nullable=True,
     )
 
     # 어떤 단계의 leg 인지 (D/O 상태 기준)
@@ -32,6 +37,10 @@ class LegModel(Base, TeamScopedMixin):
     service_type: Mapped[ServiceType] = mapped_column(
         SAEnum(ServiceType, name="service_type"), nullable=False,
     )
+    # H-6: leg 동작 분류 (Manifest 의 한 줄 = 1 leg = 1 kind).
+    leg_kind: Mapped[LegKind | None] = mapped_column(
+        SAEnum(LegKind, name="leg_kind"), nullable=True,
+    )
 
     status: Mapped[LegStatus] = mapped_column(
         SAEnum(LegStatus, name="leg_status"),
@@ -44,6 +53,28 @@ class LegModel(Base, TeamScopedMixin):
     driver_id: Mapped[int | None] = mapped_column(
         ForeignKey("driver.id", ondelete="SET NULL"), nullable=True,
     )
+    # H-3: 트럭 자산 분리. leg 마다 다른 트럭 가능.
+    truck_id: Mapped[int | None] = mapped_column(
+        ForeignKey("truck.id", ondelete="SET NULL"), nullable=True,
+    )
+    # H-4: 챠시 자산 분리. chassis_id 는 leg 의 default chassis 로 유지.
+    chassis_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chassis.id", ondelete="SET NULL"), nullable=True,
+    )
+    # H-6: 챠시-컨 swap 추적. start ≠ end 면 챠시 flip 발생.
+    chassis_at_start_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chassis.id", ondelete="SET NULL"), nullable=True,
+    )
+    chassis_at_end_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chassis.id", ondelete="SET NULL"), nullable=True,
+    )
+    container_at_start_id: Mapped[int | None] = mapped_column(
+        ForeignKey("container.id", ondelete="SET NULL"), nullable=True,
+    )
+    container_at_end_id: Mapped[int | None] = mapped_column(
+        ForeignKey("container.id", ondelete="SET NULL"), nullable=True,
+    )
+    remarks: Mapped[str | None] = mapped_column(String(500), nullable=True)
     pickup_location_id: Mapped[int | None] = mapped_column(
         ForeignKey("location.id", ondelete="SET NULL"), nullable=True,
     )
@@ -70,10 +101,14 @@ class LegModel(Base, TeamScopedMixin):
 
     __table_args__ = (
         UniqueConstraint("team_id", "id", name="uq_leg_team_id_id"),
-        Index("ix_leg_team_do",       "team_id", "delivery_order_id"),
-        Index("ix_leg_team_driver",   "team_id", "driver_id"),
-        Index("ix_leg_team_status",   "team_id", "status"),
-        Index("ix_leg_team_pickup",   "team_id", "pickup_date"),
-        Index("ix_leg_team_active_id","team_id", "is_active", "id"),
+        Index("ix_leg_team_do",        "team_id", "delivery_order_id"),
+        Index("ix_leg_team_container", "team_id", "container_id"),
+        Index("ix_leg_team_driver",    "team_id", "driver_id"),
+        Index("ix_leg_team_truck",     "team_id", "truck_id"),
+        Index("ix_leg_team_chassis",   "team_id", "chassis_id"),
+        Index("ix_leg_team_kind",      "team_id", "leg_kind"),
+        Index("ix_leg_team_status",    "team_id", "status"),
+        Index("ix_leg_team_pickup",    "team_id", "pickup_date"),
+        Index("ix_leg_team_active_id", "team_id", "is_active", "id"),
         Index("ix_leg_team_updated_at","team_id", "updated_at"),
     )

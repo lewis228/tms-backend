@@ -4,15 +4,23 @@ from datetime import datetime
 from typing import Literal, List, Optional
 from common.schemas.base import ResponseSchema
 from delivery_order.const.status import DeliveryStatus
-from leg.const.status import LegStatus, MoveType, ServiceType
+from leg.const.status import LegStatus, MoveType, ServiceType, LegKind
 
 
 class LegResponseSchema(ResponseSchema):
     id: int
     delivery_order_id: int
+    container_id: int | None = None
+    truck_id: int | None = None
+    chassis_id: int | None = None
+    chassis_at_start_id: int | None = None
+    chassis_at_end_id: int | None = None
+    container_at_start_id: int | None = None
+    container_at_end_id: int | None = None
     step: DeliveryStatus
     move_type: MoveType
     service_type: ServiceType
+    leg_kind: LegKind | None = None
     status: LegStatus
     driver_id: int | None = None
     pickup_location_id: int | None = None
@@ -25,6 +33,7 @@ class LegResponseSchema(ResponseSchema):
     failure_reason: str | None = None
     storage_days: int
     is_settled: bool
+    remarks: str | None = None
     note: str | None = None
     is_active: bool
 

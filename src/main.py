@@ -52,11 +52,20 @@ from terminal.router import router as terminal_router
 from vessel.router import router as vessel_router
 from location.router import router as location_router
 from driver.router import router as driver_router
+from truck.router import router as truck_router
+from equipment_pool.router import router as equipment_pool_router
+from chassis.router import router as chassis_router
 
 # ── TMS D/O / Leg / Settlement routers (Phase C) ─────────────
 from rate_setting.router import router as rate_setting_router
+from charge_code.router import router as charge_code_router
+from rate_card.router import router as rate_card_router
 from delivery_order.router import router as delivery_order_router
+from container.router import router as container_router
 from leg.router import router as leg_router
+from leg_stop.router import router as leg_stop_router
+from chassis_event.router import router as chassis_event_router
+from leg_charge.router import router as leg_charge_router
 from street_turn.router import router as street_turn_router
 from settlement.router import router as settlement_router
 
@@ -116,11 +125,20 @@ app.include_router(terminal_router)
 app.include_router(vessel_router)
 app.include_router(location_router)
 app.include_router(driver_router)
+app.include_router(truck_router)
+app.include_router(equipment_pool_router)
+app.include_router(chassis_router)
 
 # ── TMS D/O / Leg / Settlement router 등록 (Phase C) ─────────
 app.include_router(rate_setting_router)
+app.include_router(charge_code_router)
+app.include_router(rate_card_router)
 app.include_router(delivery_order_router)
+app.include_router(container_router)
 app.include_router(leg_router)
+app.include_router(leg_stop_router)
+app.include_router(chassis_event_router)
+app.include_router(leg_charge_router)
 app.include_router(street_turn_router)
 app.include_router(settlement_router)
 

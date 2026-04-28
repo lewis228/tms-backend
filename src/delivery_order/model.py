@@ -1,21 +1,21 @@
 # src/delivery_order/model.py
 from __future__ import annotations
-from datetime import date, datetime
+from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    String, Boolean, Text, ForeignKey, DateTime, Date,
+    String, Boolean, Text, ForeignKey, DateTime,
     Index, UniqueConstraint, Enum as SAEnum,
 )
 
 from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
 from delivery_order.const.status import (
-    DeliveryStatus, ShipmentDirection, ContainerSize,
+    DeliveryStatus, ShipmentDirection,
 )
 
 
 class DeliveryOrderModel(Base, TeamScopedMixin):
-    """D/O (Team-Scoped). 상태 머신 + 게이트는 service 에서."""
+    """D/O 헤더 (Team-Scoped). 컨테이너는 ContainerModel 1:N 으로 분리."""
     __tablename__ = "delivery_order"
 
     # ── 상태 / 방향 ─────────────────────────────────────────────
@@ -45,37 +45,12 @@ class DeliveryOrderModel(Base, TeamScopedMixin):
     vessel_id: Mapped[int | None] = mapped_column(
         ForeignKey("vessel.id", ondelete="SET NULL"), nullable=True,
     )
-    delivery_location_id: Mapped[int | None] = mapped_column(
-        ForeignKey("location.id", ondelete="SET NULL"), nullable=True,
-    )
-    return_location_id: Mapped[int | None] = mapped_column(
-        ForeignKey("location.id", ondelete="SET NULL"), nullable=True,
-    )
 
-    # ── 컨테이너 ───────────────────────────────────────────────
-    container_number: Mapped[str | None] = mapped_column(String(11), nullable=True)
-    container_size: Mapped[ContainerSize | None] = mapped_column(
-        SAEnum(ContainerSize, name="container_size"), nullable=True,
-    )
-    container_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    chassis_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # ── 일정 (헤더 단위 — 컨테이너 단위 일정은 ContainerModel) ─────
+    eta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # ── 일정 ────────────────────────────────────────────────────
-    eta:                  Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    pickup_appointment:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    delivery_appointment: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    return_appointment:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    # ── LFD / 일자 ──────────────────────────────────────────────
-    demurrage_lfd: Mapped[date | None] = mapped_column(Date, nullable=True)
-    detention_lfd: Mapped[date | None] = mapped_column(Date, nullable=True)
-    empty_date:    Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    loaded_date:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    # ── 게이트 플래그 ───────────────────────────────────────────
-    bl_released:     Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
-    pier_pass_paid:  Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
-    customs_cleared: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
+    # ── 게이트 (BL 단위) ────────────────────────────────────────
+    bl_released: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
 
     # ── 메모 ────────────────────────────────────────────────────
     internal_note: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -85,9 +60,6 @@ class DeliveryOrderModel(Base, TeamScopedMixin):
         Index("ix_do_team_status",         "team_id", "status"),
         Index("ix_do_team_direction",      "team_id", "direction"),
         Index("ix_do_team_customer",       "team_id", "customer_id"),
-        Index("ix_do_team_container",      "team_id", "container_number"),
         Index("ix_do_team_active_id",      "team_id", "is_active", "id"),
-        Index("ix_do_team_demurrage_lfd",  "team_id", "demurrage_lfd"),
-        Index("ix_do_team_detention_lfd",  "team_id", "detention_lfd"),
         Index("ix_do_team_updated_at",     "team_id", "updated_at"),
     )

@@ -1,11 +1,12 @@
 # src/delivery_order/schemas/response.py
 from __future__ import annotations
-from datetime import date, datetime
+from datetime import datetime
 from typing import Literal, List, Optional
 from common.schemas.base import ResponseSchema
 from delivery_order.const.status import (
-    DeliveryStatus, ShipmentDirection, ContainerSize,
+    DeliveryStatus, ShipmentDirection,
 )
+from container.schemas.response import ContainerResponseSchema
 
 
 class DeliveryOrderResponseSchema(ResponseSchema):
@@ -18,25 +19,15 @@ class DeliveryOrderResponseSchema(ResponseSchema):
     customer_id: int
     terminal_id: int | None = None
     vessel_id: int | None = None
-    delivery_location_id: int | None = None
-    return_location_id: int | None = None
-    container_number: str | None = None
-    container_size: ContainerSize | None = None
-    container_type: str | None = None
-    chassis_number: str | None = None
     eta: datetime | None = None
-    pickup_appointment: datetime | None = None
-    delivery_appointment: datetime | None = None
-    return_appointment: datetime | None = None
-    demurrage_lfd: date | None = None
-    detention_lfd: date | None = None
-    empty_date: datetime | None = None
-    loaded_date: datetime | None = None
     bl_released: bool
-    pier_pass_paid: bool
-    customs_cleared: bool
     internal_note: str | None = None
     is_active: bool
+
+
+class DeliveryOrderDetailResponseSchema(DeliveryOrderResponseSchema):
+    """D/O 단건 조회 — 컨테이너 nested 포함."""
+    containers: List[ContainerResponseSchema] = []
 
 
 class DeliveryOrderDeleteResponseSchema(ResponseSchema):

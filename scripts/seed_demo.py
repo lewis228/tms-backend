@@ -52,10 +52,18 @@ from location.const.kind import LocationKind
 from driver.model import DriverModel
 from rate_setting.model import RateSettingModel
 from rate_setting.const.rate_type import RateType
+from charge_code.model import ChargeCodeModel
+from charge_code.const.status import ChargeKind, ChargeUnit
+from rate_card.model import RateCardModel
 from delivery_order.model import DeliveryOrderModel
-from delivery_order.const.status import DeliveryStatus, ShipmentDirection, ContainerSize
+from delivery_order.const.status import DeliveryStatus, ShipmentDirection
+from container.model import ContainerModel, ContainerEventModel
+from container.const.status import ContainerSize, ContainerEventKind
 from leg.model import LegModel
 from leg.const.status import LegStatus, MoveType, ServiceType
+from street_turn.model import StreetTurnModel
+from street_turn.const.status import StreetTurnStatus
+from street_turn.const.link_type import StreetTurnLinkType
 from settlement.model import SettlementModel
 from settlement.const.status import SettlementStatus
 from notification.model import NotificationModel
@@ -98,19 +106,21 @@ async def get_team(db) -> TeamModel:
 # 도메인별 시드
 # ──────────────────────────────────────────────────────────────────────────
 
+# H-5: kind 분류 추가. 8 CUSTOMER + 3 CARRIER + 1 BROKER = 12.
+# 튜플: (name, code, addr, contact_name, email, kind)
 CUSTOMERS = [
-    ("Acme Logistics", "ACME", "1100 Trade St, Long Beach CA 90802", "Sarah Kim", "sarah@acme.example"),
-    ("Pacific Imports", "PAC", "2400 Ocean Blvd, San Pedro CA 90731", "John Lee", "john@pacific.example"),
-    ("Bluewave Freight", "BLUE", "550 Wilmington Ave, Wilmington CA 90744", "Mike Chen", "mike@bluewave.example"),
-    ("Coastline Distribution", "COAST", "3200 Carson St, Carson CA 90745", "Anna Park", "anna@coastline.example"),
-    ("Global Trade Co", "GTC", "1500 Harbor Dr, Long Beach CA 90802", "Daniel Tan", "daniel@gtc.example"),
-    ("Sunrise Forwarding", "SUN", "780 Atlantic Ave, Long Beach CA 90802", "Rachel Park", "rachel@sunrise.example"),
-    ("Westport Logistics", "WEST", "440 Anaheim St, Wilmington CA 90744", "Brian Cho", "brian@westport.example"),
-    ("Anchor Shipping", "ANCH", "9000 Alameda St, Los Angeles CA 90002", "Christopher Yu", "chris@anchor.example"),
-    ("Harbor Light Trading", "HLT", "1200 Marine Way, Wilmington CA 90744", "Helen Jang", "helen@hltrade.example"),
-    ("Pacific Crest Cargo", "PCC", "5600 Pier B St, Long Beach CA 90802", "Sam Park", "sam@pcc.example"),
-    ("Cascade Carriers Inc", "CCI", "2200 Avalon Blvd, Wilmington CA 90744", "Jenny Lim", "jenny@cascade.example"),
-    ("Liberty Forwarders", "LIB", "1800 Henry Ford Ave, Wilmington CA 90744", "Ethan Han", "ethan@liberty.example"),
+    ("Acme Logistics", "ACME", "1100 Trade St, Long Beach CA 90802", "Sarah Kim", "sarah@acme.example", "CUSTOMER"),
+    ("Pacific Imports", "PAC", "2400 Ocean Blvd, San Pedro CA 90731", "John Lee", "john@pacific.example", "CUSTOMER"),
+    ("Bluewave Freight", "BLUE", "550 Wilmington Ave, Wilmington CA 90744", "Mike Chen", "mike@bluewave.example", "CUSTOMER"),
+    ("Coastline Distribution", "COAST", "3200 Carson St, Carson CA 90745", "Anna Park", "anna@coastline.example", "CUSTOMER"),
+    ("Global Trade Co", "GTC", "1500 Harbor Dr, Long Beach CA 90802", "Daniel Tan", "daniel@gtc.example", "CUSTOMER"),
+    ("Sunrise Forwarding", "SUN", "780 Atlantic Ave, Long Beach CA 90802", "Rachel Park", "rachel@sunrise.example", "CUSTOMER"),
+    ("Westport Logistics", "WEST", "440 Anaheim St, Wilmington CA 90744", "Brian Cho", "brian@westport.example", "CUSTOMER"),
+    ("Anchor Shipping", "ANCH", "9000 Alameda St, Los Angeles CA 90002", "Christopher Yu", "chris@anchor.example", "CUSTOMER"),
+    ("Harbor Light Trading", "HLT", "1200 Marine Way, Wilmington CA 90744", "Helen Jang", "helen@hltrade.example", "BROKER"),
+    ("Pacific Crest Cargo", "PCC", "5600 Pier B St, Long Beach CA 90802", "Sam Park", "sam@pcc.example", "CARRIER"),
+    ("Cascade Carriers Inc", "CCI", "2200 Avalon Blvd, Wilmington CA 90744", "Jenny Lim", "jenny@cascade.example", "CARRIER"),
+    ("Liberty Forwarders", "LIB", "1800 Henry Ford Ave, Wilmington CA 90744", "Ethan Han", "ethan@liberty.example", "CARRIER"),
 ]
 
 TERMINALS = [
@@ -166,6 +176,26 @@ DRIVERS = [
     ("Alex Reyes", "alex.reyes@drv.demo", "+1-310-555-0108", "D2211008", "CA", "TRK-108"),
 ]
 
+CHARGE_CODES: list[tuple[str, str, ChargeKind, ChargeUnit, Decimal | None, bool, bool, str]] = [
+    # (code, name, kind, default_unit, default_amount, billable, payable, description)
+    ("BASE_LINEHAUL",    "기본 운임 (Linehaul)",     ChargeKind.BASE,        ChargeUnit.FLAT,    Decimal("250.00"), True,  True,  "표준 drayage 기본 운임"),
+    ("BOBTAIL",          "Bobtail 회차료",            ChargeKind.BASE,        ChargeUnit.FLAT,    Decimal("20.00"),  True,  True,  "트럭만 (컨X) 이동"),
+    ("DRY_RUN",          "Dry Run (빠꾸)",            ChargeKind.PENALTY,     ChargeUnit.FLAT,    Decimal("85.00"),  True,  True,  "현장 도착했으나 작업 불가로 회차"),
+    ("WAIT_PER_MIN",     "대기료 (분당)",             ChargeKind.ACCESSORIAL, ChargeUnit.MINUTE,  Decimal("1.50"),   True,  True,  "기사 대기 시간 분당 정산"),
+    ("CHASSIS_PER_DIEM", "Chassis Per-Diem",          ChargeKind.ACCESSORIAL, ChargeUnit.DAY,     Decimal("35.00"),  True,  False, "챠시 일별 사용료 (풀 사용 시)"),
+    ("CHASSIS_SPLIT",    "Chassis Split Fee",         ChargeKind.ACCESSORIAL, ChargeUnit.FLAT,    Decimal("55.00"),  True,  False, "챠시 별도 픽업/반납 비용"),
+    ("FUEL_SURCHARGE",   "연료 Surcharge (%)",        ChargeKind.FUEL,        ChargeUnit.PERCENT, Decimal("12.00"),  True,  False, "기본 운임의 12% 연료 surcharge"),
+    ("DEMURRAGE",        "Demurrage (체화료)",        ChargeKind.PENALTY,     ChargeUnit.DAY,     Decimal("150.00"), True,  False, "터미널 LFD 초과 시 일별"),
+    ("DETENTION",        "Detention (반납 지연)",     ChargeKind.PENALTY,     ChargeUnit.DAY,     Decimal("125.00"), True,  False, "빈 컨 반납 지연 시 일별"),
+    ("PIER_PASS",        "Pier Pass (TMF)",           ChargeKind.ACCESSORIAL, ChargeUnit.FLAT,    Decimal("36.71"),  True,  False, "LA/LB Pier Pass / TMF"),
+    ("SCALE",            "Scale (계량)",              ChargeKind.ACCESSORIAL, ChargeUnit.FLAT,    Decimal("15.00"),  True,  False, "계량소 비용"),
+    ("TOLL",             "Toll (통행료)",             ChargeKind.ACCESSORIAL, ChargeUnit.FLAT,    Decimal("12.00"),  True,  True,  "유료 도로 통행료"),
+    ("PARTIAL_PAY",      "부분 지급",                 ChargeKind.DISCOUNT,    ChargeUnit.FLAT,    Decimal("0.00"),   False, True,  "터미널 휴장 등 사유로 부분 지급"),
+    ("VAT_10",           "부가세 10%",                ChargeKind.TAX,         ChargeUnit.PERCENT, Decimal("10.00"),  True,  False, "한국 부가세 10%"),
+    ("OTHER",            "기타 비용",                 ChargeKind.ACCESSORIAL, ChargeUnit.FLAT,    None,              True,  True,  "코드화 안 된 비용 — 메모로 구분"),
+]
+
+
 RATE_SETTINGS = [
     ("LA/LB Local Drayage Flat", RateType.FLAT_RATE, Decimal("250.00"), None, None, "LA/LB 권역 단일 운송"),
     ("LA/LB Long-haul Per Mile", RateType.PER_MILE, None, None, Decimal("3.50"), "장거리 마일당 요율"),
@@ -181,8 +211,9 @@ RATE_SETTINGS = [
 # ──────────────────────────────────────────────────────────────────────────
 
 async def seed_customers(db, team: TeamModel) -> list[CustomerModel]:
+    from customer.const.status import PartnerKind
     out = []
-    for name, code, addr, contact, email in CUSTOMERS:
+    for name, code, addr, contact, email, kind in CUSTOMERS:
         existing = (await db.execute(
             select(CustomerModel).where(
                 CustomerModel.team_id == team.id,
@@ -192,11 +223,21 @@ async def seed_customers(db, team: TeamModel) -> list[CustomerModel]:
         if existing:
             out.append(existing)
             continue
+        kind_enum = PartnerKind(kind)
+        carrier_extras = {}
+        if kind_enum == PartnerKind.CARRIER:
+            carrier_extras = {
+                "mc_number": f"MC{700000 + random.randint(1000, 9999)}",
+                "dot_number": f"DOT{1000000 + random.randint(10000, 99999)}",
+                "payment_terms_days": 30,
+            }
         c = CustomerModel(
             team_id=team.id, name=name, code=code,
+            kind=kind_enum,
             billing_address=addr, contact_name=contact,
             contact_email=email,
             contact_phone=f"+1-562-555-{random.randint(1000, 9999)}",
+            **carrier_extras,
         )
         db.add(c)
         await db.flush()
@@ -276,9 +317,22 @@ async def seed_locations(
     return out
 
 
-async def seed_drivers(db, team: TeamModel) -> list[DriverModel]:
+async def seed_drivers(
+    db, team: TeamModel,
+    customers: list[CustomerModel] | None = None,
+) -> list[DriverModel]:
+    from driver.const.status import EmploymentKind, PaymentTermsKind
     out = []
-    for name, email, phone, license_no, state, truck in DRIVERS:
+    # 8 기사: 5 IN_HOUSE, 2 OWNER_OPERATOR_SOLO, 1 CARRIER_DRIVER
+    employment_dist = [
+        EmploymentKind.IN_HOUSE, EmploymentKind.IN_HOUSE,
+        EmploymentKind.IN_HOUSE, EmploymentKind.IN_HOUSE, EmploymentKind.IN_HOUSE,
+        EmploymentKind.OWNER_OPERATOR_SOLO, EmploymentKind.OWNER_OPERATOR_SOLO,
+        EmploymentKind.CARRIER_DRIVER,
+    ]
+    carriers = [c for c in (customers or []) if c.kind.value == "CARRIER"]
+    first_carrier_id = carriers[0].id if carriers else None
+    for idx, (name, email, phone, license_no, state, truck) in enumerate(DRIVERS):
         # user 먼저 (drv.demo 도메인은 SMTP rejection 안 하는 도메인 — 이미 .dev 와 같은 형태)
         user = (await db.execute(
             select(UserModel).where(UserModel.email == email)
@@ -303,14 +357,346 @@ async def seed_drivers(db, team: TeamModel) -> list[DriverModel]:
         if existing:
             out.append(existing)
             continue
+        # truck 은 이제 별도 테이블 (H-3). seed_trucks 가 처리.
+        _ = truck  # noqa: F841 — DRIVERS 튜플의 마지막 요소 (legacy)
+        emp = employment_dist[idx % len(employment_dist)]
+        carrier_id = first_carrier_id if emp == EmploymentKind.CARRIER_DRIVER else None
+        terms_kind = (
+            PaymentTermsKind.PERCENT_OF_REVENUE
+            if emp == EmploymentKind.OWNER_OPERATOR_SOLO
+            else (PaymentTermsKind.SALARY if emp == EmploymentKind.IN_HOUSE else PaymentTermsKind.PER_LEG)
+        )
+        terms_value = (
+            Decimal("70.0000") if emp == EmploymentKind.OWNER_OPERATOR_SOLO
+            else (Decimal("4500.00") if emp == EmploymentKind.IN_HOUSE else Decimal("250.00"))
+        )
         d = DriverModel(
             team_id=team.id, user_id=user.id,
-            license_number=license_no, license_state=state, truck_number=truck,
+            license_number=license_no, license_state=state,
+            employment_kind=emp,
+            carrier_id=carrier_id,
+            payment_terms_kind=terms_kind,
+            payment_terms_value=terms_value,
         )
         db.add(d)
         await db.flush()
         out.append(d)
     print(f"[driver] {len(out)}")
+    return out
+
+
+async def seed_trucks(
+    db, team: TeamModel, drivers: list[DriverModel],
+) -> list:
+    """회사 트럭 8대 + 외부기사(첫 5명) 본인 트럭 5대 = 13대."""
+    from truck.model import TruckModel
+    from truck.const.status import TruckOwnerKind, TruckStatus
+
+    out = []
+    company_trucks = [
+        ("TX-COMP-101", "1HGCM82633A123456", "Freightliner", "Cascadia", 2022),
+        ("TX-COMP-102", "1HGCM82633A123457", "Freightliner", "Cascadia", 2023),
+        ("TX-COMP-103", "1HGCM82633A123458", "Volvo", "VNL 760", 2021),
+        ("TX-COMP-104", "1HGCM82633A123459", "Kenworth", "T680", 2020),
+        ("TX-COMP-105", "1HGCM82633A123460", "Peterbilt", "579", 2022),
+        ("TX-COMP-106", "1HGCM82633A123461", "Mack", "Anthem", 2019),
+        ("TX-COMP-107", "1HGCM82633A123462", "International", "LT", 2021),
+        ("TX-COMP-108", "1HGCM82633A123463", "Volvo", "VNL 860", 2023),
+    ]
+    for plate, vin, make, model, year in company_trucks:
+        existing = (await db.execute(
+            select(TruckModel).where(
+                TruckModel.team_id == team.id,
+                TruckModel.plate_no == plate,
+            )
+        )).scalar_one_or_none()
+        if existing:
+            out.append(existing)
+            continue
+        tk = TruckModel(
+            team_id=team.id, plate_no=plate, vin=vin,
+            make=make, model=model, year=year,
+            owner_kind=TruckOwnerKind.COMPANY,
+            status=TruckStatus.ACTIVE,
+        )
+        db.add(tk)
+        await db.flush()
+        out.append(tk)
+
+    # 외부기사 본인 트럭 5대
+    for i, drv in enumerate(drivers[:5]):
+        plate = f"TX-OO-{200 + i:03d}"
+        existing = (await db.execute(
+            select(TruckModel).where(
+                TruckModel.team_id == team.id,
+                TruckModel.plate_no == plate,
+            )
+        )).scalar_one_or_none()
+        if existing:
+            out.append(existing)
+            continue
+        tk = TruckModel(
+            team_id=team.id, plate_no=plate,
+            make="Freightliner", model="Cascadia", year=2018 + i,
+            owner_kind=TruckOwnerKind.DRIVER,
+            owner_driver_id=drv.id,
+            status=TruckStatus.ACTIVE,
+        )
+        db.add(tk)
+        await db.flush()
+        out.append(tk)
+
+    print(f"[truck] {len(out)}")
+    return out
+
+
+async def seed_equipment_pools(db, team: TeamModel) -> list:
+    from equipment_pool.model import EquipmentPoolModel
+    from equipment_pool.const.status import EquipmentPoolKind
+
+    pools_data = [
+        ("TRAC Intermodal", EquipmentPoolKind.THIRD_PARTY_POOL, "TRAC Intermodal LLC"),
+        ("FlexiVan", EquipmentPoolKind.THIRD_PARTY_POOL, "FlexiVan Leasing"),
+        ("DCLI", EquipmentPoolKind.THIRD_PARTY_POOL, "Direct ChassisLink Inc."),
+        ("GCT-NJ Terminal Pool", EquipmentPoolKind.TERMINAL_POOL, "GCT NJ"),
+    ]
+    out = []
+    for name, kind, operator in pools_data:
+        existing = (await db.execute(
+            select(EquipmentPoolModel).where(
+                EquipmentPoolModel.team_id == team.id,
+                EquipmentPoolModel.name == name,
+            )
+        )).scalar_one_or_none()
+        if existing:
+            out.append(existing)
+            continue
+        p = EquipmentPoolModel(
+            team_id=team.id, name=name, kind=kind, operator=operator,
+        )
+        db.add(p)
+        await db.flush()
+        out.append(p)
+    print(f"[equipment_pool] {len(out)}")
+    return out
+
+
+async def seed_chassis(
+    db, team: TeamModel,
+    drivers: list[DriverModel],
+    pools: list,
+) -> list:
+    """30 chassis: 회사 8 + 기사 4 + 풀 18."""
+    from chassis.model import ChassisModel
+    from chassis.const.status import ChassisOwnerKind, ChassisSize, ChassisStatus
+
+    out = []
+    # 회사 8
+    for i in range(8):
+        plate = f"CCH-{2000 + i:05d}"
+        existing = (await db.execute(
+            select(ChassisModel).where(
+                ChassisModel.team_id == team.id,
+                ChassisModel.chassis_number == plate,
+            )
+        )).scalar_one_or_none()
+        if existing:
+            out.append(existing)
+            continue
+        ch = ChassisModel(
+            team_id=team.id, chassis_number=plate,
+            size=[ChassisSize.SIZE_20, ChassisSize.SIZE_40, ChassisSize.SIZE_45][i % 3],
+            owner_kind=ChassisOwnerKind.COMPANY,
+            status=ChassisStatus.AVAILABLE,
+        )
+        db.add(ch)
+        await db.flush()
+        out.append(ch)
+
+    # 기사 4 (driver-owned)
+    for i, drv in enumerate(drivers[:4]):
+        plate = f"DCH-{i:03d}-{drv.id:04d}"
+        existing = (await db.execute(
+            select(ChassisModel).where(
+                ChassisModel.team_id == team.id,
+                ChassisModel.chassis_number == plate,
+            )
+        )).scalar_one_or_none()
+        if existing:
+            out.append(existing)
+            continue
+        ch = ChassisModel(
+            team_id=team.id, chassis_number=plate,
+            size=ChassisSize.SIZE_40,
+            owner_kind=ChassisOwnerKind.DRIVER,
+            owner_driver_id=drv.id,
+            status=ChassisStatus.AVAILABLE,
+        )
+        db.add(ch)
+        await db.flush()
+        out.append(ch)
+
+    # 풀 18 (각 풀별 4-5개)
+    pool_prefixes = ["TRAC", "FLEX", "DCLI", "GCTN"]
+    for pi, p in enumerate(pools):
+        for k in range(5 if pi < 2 else 4):
+            plate = f"{pool_prefixes[pi]}-{p.id:03d}-{k:03d}"
+            existing = (await db.execute(
+                select(ChassisModel).where(
+                    ChassisModel.team_id == team.id,
+                    ChassisModel.chassis_number == plate,
+                )
+            )).scalar_one_or_none()
+            if existing:
+                out.append(existing)
+                continue
+            ch = ChassisModel(
+                team_id=team.id, chassis_number=plate,
+                size=[ChassisSize.SIZE_20, ChassisSize.SIZE_40][(pi + k) % 2],
+                owner_kind=(
+                    ChassisOwnerKind.TERMINAL_POOL
+                    if p.kind.value == "TERMINAL_POOL"
+                    else ChassisOwnerKind.THIRD_PARTY_POOL
+                ),
+                owner_pool_id=p.id,
+                status=ChassisStatus.AT_POOL,
+            )
+            db.add(ch)
+            await db.flush()
+            out.append(ch)
+
+    print(f"[chassis] {len(out)}")
+    return out
+
+
+async def seed_charge_codes(db, team: TeamModel) -> list[ChargeCodeModel]:
+    out: list[ChargeCodeModel] = []
+    for code, name, kind, unit, amount, billable, payable, desc in CHARGE_CODES:
+        existing = (await db.execute(
+            select(ChargeCodeModel).where(
+                ChargeCodeModel.team_id == team.id,
+                ChargeCodeModel.code == code,
+            )
+        )).scalar_one_or_none()
+        if existing:
+            out.append(existing)
+            continue
+        cc = ChargeCodeModel(
+            team_id=team.id, code=code, name=name, kind=kind,
+            default_unit=unit, default_amount=amount,
+            is_billable_to_customer=billable, is_payable_to_driver=payable,
+            description=desc,
+        )
+        db.add(cc)
+        await db.flush()
+        out.append(cc)
+    print(f"[charge_code] {len(out)}")
+    return out
+
+
+async def seed_rate_cards(
+    db, team: TeamModel,
+    charge_codes: list[ChargeCodeModel],
+    customers: list[CustomerModel],
+    terminals: list[TerminalModel],
+) -> list[RateCardModel]:
+    """약 30 row — 데모 매트릭스. 우선순위 큰 게 specific."""
+    today = date.today()
+    by_code = {c.code: c for c in charge_codes}
+
+    rules: list[dict] = []
+    base = by_code["BASE_LINEHAUL"]
+    bobtail = by_code["BOBTAIL"]
+    dry_run = by_code["DRY_RUN"]
+    wait = by_code["WAIT_PER_MIN"]
+    chassis_per_diem = by_code["CHASSIS_PER_DIEM"]
+    chassis_split = by_code["CHASSIS_SPLIT"]
+    fuel = by_code["FUEL_SURCHARGE"]
+    demurrage = by_code["DEMURRAGE"]
+    detention = by_code["DETENTION"]
+    pier_pass = by_code["PIER_PASS"]
+    vat = by_code["VAT_10"]
+
+    # 글로벌 default 룰 (priority 0)
+    for cc in (base, bobtail, dry_run, wait, chassis_per_diem, chassis_split, demurrage, detention, pier_pass):
+        rules.append(dict(
+            charge_code_id=cc.id, name=f"Global {cc.code}", priority=0,
+            unit=cc.default_unit, amount=cc.default_amount,
+            effective_from=today - timedelta(days=30),
+            description=f"Default rule for {cc.code}",
+        ))
+    # FUEL / VAT 은 percent
+    rules.append(dict(
+        charge_code_id=fuel.id, name="Global Fuel Surcharge", priority=0,
+        unit=ChargeUnit.PERCENT, percent=Decimal("0.1200"),
+        effective_from=today - timedelta(days=30),
+    ))
+    rules.append(dict(
+        charge_code_id=vat.id, name="Global VAT 10%", priority=0,
+        unit=ChargeUnit.PERCENT, percent=Decimal("0.1000"),
+        effective_from=today - timedelta(days=30),
+    ))
+
+    # 사이즈별 BASE 차등 (priority 5)
+    for size_name, amount in [
+        ("SIZE_20GP", Decimal("220.00")),
+        ("SIZE_40GP", Decimal("250.00")),
+        ("SIZE_40HC", Decimal("260.00")),
+        ("SIZE_40OT", Decimal("295.00")),
+        ("SIZE_45HC", Decimal("310.00")),
+        ("SIZE_20RF", Decimal("340.00")),
+        ("SIZE_40RF", Decimal("370.00")),
+    ]:
+        rules.append(dict(
+            charge_code_id=base.id, name=f"BASE {size_name}", priority=5,
+            unit=ChargeUnit.FLAT, amount=amount, scope_size=size_name,
+            effective_from=today - timedelta(days=30),
+        ))
+
+    # 고객사별 프리미엄 BASE (priority 10) — 상위 2개 customer
+    for cust in customers[:2]:
+        rules.append(dict(
+            charge_code_id=base.id, name=f"Premium BASE for {cust.name}", priority=10,
+            unit=ChargeUnit.FLAT, amount=Decimal("310.00"),
+            scope_customer_id=cust.id,
+            effective_from=today - timedelta(days=30),
+        ))
+
+    # 터미널별 PIER PASS adjust (priority 7) — 상위 3 터미널
+    for term in terminals[:3]:
+        rules.append(dict(
+            charge_code_id=pier_pass.id, name=f"Pier Pass at {term.code}", priority=7,
+            unit=ChargeUnit.FLAT, amount=Decimal("36.71"),
+            scope_terminal_id=term.id,
+            effective_from=today - timedelta(days=30),
+        ))
+
+    # 고객사+사이즈 매트릭스 (priority 15)
+    if customers:
+        rules.append(dict(
+            charge_code_id=base.id,
+            name=f"BASE 40HC for {customers[0].name}",
+            priority=15, unit=ChargeUnit.FLAT, amount=Decimal("295.00"),
+            scope_customer_id=customers[0].id, scope_size="SIZE_40HC",
+            effective_from=today - timedelta(days=30),
+        ))
+
+    out: list[RateCardModel] = []
+    for rule in rules:
+        existing = (await db.execute(
+            select(RateCardModel).where(
+                RateCardModel.team_id == team.id,
+                RateCardModel.name == rule["name"],
+            )
+        )).scalar_one_or_none()
+        if existing:
+            out.append(existing)
+            continue
+        rc = RateCardModel(team_id=team.id, **rule)
+        db.add(rc)
+        await db.flush()
+        out.append(rc)
+    print(f"[rate_card] {len(out)}")
     return out
 
 
@@ -349,12 +735,22 @@ async def seed_delivery_orders(
     terminals: list[TerminalModel],
     vessels: list[VesselModel],
     locations: list[LocationModel],
-) -> list[DeliveryOrderModel]:
+) -> tuple[list[DeliveryOrderModel], list[ContainerModel]]:
     customer_locs = [l for l in locations if l.kind == LocationKind.CUSTOMER]
     yards = [l for l in locations if l.kind == LocationKind.YARD]
 
-    out = []
+    do_out: list[DeliveryOrderModel] = []
+    container_out: list[ContainerModel] = []
     NUM_DO = 24
+
+    # 컨테이너 분포: D/O 17개 1컨, 6개 2컨, 1개 3컨 → 총 31. 평균 1.29
+    # H-1 plan 의 평균 1.7 에 가깝도록 살짝 강화: 14×1, 8×2, 2×3 = 36 (avg 1.5).
+    DO_CONTAINER_COUNT = (
+        [1] * 14 + [2] * 8 + [3] * 2
+    )
+    random.seed(42)
+    random.shuffle(DO_CONTAINER_COUNT)
+
     for i in range(NUM_DO):
         bl = f"MSCU{1000000 + i:07d}"
         existing = (await db.execute(
@@ -364,35 +760,33 @@ async def seed_delivery_orders(
             )
         )).scalar_one_or_none()
         if existing:
-            out.append(existing)
+            do_out.append(existing)
+            existing_containers = (await db.execute(
+                select(ContainerModel).where(
+                    ContainerModel.team_id == team.id,
+                    ContainerModel.delivery_order_id == existing.id,
+                )
+            )).scalars().all()
+            container_out.extend(existing_containers)
             continue
 
         cust = customers[i % len(customers)]
         term = terminals[i % len(terminals)]
         vess = vessels[i % len(vessels)]
-        delivery_loc = customer_locs[i % len(customer_locs)]
-        return_loc = yards[i % len(yards)]
-        size = CONTAINER_SIZES[i % len(CONTAINER_SIZES)]
 
         # 진행 단계 분포 — 다양한 상태로
         if i < 4:
             status = DeliveryStatus.PLANNING
-            container_no = None
         elif i < 8:
             status = DeliveryStatus.DISPATCHED
-            container_no = f"MSCU{2000000 + i:07d}"
         elif i < 12:
             status = DeliveryStatus.YARD_STAGED
-            container_no = f"MSCU{2000000 + i:07d}"
         elif i < 16:
             status = DeliveryStatus.FINAL_DELIVERY
-            container_no = f"MSCU{2000000 + i:07d}"
         elif i < 20:
             status = DeliveryStatus.EMPTY_STAGED
-            container_no = f"MSCU{2000000 + i:07d}"
         else:
             status = DeliveryStatus.COMPLETED
-            container_no = f"MSCU{2000000 + i:07d}"
 
         direction = ShipmentDirection.IMPORT if i % 3 != 0 else ShipmentDirection.EXPORT
 
@@ -404,33 +798,63 @@ async def seed_delivery_orders(
             customer_id=cust.id,
             terminal_id=term.id,
             vessel_id=vess.id,
-            delivery_location_id=delivery_loc.id,
-            return_location_id=return_loc.id,
-            container_number=container_no,
-            container_size=size,
-            container_type="DRY",
-            chassis_number=f"CHS{100000 + i:06d}" if i % 2 == 0 else None,
             eta=days(-3 + i % 10),
-            pickup_appointment=days(i % 7),
-            delivery_appointment=days(1 + i % 5),
-            return_appointment=days(3 + i % 5),
-            demurrage_lfd=(date.today() + timedelta(days=2 + i % 5)),
-            detention_lfd=(date.today() + timedelta(days=5 + i % 5)),
             bl_released=(i % 2 == 0),
-            pier_pass_paid=(i % 3 == 0),
-            customs_cleared=(i % 4 == 0),
+            internal_note=None,
         )
         db.add(do)
         await db.flush()
-        out.append(do)
+        do_out.append(do)
 
-    print(f"[delivery_order] {len(out)}")
-    return out
+        # 컨테이너 N개 생성
+        n_containers = DO_CONTAINER_COUNT[i] if i < len(DO_CONTAINER_COUNT) else 1
+        for seq in range(1, n_containers + 1):
+            # 컨테이너별로 다른 도착지/사이즈 가능
+            delivery_loc = customer_locs[(i + seq) % len(customer_locs)]
+            return_loc = yards[(i + seq) % len(yards)]
+            size = CONTAINER_SIZES[(i + seq) % len(CONTAINER_SIZES)]
+            container_no = (
+                None if status == DeliveryStatus.PLANNING
+                else f"MSCU{2000000 + i * 10 + seq:07d}"
+            )
+            c_status = status  # D/O 와 동일 status 로 시작
+
+            c = ContainerModel(
+                team_id=team.id,
+                delivery_order_id=do.id,
+                sequence_no=seq,
+                container_number=container_no,
+                seal_no=f"SEAL{300000 + i * 10 + seq:06d}",
+                size=size,
+                type="DRY" if size not in (ContainerSize.SIZE_20RF, ContainerSize.SIZE_40RF) else "RF",
+                weight_kg=Decimal(str(15000 + (i * 137 + seq * 211) % 8000)),
+                # H-4: chassis 마스터로 분리. seed_chassis_links 가 일부 컨에 chassis_id 매핑.
+                pickup_appointment=days(i % 7),
+                delivery_appointment=days(1 + (i + seq) % 5),
+                return_appointment=days(3 + (i + seq) % 5),
+                demurrage_lfd=(date.today() + timedelta(days=2 + (i + seq) % 5)),
+                detention_lfd=(date.today() + timedelta(days=5 + (i + seq) % 5)),
+                empty_date=days(2 + (i + seq) % 4) if status in (DeliveryStatus.EMPTY_STAGED, DeliveryStatus.COMPLETED) else None,
+                loaded_date=days(-1 + (i + seq) % 3) if direction == ShipmentDirection.EXPORT else None,
+                delivery_location_id=delivery_loc.id,
+                return_location_id=return_loc.id,
+                service_type=ServiceType.LIVE if (i + seq) % 2 == 0 else ServiceType.DROP,
+                pier_pass_paid=(i % 3 == 0),
+                customs_cleared=(i % 4 == 0),
+                status=c_status,
+            )
+            db.add(c)
+            await db.flush()
+            container_out.append(c)
+
+    print(f"[delivery_order] {len(do_out)} / [container] {len(container_out)}")
+    return do_out, container_out
 
 
 async def seed_legs(
     db, team: TeamModel,
     delivery_orders: list[DeliveryOrderModel],
+    containers: list[ContainerModel],
     drivers: list[DriverModel],
     locations: list[LocationModel],
 ) -> list[LegModel]:
@@ -438,6 +862,13 @@ async def seed_legs(
     customer_locs = [l for l in locations if l.kind == LocationKind.CUSTOMER]
     yards = [l for l in locations if l.kind == LocationKind.YARD]
     ports = [l for l in locations if l.kind == LocationKind.PORT]
+
+    # do_id → containers 매핑 (sequence_no 정렬)
+    do_to_containers: dict[int, list[ContainerModel]] = {}
+    for c in containers:
+        do_to_containers.setdefault(c.delivery_order_id, []).append(c)
+    for cs in do_to_containers.values():
+        cs.sort(key=lambda c: c.sequence_no)
 
     for do in delivery_orders:
         # 이미 leg 가 있으면 skip
@@ -497,12 +928,31 @@ async def seed_legs(
             arrived = now - timedelta(hours=2) if leg_status == LegStatus.COMPLETED else None
             completed = now - timedelta(hours=1) if leg_status == LegStatus.COMPLETED else None
 
+            # container_id 매핑 — D/O 의 첫 컨테이너 (멀티 컨이면 첫 번째)
+            do_containers = do_to_containers.get(do.id, [])
+            container_id = do_containers[0].id if do_containers else None
+
+            # H-6: leg_kind 매핑 (step + move_type 기반)
+            from leg.const.status import LegKind
+            if move_type == MoveType.EMPTY:
+                kind = LegKind.RETURN if step == DeliveryStatus.EMPTY_STAGED else LegKind.REPOSITION
+            elif step == DeliveryStatus.YARD_STAGED:
+                kind = LegKind.PICKUP
+            elif step == DeliveryStatus.FINAL_DELIVERY:
+                kind = LegKind.LIVE_UNLOAD if service_type == ServiceType.LIVE else LegKind.DROP
+            else:
+                kind = LegKind.PICKUP
+
             leg = LegModel(
                 team_id=team.id,
                 delivery_order_id=do.id,
+                container_id=container_id,
+                container_at_start_id=container_id,
+                container_at_end_id=container_id,
                 step=step,
                 move_type=move_type,
                 service_type=service_type,
+                leg_kind=kind,
                 status=leg_status,
                 driver_id=driver.id if driver else None,
                 pickup_location_id=pickup.id if pickup else None,
@@ -517,6 +967,24 @@ async def seed_legs(
             db.add(leg)
             await db.flush()
             out.append(leg)
+
+            # H-6: 첫 leg 에 leg_stop 2개 시드 (PICKUP_FULL → DROP_FULL)
+            if idx == 0 and pickup and delivery and move_type != MoveType.EMPTY:
+                from leg_stop.model import LegStopModel
+                from leg.const.status import StopKind
+                db.add(LegStopModel(
+                    team_id=team.id, leg_id=leg.id, sequence_no=1,
+                    stop_kind=StopKind.PICKUP_FULL,
+                    location_id=pickup.id, container_id=container_id,
+                    arrived_at=started, departed_at=arrived,
+                ))
+                db.add(LegStopModel(
+                    team_id=team.id, leg_id=leg.id, sequence_no=2,
+                    stop_kind=StopKind.DROP_FULL,
+                    location_id=delivery.id, container_id=container_id,
+                    arrived_at=arrived, departed_at=completed,
+                ))
+                await db.flush()
 
     print(f"[leg] {len(out)}")
     return out
@@ -666,6 +1134,136 @@ async def seed_api_keys(db, team: TeamModel, test_user: UserModel) -> int:
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# Street Turn (H-8)
+# ──────────────────────────────────────────────────────────────────────────
+
+async def seed_street_turns(
+    db, team: TeamModel,
+    delivery_orders: list[DeliveryOrderModel],
+    containers: list[ContainerModel],
+    test_user: UserModel,
+) -> list[StreetTurnModel]:
+    """
+    Street turn 4건 생성 (REQUESTED 2 / APPROVED 1 / REJECTED 1).
+    - import_order_id, export_order_id 는 unique → DO 4쌍 = 8개의 서로 다른 DO 사용
+    - 일부는 container_id 로 정규화된 컨테이너 연결, 일부는 container_number 만 보유
+    """
+    # 이미 시드된 게 있으면 스킵 (idempotent)
+    existing = (await db.execute(
+        select(StreetTurnModel).where(StreetTurnModel.team_id == team.id)
+    )).scalars().all()
+    if existing:
+        print(f"[street_turn] {len(existing)} already seeded; skip")
+        return list(existing)
+
+    if len(delivery_orders) < 8:
+        print("[street_turn] DO < 8; skip")
+        return []
+
+    # IMPORT 방향 D/O 4개와 EXPORT 방향 D/O 4개를 짝짓는다.
+    import_dos = [d for d in delivery_orders if d.direction == ShipmentDirection.IMPORT][:4]
+    export_dos = [d for d in delivery_orders if d.direction == ShipmentDirection.EXPORT][:4]
+    if len(import_dos) < 4 or len(export_dos) < 4:
+        # IMPORT/EXPORT 가 모자라면 그냥 앞 8개를 절반씩 사용 (idempotent fallback)
+        import_dos = delivery_orders[:4]
+        export_dos = delivery_orders[4:8]
+
+    pairs = list(zip(import_dos, export_dos))
+
+    # IMPORT D/O 의 첫 컨테이너를 가져와 street_turn 의 container_id 로 사용
+    def first_container_for(do_id: int) -> ContainerModel | None:
+        for c in containers:
+            if c.delivery_order_id == do_id:
+                return c
+        return None
+
+    out: list[StreetTurnModel] = []
+    now = now_utc()
+
+    # 1) REQUESTED — container_id 보유
+    imp, exp = pairs[0]
+    cnt = first_container_for(imp.id)
+    out.append(StreetTurnModel(
+        team_id=team.id,
+        import_order_id=imp.id,
+        export_order_id=exp.id,
+        container_id=cnt.id if cnt else None,
+        container_number=cnt.container_number if cnt else "MSCU0000001",
+        link_type=StreetTurnLinkType.MANUAL,
+        status=StreetTurnStatus.REQUESTED,
+        requested_by=test_user.id,
+        requested_at=now - timedelta(hours=4),
+        created_by_user_id=test_user.id,
+    ))
+
+    # 2) REQUESTED — container_id 없음 (string 만)
+    imp, exp = pairs[1]
+    out.append(StreetTurnModel(
+        team_id=team.id,
+        import_order_id=imp.id,
+        export_order_id=exp.id,
+        container_number="MSCU0000002",
+        link_type=StreetTurnLinkType.AUTO,
+        status=StreetTurnStatus.REQUESTED,
+        requested_by=test_user.id,
+        requested_at=now - timedelta(hours=2),
+        created_by_user_id=test_user.id,
+    ))
+
+    # 3) APPROVED — container_event(STREET_TURNED) 자동기록 케이스
+    imp, exp = pairs[2]
+    cnt = first_container_for(imp.id)
+    approved_at = now - timedelta(minutes=30)
+    st_approved = StreetTurnModel(
+        team_id=team.id,
+        import_order_id=imp.id,
+        export_order_id=exp.id,
+        container_id=cnt.id if cnt else None,
+        container_number=cnt.container_number if cnt else "MSCU0000003",
+        link_type=StreetTurnLinkType.MANUAL,
+        status=StreetTurnStatus.APPROVED,
+        carrier_approval_no="MSC-ST-2026-0042",
+        requested_by=test_user.id,
+        requested_at=now - timedelta(hours=8),
+        approved_by=test_user.id,
+        approved_at=approved_at,
+        created_by_user_id=test_user.id,
+    )
+    out.append(st_approved)
+    if cnt:
+        out_event = ContainerEventModel(
+            team_id=team.id,
+            container_id=cnt.id,
+            event_kind=ContainerEventKind.STREET_TURNED,
+            occurred_at=approved_at,
+            note="Street turn approved (carrier_approval_no=MSC-ST-2026-0042)",
+            created_by_user_id=test_user.id,
+        )
+        db.add(out_event)
+
+    # 4) REJECTED
+    imp, exp = pairs[3]
+    out.append(StreetTurnModel(
+        team_id=team.id,
+        import_order_id=imp.id,
+        export_order_id=exp.id,
+        container_number="MSCU0000004",
+        link_type=StreetTurnLinkType.MANUAL,
+        status=StreetTurnStatus.REJECTED,
+        requested_by=test_user.id,
+        requested_at=now - timedelta(hours=10),
+        rejected_reason="Container size mismatch",
+        created_by_user_id=test_user.id,
+    ))
+
+    for st in out:
+        db.add(st)
+    await db.flush()
+    print(f"[street_turn] {len(out)} seeded (2 REQUESTED, 1 APPROVED, 1 REJECTED)")
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # main
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -686,12 +1284,29 @@ async def main() -> None:
         terminals = await seed_terminals(db, team)
         vessels = await seed_vessels(db, team)
         locations = await seed_locations(db, team, customers)
-        drivers = await seed_drivers(db, team)
+        drivers = await seed_drivers(db, team, customers)
+        trucks = await seed_trucks(db, team, drivers)
+        _ = trucks  # noqa: F841 — H-3 단계: leg.truck_id 자동매칭은 H-7 이후
+        pools = await seed_equipment_pools(db, team)
+        chassis = await seed_chassis(db, team, drivers, pools)
+        _ = chassis  # noqa: F841 — leg/container.chassis_id 자동매칭은 H-7 이후
         await seed_rate_settings(db, team)
+        charge_codes = await seed_charge_codes(db, team)
+        await seed_rate_cards(db, team, charge_codes, customers, terminals)
 
-        delivery_orders = await seed_delivery_orders(db, team, customers, terminals, vessels, locations)
-        legs = await seed_legs(db, team, delivery_orders, drivers, locations)
+        delivery_orders, containers = await seed_delivery_orders(db, team, customers, terminals, vessels, locations)
+        legs = await seed_legs(db, team, delivery_orders, containers, drivers, locations)
+        # H-7: 일부 COMPLETED leg 에 자동 매칭 — rate_card → leg_charge
+        from leg_charge.auto_match import auto_match_for_leg
+        from leg.const.status import LegStatus as _LegStatus
+        completed_legs = [l for l in legs if l.status == _LegStatus.COMPLETED][:20]
+        auto_count = 0
+        for l in completed_legs:
+            created = await auto_match_for_leg(db, team.id, l.id)
+            auto_count += len(created)
+        print(f"[leg_charge AUTO] {auto_count} (across {len(completed_legs)} legs)")
         await seed_settlements(db, team, legs)
+        await seed_street_turns(db, team, delivery_orders, containers, test_user)
         await seed_notifications(db, team, test_user, delivery_orders)
         await seed_api_keys(db, team, test_user)
 

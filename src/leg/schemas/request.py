@@ -6,15 +6,24 @@ from pydantic import Field, field_validator
 from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
 from delivery_order.const.status import DeliveryStatus
-from leg.const.status import LegStatus, MoveType, ServiceType
+from leg.const.status import LegStatus, MoveType, ServiceType, LegKind
 
 
 class LegCreateRequest(RequestSchema):
     delivery_order_id: int
+    container_id: int | None = None
     step: DeliveryStatus
     move_type: MoveType
     service_type: ServiceType
+    leg_kind: LegKind | None = None
     driver_id: int | None = None
+    truck_id: int | None = None
+    chassis_id: int | None = None
+    chassis_at_start_id: int | None = None
+    chassis_at_end_id: int | None = None
+    container_at_start_id: int | None = None
+    container_at_end_id: int | None = None
+    remarks: str | None = Field(default=None, max_length=500)
     pickup_location_id: int | None = None
     pickup_date: datetime | None = None
     delivery_location_id: int | None = None
@@ -23,10 +32,19 @@ class LegCreateRequest(RequestSchema):
 
 
 class LegUpdateRequest(RequestSchema):
+    container_id: int | None = None
     step: DeliveryStatus | None = None
     move_type: MoveType | None = None
     service_type: ServiceType | None = None
+    leg_kind: LegKind | None = None
     driver_id: int | None = None
+    truck_id: int | None = None
+    chassis_id: int | None = None
+    chassis_at_start_id: int | None = None
+    chassis_at_end_id: int | None = None
+    container_at_start_id: int | None = None
+    container_at_end_id: int | None = None
+    remarks: str | None = Field(default=None, max_length=500)
     pickup_location_id: int | None = None
     pickup_date: datetime | None = None
     delivery_location_id: int | None = None
@@ -44,9 +62,12 @@ class PaginateLegRequest(BasePaginationSchema):
     order__id: Optional[Literal['ASC', 'DESC']] = 'DESC'
     include_inactive: bool = False
     where__delivery_order_id__equal: Optional[int] = None
+    where__container_id__equal: Optional[int] = None
     where__driver_id__equal: Optional[int] = None
+    where__truck_id__equal: Optional[int] = None
     where__status__equal: Optional[LegStatus] = None
     where__step__equal: Optional[DeliveryStatus] = None
+    where__leg_kind__equal: Optional[LegKind] = None
 
 
 class LegBulkCreateRequest(RequestSchema):

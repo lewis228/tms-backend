@@ -25,11 +25,20 @@ from terminal.model import TerminalModel  # noqa: F401
 from vessel.model import VesselModel  # noqa: F401
 from location.model import LocationModel  # noqa: F401
 from driver.model import DriverModel  # noqa: F401
+from truck.model import TruckModel  # noqa: F401
+from equipment_pool.model import EquipmentPoolModel  # noqa: F401
+from chassis.model import ChassisModel  # noqa: F401
 
 # ── TMS D/O / Leg / Settlement (Phase C) ─────────────────────
 from rate_setting.model import RateSettingModel  # noqa: F401
+from charge_code.model import ChargeCodeModel  # noqa: F401
+from rate_card.model import RateCardModel  # noqa: F401
 from delivery_order.model import DeliveryOrderModel  # noqa: F401
+from container.model import ContainerModel, ContainerEventModel  # noqa: F401
 from leg.model import LegModel  # noqa: F401
+from leg_stop.model import LegStopModel  # noqa: F401
+from chassis_event.model import ChassisEventModel  # noqa: F401
+from leg_charge.model import LegChargeModel  # noqa: F401
 from street_turn.model import StreetTurnModel  # noqa: F401
 from settlement.model import (  # noqa: F401
     SettlementModel,

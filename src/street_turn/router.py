@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.tokens.access_token import access_token
 from database.dependencies import get_read_db, get_write_db
-from rbac.const.const import STREET_TURN_WRITE
+from rbac.const.const import STREET_TURN_WRITE, STREET_TURN_APPROVE
 from rbac.dependencies.guards import permission_guard
 from team.dependencies.get_team_scope import get_team_scope
 from user.dependencies.current_user import get_current_user
@@ -17,6 +17,7 @@ from street_turn.service import StreetTurnService
 from street_turn.schemas.request import (
     StreetTurnCreateRequest, StreetTurnUpdateRequest, PaginateStreetTurnRequest,
     StreetTurnBulkCreateRequest, StreetTurnBulkUpdateRequest, StreetTurnBulkDeleteRequest,
+    StreetTurnApproveRequest, StreetTurnRejectRequest,
 )
 from street_turn.schemas.response import (
     StreetTurnResponseSchema, StreetTurnDeleteResponseSchema,
@@ -197,5 +198,71 @@ async def delete_street_turns_bulk(
     """
     return await StreetTurnService(db, team_id).delete_bulk(
         body,
+        actor_user_id=int(me.id),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# 승인 워크플로우 (REQUESTED → APPROVED / REJECTED / CANCELLED)
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/{street_turn_id}/approve", response_model=StreetTurnResponseSchema)
+async def approve_street_turn(
+    street_turn_id: int,
+    body: StreetTurnApproveRequest,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(STREET_TURN_APPROVE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """
+    Street Turn 승인
+    - REQUESTED 상태에서만 가능
+    - 승인 시 container_event(STREET_TURNED) 자동 기록
+    """
+    return await StreetTurnService(db, team_id).approve(
+        street_turn_id,
+        carrier_approval_no=body.carrier_approval_no,
+        actor_user_id=int(me.id),
+    )
+
+
+@router.post("/{street_turn_id}/reject", response_model=StreetTurnResponseSchema)
+async def reject_street_turn(
+    street_turn_id: int,
+    body: StreetTurnRejectRequest,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(STREET_TURN_APPROVE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """
+    Street Turn 거절
+    - REQUESTED 상태에서만 가능
+    """
+    return await StreetTurnService(db, team_id).reject(
+        street_turn_id,
+        reason=body.reason,
+        actor_user_id=int(me.id),
+    )
+
+
+@router.post("/{street_turn_id}/cancel", response_model=StreetTurnResponseSchema)
+async def cancel_street_turn(
+    street_turn_id: int,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(STREET_TURN_WRITE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """
+    Street Turn 취소
+    - 요청자가 본인 요청을 거두는 경우
+    """
+    return await StreetTurnService(db, team_id).cancel(
+        street_turn_id,
         actor_user_id=int(me.id),
     )

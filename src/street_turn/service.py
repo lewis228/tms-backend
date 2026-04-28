@@ -33,21 +33,115 @@ class StreetTurnService:
     """
     def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
+        self.team_id = team_id
         self.repo = StreetTurnRepository(db, team_id)
 
     # ═══════════════════════════════════════════════════════════════
-    # Create (단건)
+    # Create (단건) — REQUESTED 상태로 생성 + requested_by/at 자동
     # ═══════════════════════════════════════════════════════════════
-    
+
     async def create(
         self,
         payload: StreetTurnCreateRequest,
         actor_user_id: int | None = None,
     ) -> StreetTurnResponseSchema:
-        row = await self.repo.create(
-            payload.model_dump(),
-            actor_user_id=actor_user_id,
-        )
+        from street_turn.const.status import StreetTurnStatus
+        data = payload.model_dump()
+        data["status"] = StreetTurnStatus.REQUESTED
+        data["requested_by"] = actor_user_id
+        data["requested_at"] = datetime.utcnow()
+        row = await self.repo.create(data, actor_user_id=actor_user_id)
+        return StreetTurnResponseSchema.model_validate(row)
+
+    # ═══════════════════════════════════════════════════════════════
+    # 승인 / 거절 / 취소 — H-8
+    # ═══════════════════════════════════════════════════════════════
+
+    async def approve(
+        self,
+        id_: int,
+        carrier_approval_no: str | None = None,
+        actor_user_id: int | None = None,
+    ) -> StreetTurnResponseSchema:
+        from street_turn.const.status import StreetTurnStatus
+        row = await self.repo.get(id_)
+        if not row:
+            raise NotFoundException("Street Turn")
+        if row.status != StreetTurnStatus.REQUESTED:
+            from common.exceptions.base import AppException
+            raise AppException(
+                code="ERR_STREET_TURN_INVALID_STATE",
+                message=f"Cannot approve from {row.status.value}",
+                status_code=422,
+            )
+        row.status = StreetTurnStatus.APPROVED
+        row.approved_by = actor_user_id
+        row.approved_at = datetime.utcnow()
+        if carrier_approval_no:
+            row.carrier_approval_no = carrier_approval_no
+        if actor_user_id is not None:
+            row.updated_by_user_id = actor_user_id
+        await self.db.flush()
+        await self.db.refresh(row)
+
+        # 승인 시 container_event(STREET_TURNED) 자동 기록 (best-effort)
+        if row.container_id:
+            try:
+                from container.model import ContainerEventModel
+                from container.const.status import ContainerEventKind
+                ev = ContainerEventModel(
+                    team_id=self.team_id,
+                    container_id=row.container_id,
+                    event_kind=ContainerEventKind.STREET_TURNED,
+                    occurred_at=row.approved_at,
+                    note=f"Street turn approved (carrier_approval_no={row.carrier_approval_no or 'N/A'})",
+                    created_by_user_id=actor_user_id,
+                )
+                self.db.add(ev)
+                await self.db.flush()
+            except Exception:
+                pass
+        return StreetTurnResponseSchema.model_validate(row)
+
+    async def reject(
+        self,
+        id_: int,
+        reason: str,
+        actor_user_id: int | None = None,
+    ) -> StreetTurnResponseSchema:
+        from street_turn.const.status import StreetTurnStatus
+        row = await self.repo.get(id_)
+        if not row:
+            raise NotFoundException("Street Turn")
+        if row.status != StreetTurnStatus.REQUESTED:
+            from common.exceptions.base import AppException
+            raise AppException(
+                code="ERR_STREET_TURN_INVALID_STATE",
+                message=f"Cannot reject from {row.status.value}",
+                status_code=422,
+            )
+        row.status = StreetTurnStatus.REJECTED
+        row.rejected_reason = reason
+        if actor_user_id is not None:
+            row.updated_by_user_id = actor_user_id
+        await self.db.flush()
+        await self.db.refresh(row)
+        return StreetTurnResponseSchema.model_validate(row)
+
+    async def cancel(
+        self,
+        id_: int,
+        actor_user_id: int | None = None,
+    ) -> StreetTurnResponseSchema:
+        from street_turn.const.status import StreetTurnStatus
+        row = await self.repo.get(id_)
+        if not row:
+            raise NotFoundException("Street Turn")
+        row.status = StreetTurnStatus.CANCELLED
+        if actor_user_id is not None:
+            row.updated_by_user_id = actor_user_id
+        await self.db.flush()
+        await self.db.refresh(row)
         return StreetTurnResponseSchema.model_validate(row)
 
     # ═══════════════════════════════════════════════════════════════

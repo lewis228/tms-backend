@@ -15,16 +15,17 @@ from delivery_order.state_machine import (
     TransitionContext, assert_can_transition,
 )
 from leg.model import LegModel
-from location.model import LocationModel
+from container.repository import ContainerRepository
 from delivery_order.schemas.request import (
     DeliveryOrderCreateRequest, DeliveryOrderUpdateRequest, PaginateDeliveryOrderRequest,
     DeliveryOrderBulkCreateRequest, DeliveryOrderBulkUpdateRequest, DeliveryOrderBulkDeleteRequest,
 )
 from delivery_order.schemas.response import (
-    DeliveryOrderResponseSchema, DeliveryOrderDeleteResponseSchema,
+    DeliveryOrderResponseSchema, DeliveryOrderDetailResponseSchema, DeliveryOrderDeleteResponseSchema,
     DeliveryOrderBulkCreateResponseSchema, DeliveryOrderBulkUpdateResponseSchema, DeliveryOrderBulkDeleteResponseSchema,
     BulkResultItem, BulkDeleteResultItem, BulkSummary,
 )
+from container.schemas.response import ContainerResponseSchema
 
 
 class DeliveryOrderService:
@@ -42,7 +43,9 @@ class DeliveryOrderService:
     """
     def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
+        self.team_id = team_id
         self.repo = DeliveryOrderRepository(db, team_id)
+        self.container_repo = ContainerRepository(db, team_id)
 
     # ═══════════════════════════════════════════════════════════════
     # Create (단건)
@@ -52,12 +55,23 @@ class DeliveryOrderService:
         self,
         payload: DeliveryOrderCreateRequest,
         actor_user_id: int | None = None,
-    ) -> DeliveryOrderResponseSchema:
-        row = await self.repo.create(
-            payload.model_dump(),
-            actor_user_id=actor_user_id,
-        )
-        return DeliveryOrderResponseSchema.model_validate(row)
+    ) -> DeliveryOrderDetailResponseSchema:
+        # nested 컨테이너 분리
+        data = payload.model_dump()
+        containers_data = data.pop("containers", []) or []
+
+        row = await self.repo.create(data, actor_user_id=actor_user_id)
+
+        created_containers: list[ContainerResponseSchema] = []
+        for idx, c in enumerate(containers_data, start=1):
+            if c.get("sequence_no") is None:
+                c["sequence_no"] = idx
+            c["delivery_order_id"] = row.id
+            container_row = await self.container_repo.create(c, actor_user_id=actor_user_id)
+            created_containers.append(ContainerResponseSchema.model_validate(container_row))
+
+        do_dict = DeliveryOrderResponseSchema.model_validate(row).model_dump()
+        return DeliveryOrderDetailResponseSchema(**do_dict, containers=created_containers)
 
     # ═══════════════════════════════════════════════════════════════
     # Create (벌크) - 전체 성공 or 전체 실패
@@ -102,11 +116,16 @@ class DeliveryOrderService:
     # Read
     # ═══════════════════════════════════════════════════════════════
     
-    async def get(self, delivery_order_id: int) -> DeliveryOrderResponseSchema:
+    async def get(self, delivery_order_id: int) -> DeliveryOrderDetailResponseSchema:
         row = await self.repo.get(delivery_order_id)
         if not row:
-            raise NotFoundException("거래처")
-        return DeliveryOrderResponseSchema.model_validate(row)
+            raise NotFoundException("D/O")
+        containers = await self.container_repo.list_by_delivery_order(delivery_order_id)
+        do_dict = DeliveryOrderResponseSchema.model_validate(row).model_dump()
+        return DeliveryOrderDetailResponseSchema(
+            **do_dict,
+            containers=[ContainerResponseSchema.model_validate(c) for c in containers],
+        )
 
     async def list_paginated(
         self, request: PaginateDeliveryOrderRequest
@@ -321,7 +340,7 @@ class DeliveryOrderService:
         if not do:
             raise NotFoundException("D/O")
 
-        # 2) 컨텍스트 사전 로드 — legs (오래된 순), delivery/return location
+        # 2) 컨텍스트 사전 로드 — legs (오래된 순). H-1 후 location 검증은 컨테이너 단위로 이동
         legs_stmt = (
             select(LegModel)
             .where(
@@ -332,27 +351,7 @@ class DeliveryOrderService:
             .order_by(LegModel.id.asc())
         )
         legs = list((await self.db.execute(legs_stmt)).scalars().all())
-
-        delivery_loc = None
-        if do.delivery_location_id:
-            loc_stmt = select(LocationModel).where(
-                LocationModel.team_id == team_id,
-                LocationModel.id == do.delivery_location_id,
-            )
-            delivery_loc = (await self.db.execute(loc_stmt)).scalar_one_or_none()
-
-        return_loc = None
-        if do.return_location_id:
-            loc_stmt = select(LocationModel).where(
-                LocationModel.team_id == team_id,
-                LocationModel.id == do.return_location_id,
-            )
-            return_loc = (await self.db.execute(loc_stmt)).scalar_one_or_none()
-
-        ctx = TransitionContext(
-            do=do, legs=legs,
-            delivery_location=delivery_loc, return_location=return_loc,
-        )
+        ctx = TransitionContext(do=do, legs=legs)
 
         # 3) 게이트 검증
         previous = do.status

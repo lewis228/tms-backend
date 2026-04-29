@@ -1298,6 +1298,9 @@ _V3_CHARGE_CODES = [
     ("DRIVER_FAULT_PENALTY", "기사 과실 페널티",   "PENALTY",     "FLAT",   Decimal("-50000"),"건",    "PENALTY",    True,  "DRIVER",   None),
     ("FUEL_SURCHARGE_PCT",   "유류할증 (%)",       "FUEL",        "PERCENT",Decimal("5"),     "%",     "SURCHARGE",  False, None,       "CUSTOMER"),
     ("BASE_PORTION_SPLIT",   "기본운임 분배",      "ACCESSORIAL", "FLAT",   Decimal("0"),     "건",    "ADJUSTMENT", True,  "DRIVER",   None),
+    # B.10 Demurrage / Detention 자동 카운터가 사용하는 코드. 매일 1건 자동 LegCharge 적용.
+    ("DEMURRAGE_PER_DAY",    "Demurrage (일일)",   "PENALTY",     "DAY",    Decimal("80000"), "일",    "PENALTY",    False, None,       "CUSTOMER"),
+    ("DETENTION_PER_DAY",    "Detention (일일)",   "PENALTY",     "DAY",    Decimal("100000"),"일",    "PENALTY",    False, None,       "CUSTOMER"),
 ]
 
 

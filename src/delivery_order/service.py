@@ -72,6 +72,8 @@ class DeliveryOrderService:
             container_row = await self.container_repo.create(c, actor_user_id=actor_user_id)
             created_containers.append(ContainerResponseSchema.model_validate(container_row))
             # v3: AI Intake 가 추출한 stop 시퀀스를 ContainerStop row 로 자동 생성.
+            # 실패 시 rollback 으로 세션 invalid 회피 — 그 결과 D/O/컨테이너도 같이
+            # 롤백되어 일관된 상태 유지.
             if stops_data:
                 try:
                     await self._create_stops_from_payload(
@@ -80,8 +82,11 @@ class DeliveryOrderService:
                         actor_user_id=actor_user_id,
                     )
                 except Exception:  # noqa: BLE001
-                    # stop 생성 실패는 D/O/컨테이너 생성을 막지 않음.
-                    pass
+                    try:
+                        await self.db.rollback()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    raise
 
         do_dict = DeliveryOrderResponseSchema.model_validate(row).model_dump()
         return DeliveryOrderDetailResponseSchema(**do_dict, containers=created_containers)

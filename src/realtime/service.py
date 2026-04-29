@@ -35,15 +35,35 @@ def channel_for(team_id: int) -> str:
 
 
 async def publish(event: RealtimeEvent, *, db: Any | None = None) -> int:
-    """도메인 → Redis. fan_out 도메인 (notification inbox) 추후 wiring."""
+    """도메인 → Redis + (db 가 주어지면) notification inbox fan-out.
+
+    db 인자를 넘기면 `notification.fan_out_event` 가 호출되어 inbox row 생성.
+    db 없이 호출하면 Redis publish 만 (예: 백그라운드 task 등 세션 없는 컨텍스트).
+    """
+    # 1) Redis publish (실시간 WS push)
     try:
-        return await default_redis.publish(
+        published = await default_redis.publish(
             channel_for(event.team_id),
             event.model_dump_json(by_alias=True),
         )
     except Exception as e:  # noqa: BLE001
         log.warning("realtime.publish_failed", error=str(e), type=event.type)
-        return 0
+        published = 0
+
+    # 2) Notification inbox fan-out (db 주어진 경우만)
+    if db is not None:
+        try:
+            from notification.fan_out import fan_out_event
+            await fan_out_event(db, event)
+        except Exception as e:  # noqa: BLE001
+            log.warning("notification.fan_out_failed", error=str(e), type=event.type)
+            # 세션 invalid 상태 방지 — fan_out 실패 시 그 부분 rollback
+            try:
+                await db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+
+    return published
 
 
 class _Connection:

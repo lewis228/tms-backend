@@ -131,7 +131,7 @@ async def derive_and_save_state(
                         "containerId": container_id,
                         "from": prev_state.value if prev_state else None,
                     },
-                ))
+                ), db=db)
         except Exception:  # noqa: BLE001
             pass
         return new_state

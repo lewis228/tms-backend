@@ -88,7 +88,14 @@ async def auto_match_for_leg(
     db: AsyncSession, team_id: int, leg_id: int,
     actor_user_id: Optional[int] = None,
 ) -> List[LegChargeModel]:
-    """leg 1건의 자동 charge 생성 (BASE + accessorial AUTO/EVENT). 기존 AUTO 는 skip."""
+    """leg 1건의 자동 charge 생성 (accessorial AUTO/EVENT).
+
+    ⚠️ Phase v3 가드: leg_rate 가 있는 leg 에는 BASE_LINEHAUL 을 자동 생성하지 않는다.
+    base 정산은 LegRate.base_amount (snapshot freeze) 가 담당하므로 이중 정산 방지.
+    accessorial (WAIT, CHASSIS_PER_DIEM 등) 은 v3 와 무관하게 계속 동작.
+
+    기존 AUTO 는 skip.
+    """
     leg = (await db.execute(
         select(LegModel).where(
             LegModel.team_id == team_id,
@@ -130,8 +137,19 @@ async def auto_match_for_leg(
     created: List[LegChargeModel] = []
 
     # ── 1) BASE_LINEHAUL ──
+    # v3 가드: LegRate (snapshot 기반 base_amount) 가 있으면 BASE_LINEHAUL 자동 생성 skip.
+    # 같은 leg 에 base 가 LegRate 와 LegCharge 둘 다 박히는 이중 정산 방지.
+    from leg_rate.model import LegRateModel
+    has_v3_rate = (await db.execute(
+        select(LegRateModel.id).where(
+            LegRateModel.team_id == team_id,
+            LegRateModel.leg_id == leg.id,
+            LegRateModel.is_active.is_(True),
+        )
+    )).first() is not None
+
     base_code = await _get_charge_code(db, team_id, "BASE_LINEHAUL")
-    if base_code and not await _existing_auto_charge(db, team_id, leg.id, base_code.id):
+    if base_code and not has_v3_rate and not await _existing_auto_charge(db, team_id, leg.id, base_code.id):
         rc = await _match_rate_card(
             db, team_id, base_code.id,
             customer_id=customer_id, terminal_id=terminal_id, size=size_value,

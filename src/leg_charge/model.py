@@ -31,8 +31,15 @@ class LegChargeModel(Base, TeamScopedMixin):
         ForeignKey("rate_card.id", ondelete="SET NULL"), nullable=True,
     )
 
-    # ── 금액 ─────
+    # ── 금액 (v3: snapshot_unit_amount × quantity = subtotal) ─────
+    # subtotal: 정산에 사용되는 최종 금액. v2 까지 amount 만 있었으나
+    # v3 부터 snapshot_unit_amount × quantity 결과를 amount(=subtotal) 로 박음.
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    # snapshot_unit_amount: 추가 시점 ChargeCode.default_amount(또는 override) 박음.
+    # 마스터가 갱신되어도 이 값은 절대 안 흔들림 (Snapshot Always Freeze).
+    snapshot_unit_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 2), nullable=True,
+    )
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     unit: Mapped[ChargeUnit | None] = mapped_column(
         SAEnum(ChargeUnit, name="charge_unit"), nullable=True,

@@ -30,6 +30,8 @@ _EVENT_TITLES: dict[str, str] = {
     "settlement.adjusted":  "정산이 조정되었습니다",
     "settlement.approved":  "정산이 승인되었습니다",
     "settlement.unapproved":"정산 승인이 취소되었습니다",
+    # v3: 컨테이너가 WAITING_PLAN 으로 진입할 때만 디스패처에게 inbox 알림 (next-stop 미생성).
+    "container.waiting_plan": "⚠️ 컨테이너 다음 stop 미생성",
 }
 
 
@@ -47,6 +49,10 @@ def _format_body(event: RealtimeEvent) -> str | None:
         sid = p.get("settlementId")
         if sid:
             return f"Settlement {sid}"
+    if event.type == "container.waiting_plan":
+        cid = p.get("containerId")
+        if cid:
+            return f"Container #{cid} — 다음 stop 을 추가하세요"
     return None
 
 

@@ -13,6 +13,28 @@ class ChargeKind(StrEnum):
     DISCOUNT    = "DISCOUNT"      # 할인
 
 
+class ChargeCategory(StrEnum):
+    """v3 LegCharge 변동 라인 분류 (UI 그룹핑·필터·signed 기본값 결정).
+
+    - BASE        : RateQuote/RateTariff 가 본래 다루지만, 수동 라인이면 여기.
+    - WAITING     : 대기 수당 (분당/정액).
+    - EXTRA_STOP  : 추가 정차/섀시 대여 지체 등.
+    - DRY_RUN     : 빠꾸/터미널 closed 헛걸음 보상.
+    - PENALTY     : 기사 과실 등 음수.
+    - SURCHARGE   : 유류·심야 할증 등.
+    - ADJUSTMENT  : segment 분배 / base_portion_split 등 양·음 redistribute.
+    - OTHER       : 분류 외.
+    """
+    BASE       = "BASE"
+    WAITING    = "WAITING"
+    EXTRA_STOP = "EXTRA_STOP"
+    DRY_RUN    = "DRY_RUN"
+    PENALTY    = "PENALTY"
+    SURCHARGE  = "SURCHARGE"
+    ADJUSTMENT = "ADJUSTMENT"
+    OTHER      = "OTHER"
+
+
 class ChargeUnit(StrEnum):
     """청구 단위."""
     FLAT    = "FLAT"     # 정액

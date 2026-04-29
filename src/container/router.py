@@ -22,6 +22,7 @@ from container.schemas.request import (
 from container.schemas.response import (
     ContainerResponseSchema, ContainerDeleteResponseSchema,
     ContainerEventResponseSchema, ContainerBulkDeleteResponseSchema,
+    ContainerFullResponseSchema,
 )
 
 
@@ -60,6 +61,17 @@ async def get_container(
     db: AsyncSession = Depends(get_read_db),
 ):
     return await ContainerService(db, team_id).get(container_id)
+
+
+@router.get("/{container_id}/full", response_model=ContainerFullResponseSchema)
+async def get_container_full(
+    container_id: int,
+    _1: None = Depends(access_token),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """v3 컨테이너 상세 — D/O 메타 + Stops + Legs(+segments+rate+charges) + Events 한방."""
+    return await ContainerService(db, team_id).get_full(container_id)
 
 
 @router.patch("/{container_id}", response_model=ContainerResponseSchema)

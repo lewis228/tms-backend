@@ -25,6 +25,7 @@ EXTRACT_CONTAINER_FIELDS: list[str] = [
     "demurrage_lfd", "detention_lfd", "empty_date", "loaded_date",
     "delivery_location_name", "return_location_name",
     "service_type",
+    "stops",  # v3: Stop 시퀀스 배열
 ]
 
 
@@ -61,6 +62,18 @@ D/O 1건은 헤더 정보 + 컨테이너 N개 (1개 이상). 컨테이너 표를
 - delivery_location_name (수하인/창고명, str)
 - return_location_name (빈컨 반납지명, str)
 - service_type ("LIVE" 또는 "DROP")
+- stops (v3): 컨테이너가 거치는 정차 시퀀스 배열. 각 요소:
+  - role: "ORIGIN" / "DELIVERY" / "TRANSIT" / "TERMINUS"
+  - location_name: 장소명/주소 (str)
+  - planned_arrival: ISO 8601 datetime (str, 가능하면)
+  - note: 특이사항 (str, optional)
+
+  규칙:
+  - 첫 항목은 보통 ORIGIN (터미널/항만/차고 등에서 컨테이너 픽업 지점).
+  - 화주 도어/창고는 DELIVERY (LCL이면 N개).
+  - 마지막 항목은 보통 TERMINUS (빈 컨 반납 디포 등).
+  - 중간 경유점은 TRANSIT.
+  - 명시적이지 않으면 stops: [] 빈 배열로 반환.
 
 규칙:
 - 명확하지 않은 필드는 null.
@@ -68,7 +81,7 @@ D/O 1건은 헤더 정보 + 컨테이너 N개 (1개 이상). 컨테이너 표를
 - 컨테이너를 못 찾으면 containers: [].
 - 추출에 자신 있는 정도를 0.0 ~ 1.0 confidence 로 평가.
 - 응답은 반드시 JSON 객체 1개만. 마크다운 fence 없이.
-  형식: {"fields": {<header>..., "containers": [{...}, ...]}, "confidence": 0.0}
+  형식: {"fields": {<header>..., "containers": [{..., "stops": [...]}]}, "confidence": 0.0}
 """
 
 

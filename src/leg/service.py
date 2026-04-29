@@ -33,6 +33,7 @@ class LegService:
     """
     def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
+        self.team_id = team_id
         self.repo = LegRepository(db, team_id)
 
     # ═══════════════════════════════════════════════════════════════
@@ -48,6 +49,23 @@ class LegService:
             payload.model_dump(),
             actor_user_id=actor_user_id,
         )
+        # v3: 신규 leg 에 LegRate snapshot 자동 박기.
+        # RateQuote/RateTariff 매칭 → snapshot freeze. 매칭 실패 시 source=NONE 로 row 만 생성.
+        try:
+            from leg_rate.service import LegRateService
+            await LegRateService(self.db, self.team_id).get_or_calc(
+                row.id, actor_user_id=actor_user_id,
+            )
+        except Exception:  # noqa: BLE001
+            # leg 생성은 성공시키되 rate 산출 실패는 비치명적.
+            pass
+        # v3: container.work_state 자동 derive.
+        if row.container_id is not None:
+            try:
+                from container.state_derive import derive_and_save_state
+                await derive_and_save_state(self.db, self.team_id, row.container_id)
+            except Exception:  # noqa: BLE001
+                pass
         return LegResponseSchema.model_validate(row)
 
     # ═══════════════════════════════════════════════════════════════
@@ -150,6 +168,13 @@ class LegService:
         )
         if not row:
             raise NotFoundException("거래처")
+        # v3: container.work_state 자동 derive (status 변경 등).
+        if row.container_id is not None:
+            try:
+                from container.state_derive import derive_and_save_state
+                await derive_and_save_state(self.db, self.team_id, row.container_id)
+            except Exception:  # noqa: BLE001
+                pass
         return LegResponseSchema.model_validate(row)
 
     # ═══════════════════════════════════════════════════════════════
@@ -357,6 +382,19 @@ class LegService:
             leg.completed_at = now
             leg.arrived_at = leg.arrived_at or now
             await self._ensure_settlement(leg)
+            # v3: 대기 시간 자동 LegCharge (WAITING_10MIN qty 산출)
+            try:
+                from leg_charge.auto_waiting import auto_waiting_on_complete
+                await auto_waiting_on_complete(self.db, self.team_id, leg.id)
+            except Exception:  # noqa: BLE001
+                pass
+            # v3: container.work_state derive
+            if leg.container_id is not None:
+                try:
+                    from container.state_derive import derive_and_save_state
+                    await derive_and_save_state(self.db, self.team_id, leg.container_id)
+                except Exception:  # noqa: BLE001
+                    pass
         elif target_enum == LegStatus.FAILED:
             leg.failure_reason = failure_reason
         leg.status = target_enum

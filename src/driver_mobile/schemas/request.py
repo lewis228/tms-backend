@@ -36,3 +36,12 @@ class PushTokenRequest(RequestSchema):
 
 class FirstPasswordChangeRequest(RequestSchema):
     new_password: str = Field(..., min_length=8, max_length=128)
+
+
+# ─── v3 Stop arrive/depart ─────────────────────────────────────
+class StopReportRequest(RequestSchema):
+    """기사가 모바일에서 stop 도착/출발 보고."""
+    occurred_at: datetime | None = None
+    latitude: Decimal | None = None
+    longitude: Decimal | None = None
+    note: str | None = Field(default=None, max_length=500)

@@ -1267,6 +1267,418 @@ async def seed_street_turns(
 # main
 # ──────────────────────────────────────────────────────────────────────────
 
+async def seed_v3_team_settings(db, team: TeamModel) -> None:
+    """v3: 거리 단위 라벨 / 통화 / distance provider 설정."""
+    changed = False
+    if team.distance_unit_label is None:
+        team.distance_unit_label = "km"
+        changed = True
+    if team.currency_label is None:
+        team.currency_label = "KRW"
+        changed = True
+    if team.currency_symbol is None:
+        team.currency_symbol = "₩"
+        changed = True
+    if team.distance_provider is None:
+        team.distance_provider = "MANUAL"
+        changed = True
+    if changed:
+        await db.flush()
+    print(f"[v3 team] settings={team.distance_unit_label}/{team.currency_label}/{team.distance_provider}")
+
+
+_V3_CHARGE_CODES = [
+    # (code, name, kind, default_unit, default_amount, unit_label, category, signed, payee, payer)
+    ("WAITING_10MIN",        "대기 (10분당)",      "ACCESSORIAL", "MINUTE", Decimal("10000"), "10분",  "WAITING",    False, "DRIVER",   None),
+    ("WAITING_FLAT_30",      "대기 (30분 정액)",   "ACCESSORIAL", "FLAT",   Decimal("30000"), "건",    "WAITING",    False, "DRIVER",   None),
+    ("EXTRA_STOP",           "추가 정차",          "ACCESSORIAL", "FLAT",   Decimal("50000"), "건",    "EXTRA_STOP", False, "DRIVER",   None),
+    ("DRY_RUN_FEE",          "빠꾸 보상",          "ACCESSORIAL", "FLAT",   Decimal("100000"),"건",    "DRY_RUN",    False, "DRIVER",   None),
+    ("CHASSIS_RENTAL_DELAY", "섀시 대여 지체",     "ACCESSORIAL", "FLAT",   Decimal("30000"), "건",    "EXTRA_STOP", False, "DRIVER",   None),
+    ("TERMINAL_CLOSED_FEE",  "터미널 closed 보상", "ACCESSORIAL", "FLAT",   Decimal("50000"), "건",    "DRY_RUN",    False, "DRIVER",   None),
+    ("DRIVER_FAULT_PENALTY", "기사 과실 페널티",   "PENALTY",     "FLAT",   Decimal("-50000"),"건",    "PENALTY",    True,  "DRIVER",   None),
+    ("FUEL_SURCHARGE_PCT",   "유류할증 (%)",       "FUEL",        "PERCENT",Decimal("5"),     "%",     "SURCHARGE",  False, None,       "CUSTOMER"),
+    ("BASE_PORTION_SPLIT",   "기본운임 분배",      "ACCESSORIAL", "FLAT",   Decimal("0"),     "건",    "ADJUSTMENT", True,  "DRIVER",   None),
+]
+
+
+async def seed_v3_charge_codes(db, team: TeamModel) -> dict[str, ChargeCodeModel]:
+    """v3 변동분 ChargeCode 추가 + 보강 (unit_label/category/signed/payee_default)."""
+    from charge_code.const.status import ChargeKind, ChargeUnit, ChargeCategory, PartyKind
+    out: dict[str, ChargeCodeModel] = {}
+    for (code, name, kind, unit, amt, unit_label, cat, signed, payee, payer) in _V3_CHARGE_CODES:
+        existing = (await db.execute(
+            select(ChargeCodeModel).where(
+                ChargeCodeModel.team_id == team.id,
+                ChargeCodeModel.code == code,
+            )
+        )).scalar_one_or_none()
+        if existing:
+            existing.unit_label = unit_label
+            existing.category = ChargeCategory(cat)
+            existing.signed = signed
+            existing.payee_default = PartyKind(payee) if payee else None
+            existing.payer_default = PartyKind(payer) if payer else None
+            out[code] = existing
+            continue
+        cc = ChargeCodeModel(
+            team_id=team.id,
+            code=code, name=name,
+            kind=ChargeKind(kind),
+            default_unit=ChargeUnit(unit),
+            default_amount=amt,
+            unit_label=unit_label,
+            category=ChargeCategory(cat),
+            signed=signed,
+            payee_default=PartyKind(payee) if payee else None,
+            payer_default=PartyKind(payer) if payer else None,
+            is_billable_to_customer=(payer == "CUSTOMER"),
+            is_payable_to_driver=(payee == "DRIVER"),
+        )
+        db.add(cc)
+        await db.flush()
+        out[code] = cc
+    print(f"[v3 charge_code] {len(out)}")
+    return out
+
+
+async def seed_v3_distance_matrix(
+    db, team: TeamModel, locations: list[LocationModel],
+) -> int:
+    """v3 location pair 거리 캐시 — 좌표 기반 haversine 거리 시드 (수동값)."""
+    from distance_matrix.model import DistanceMatrixModel
+    import math
+    def haversine(a, b) -> float:
+        if not (a.latitude and a.longitude and b.latitude and b.longitude):
+            return 0.0
+        la1, lo1, la2, lo2 = map(math.radians, [float(a.latitude), float(a.longitude), float(b.latitude), float(b.longitude)])
+        dla, dlo = la2 - la1, lo2 - lo1
+        h = math.sin(dla / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dlo / 2) ** 2
+        return 2 * 6371.0 * math.asin(math.sqrt(h))
+
+    count = 0
+    for o in locations:
+        for d in locations:
+            if o.id == d.id:
+                continue
+            existing = (await db.execute(
+                select(DistanceMatrixModel).where(
+                    DistanceMatrixModel.team_id == team.id,
+                    DistanceMatrixModel.origin_location_id == o.id,
+                    DistanceMatrixModel.destination_location_id == d.id,
+                )
+            )).scalar_one_or_none()
+            if existing:
+                continue
+            km = haversine(o, d)
+            if km <= 0:
+                continue
+            # 평균 50km/h 가정 → 분
+            duration = (km / 50.0) * 60.0
+            db.add(DistanceMatrixModel(
+                team_id=team.id,
+                origin_location_id=o.id,
+                destination_location_id=d.id,
+                distance_value=Decimal(f"{km:.4f}"),
+                duration_min=Decimal(f"{duration:.4f}"),
+                source="MANUAL",
+                measured_at=now_utc(),
+            ))
+            count += 1
+    if count:
+        await db.flush()
+    print(f"[v3 distance_matrix] {count}")
+    return count
+
+
+async def seed_v3_rate_tariffs(db, team: TeamModel) -> int:
+    """v3 거리×단가룰 마스터 — 4가지 move_type."""
+    from rate_tariff.model import RateTariffModel
+    rules = [
+        ("기본 2026Q2 / FULL_LOADED",  "FULL_LOADED",  Decimal("1200"), Decimal("50"), Decimal("50000")),
+        ("기본 2026Q2 / EMPTY_LOADED", "EMPTY_LOADED", Decimal("900"),  Decimal("30"), Decimal("30000")),
+        ("기본 2026Q2 / TRUCK_ONLY",   "TRUCK_ONLY",   Decimal("600"),  Decimal("0"),  Decimal("0")),
+        ("기본 2026Q2 / CHASSIS_ONLY", "CHASSIS_ONLY", Decimal("700"),  Decimal("0"),  Decimal("10000")),
+    ]
+    count = 0
+    for (name, move, per_value, per_min, flat) in rules:
+        existing = (await db.execute(
+            select(RateTariffModel).where(
+                RateTariffModel.team_id == team.id,
+                RateTariffModel.name == name,
+            )
+        )).scalar_one_or_none()
+        if existing:
+            continue
+        db.add(RateTariffModel(
+            team_id=team.id,
+            name=name,
+            move_type=move,
+            per_value=per_value,
+            per_min=per_min,
+            flat_base=flat,
+            effective_from=date(2026, 4, 1),
+            priority=10,
+        ))
+        count += 1
+    if count:
+        await db.flush()
+    print(f"[v3 rate_tariff] {count}")
+    return count
+
+
+async def seed_v3_legs_full(
+    db, team: TeamModel,
+    legs: list[LegModel],
+    locations: list[LocationModel],
+) -> None:
+    """v3 leg에 대한 backfill:
+      - move_type_v3 (기존 enum 매핑)
+      - container_stop 시퀀스 + Leg.from_stop_id/to_stop_id 백필
+      - leg_driver_segment 1개 (기존 driver_id 기반)
+      - leg_rate snapshot (RateTariff lookup → distance × per_value 계산)
+      - 일부 leg에 추가 LegCharge (시나리오 검증)
+    """
+    from container_stop.model import ContainerStopModel
+    from leg_driver_segment.model import LegDriverSegmentModel
+    from leg_rate.model import LegRateModel
+    from rate_tariff.model import RateTariffModel
+    from distance_matrix.model import DistanceMatrixModel
+    from leg_charge.model import LegChargeModel
+    from leg.const.status import StopRole, MoveTypeV3, LegRateSource, HandoverReason
+
+    # move_type → MoveTypeV3 매핑
+    move_map = {"LOADED": "FULL_LOADED", "EMPTY": "EMPTY_LOADED", "BOBTAIL": "TRUCK_ONLY"}
+
+    # tariff lookup (move_type → tariff)
+    tariffs = (await db.execute(
+        select(RateTariffModel).where(RateTariffModel.team_id == team.id)
+    )).scalars().all()
+    tariff_by_move: dict[str, RateTariffModel] = {}
+    for t in tariffs:
+        if t.move_type:
+            tariff_by_move[str(t.move_type.value if hasattr(t.move_type, "value") else t.move_type)] = t
+
+    # ChargeCode lookup (시나리오 LegCharge용)
+    cc_rows = (await db.execute(
+        select(ChargeCodeModel).where(
+            ChargeCodeModel.team_id == team.id,
+            ChargeCodeModel.code.in_([
+                "WAITING_10MIN", "TERMINAL_CLOSED_FEE", "DRIVER_FAULT_PENALTY",
+            ]),
+        )
+    )).scalars().all()
+    cc_by_code = {c.code: c for c in cc_rows}
+
+    # Container별 stop 시퀀스 캐시: {(container_id) → [(stop_id, sequence_no, location_id)]}
+    cstop_cache: dict[int, list[ContainerStopModel]] = {}
+
+    legs_processed = 0
+    legs_with_extra_charges = 0
+    segments_created = 0
+    rates_created = 0
+
+    # 이미 leg_rate 박힌 leg 는 skip
+    legs_with_rate = (await db.execute(
+        select(LegRateModel.leg_id).where(LegRateModel.team_id == team.id)
+    )).scalars().all()
+    legs_with_rate_set = set(legs_with_rate)
+
+    for leg in legs:
+        if leg.id in legs_with_rate_set:
+            continue
+
+        # 1) move_type_v3 (마이그레이션이 이미 백필했지만 누락분 보강)
+        if leg.move_type_v3 is None:
+            leg.move_type_v3 = move_map.get(
+                str(leg.move_type.value if hasattr(leg.move_type, "value") else leg.move_type),
+                "FULL_LOADED",
+            )
+
+        # 2) container_stop 시퀀스 보장 — 한 컨테이너의 첫 leg가 ORIGIN/DELIVERY 만들고,
+        #    다음 leg가 DELIVERY/TERMINUS 추가 (간이 모델)
+        if leg.container_id is None:
+            continue
+
+        if leg.container_id not in cstop_cache:
+            cstop_cache[leg.container_id] = (await db.execute(
+                select(ContainerStopModel).where(
+                    ContainerStopModel.team_id == team.id,
+                    ContainerStopModel.container_id == leg.container_id,
+                ).order_by(ContainerStopModel.sequence_no.asc())
+            )).scalars().all()
+
+        stops = cstop_cache[leg.container_id]
+
+        # from_stop = pickup_location_id 매칭
+        from_stop = next((s for s in stops if s.location_id == leg.pickup_location_id), None) \
+            if leg.pickup_location_id else None
+        if from_stop is None and leg.pickup_location_id:
+            seq = (stops[-1].sequence_no + 1) if stops else 1
+            role = StopRole.ORIGIN if seq == 1 else StopRole.TRANSIT
+            from_stop = ContainerStopModel(
+                team_id=team.id,
+                container_id=leg.container_id,
+                sequence_no=seq,
+                role=role,
+                location_id=leg.pickup_location_id,
+                planned_arrival=leg.pickup_date,
+                planned_departure=leg.pickup_date,
+                actual_arrival=leg.started_at,
+                actual_departure=leg.started_at,
+            )
+            db.add(from_stop)
+            await db.flush()
+            stops.append(from_stop)
+
+        # to_stop = delivery_location_id 매칭
+        to_stop = next((s for s in stops if s.location_id == leg.delivery_location_id), None) \
+            if leg.delivery_location_id else None
+        if to_stop is None and leg.delivery_location_id:
+            seq = (stops[-1].sequence_no + 1) if stops else 1
+            # 마지막이면 TERMINUS, 아니면 DELIVERY
+            role = StopRole.DELIVERY  # 단순화 — 마지막 보정은 이후
+            to_stop = ContainerStopModel(
+                team_id=team.id,
+                container_id=leg.container_id,
+                sequence_no=seq,
+                role=role,
+                location_id=leg.delivery_location_id,
+                planned_arrival=leg.delivery_date,
+                planned_departure=leg.delivery_date,
+                actual_arrival=leg.arrived_at,
+                actual_departure=leg.completed_at,
+            )
+            db.add(to_stop)
+            await db.flush()
+            stops.append(to_stop)
+
+        leg.from_stop_id = from_stop.id if from_stop else None
+        leg.to_stop_id   = to_stop.id   if to_stop   else None
+
+        # 3) leg_driver_segment (기존 driver_id 기반 1개)
+        if leg.driver_id is not None:
+            existing_seg = (await db.execute(
+                select(LegDriverSegmentModel).where(
+                    LegDriverSegmentModel.team_id == team.id,
+                    LegDriverSegmentModel.leg_id == leg.id,
+                )
+            )).first()
+            if not existing_seg:
+                db.add(LegDriverSegmentModel(
+                    team_id=team.id,
+                    leg_id=leg.id,
+                    sequence_no=1,
+                    driver_id=leg.driver_id,
+                    truck_id=leg.truck_id,
+                    started_at=leg.started_at,
+                    ended_at=leg.completed_at,
+                    handover_reason=None,
+                ))
+                segments_created += 1
+
+        # 4) leg_rate snapshot — RateTariff lookup
+        existing_rate = (await db.execute(
+            select(LegRateModel).where(
+                LegRateModel.team_id == team.id,
+                LegRateModel.leg_id == leg.id,
+            )
+        )).first()
+        if not existing_rate:
+            tariff = tariff_by_move.get(leg.move_type_v3)
+            distance_value = Decimal("0")
+            duration_min = Decimal("0")
+            if leg.pickup_location_id and leg.delivery_location_id:
+                dm = (await db.execute(
+                    select(DistanceMatrixModel).where(
+                        DistanceMatrixModel.team_id == team.id,
+                        DistanceMatrixModel.origin_location_id == leg.pickup_location_id,
+                        DistanceMatrixModel.destination_location_id == leg.delivery_location_id,
+                    )
+                )).scalar_one_or_none()
+                if dm:
+                    distance_value = dm.distance_value
+                    duration_min = dm.duration_min
+
+            base = Decimal("0")
+            source = LegRateSource.NONE
+            if tariff:
+                base = (tariff.flat_base or Decimal("0")) \
+                     + (tariff.per_value or Decimal("0")) * distance_value \
+                     + (tariff.per_min   or Decimal("0")) * duration_min
+                source = LegRateSource.TARIFF_CALC if distance_value > 0 else LegRateSource.TARIFF_FLAT
+
+            db.add(LegRateModel(
+                team_id=team.id,
+                leg_id=leg.id,
+                rate_tariff_id=tariff.id if tariff else None,
+                snapshot_distance_value=distance_value,
+                snapshot_duration_min=duration_min,
+                snapshot_per_value=tariff.per_value if tariff else None,
+                snapshot_per_min=tariff.per_min if tariff else None,
+                snapshot_flat_base=tariff.flat_base if tariff else None,
+                base_amount=base.quantize(Decimal("0.01")),
+                source=source,
+                payee_driver_id=leg.driver_id,
+                computed_at=now_utc(),
+            ))
+            rates_created += 1
+
+        # 5) 일부 leg에 시나리오 검증용 LegCharge (10번에 1번)
+        if legs_processed % 10 == 0 and "WAITING_10MIN" in cc_by_code:
+            cc = cc_by_code["WAITING_10MIN"]
+            db.add(LegChargeModel(
+                team_id=team.id,
+                leg_id=leg.id,
+                charge_code_id=cc.id,
+                snapshot_unit_amount=cc.default_amount,
+                quantity=Decimal("3"),
+                amount=(cc.default_amount or Decimal("0")) * Decimal("3"),
+                source="MANUAL",
+                payee_kind="DRIVER",
+                payee_driver_id=leg.driver_id,
+                description="시나리오 검증: 30분 대기",
+            ))
+            legs_with_extra_charges += 1
+
+        legs_processed += 1
+        if legs_processed % 20 == 0:
+            await db.flush()
+
+    await db.flush()
+    print(f"[v3 leg backfill] processed={legs_processed} segments={segments_created} rates={rates_created} +charges={legs_with_extra_charges}")
+
+
+async def seed_v3_container_states(db, team: TeamModel, containers: list[ContainerModel]) -> None:
+    """v3 container.work_state 자동 derive (간이):
+      - 모든 leg가 COMPLETED → COMPLETED
+      - 활성 leg가 IN_TRANSIT → IN_TRANSIT
+      - 그 외 PENDING → PLANNED
+    """
+    from leg.const.status import LegStatus, ContainerState
+    derived = 0
+    for c in containers:
+        legs = (await db.execute(
+            select(LegModel).where(
+                LegModel.team_id == team.id,
+                LegModel.container_id == c.id,
+            )
+        )).scalars().all()
+        if not legs:
+            new_state = ContainerState.DRAFT
+        elif all(l.status == LegStatus.COMPLETED for l in legs):
+            new_state = ContainerState.COMPLETED
+        elif any(l.status == LegStatus.IN_TRANSIT for l in legs):
+            new_state = ContainerState.IN_TRANSIT
+        else:
+            new_state = ContainerState.PLANNED
+        if c.work_state != new_state:
+            c.work_state = new_state
+            derived += 1
+    if derived:
+        await db.flush()
+    print(f"[v3 container.work_state] derived={derived}")
+
+
 async def main() -> None:
     Session = async_sessionmaker(write_engine, expire_on_commit=False)
     async with Session() as db:
@@ -1309,6 +1721,14 @@ async def main() -> None:
         await seed_street_turns(db, team, delivery_orders, containers, test_user)
         await seed_notifications(db, team, test_user, delivery_orders)
         await seed_api_keys(db, team, test_user)
+
+        # ── v3 Container-First layer ──
+        await seed_v3_team_settings(db, team)
+        await seed_v3_charge_codes(db, team)
+        await seed_v3_distance_matrix(db, team, locations)
+        await seed_v3_rate_tariffs(db, team)
+        await seed_v3_legs_full(db, team, legs, locations)
+        await seed_v3_container_states(db, team, containers)
 
         await db.commit()
 

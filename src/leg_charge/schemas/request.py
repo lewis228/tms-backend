@@ -12,8 +12,10 @@ class LegChargeCreateRequest(RequestSchema):
     leg_id: int
     charge_code_id: int
     rate_card_id: int | None = None
-    amount: Decimal
-    quantity: Decimal | None = None
+    # v3: amount = snapshot_unit_amount × quantity. amount 미입력 시 자동 계산.
+    amount: Decimal | None = None
+    snapshot_unit_amount: Decimal | None = None  # 미입력 시 ChargeCode.default_amount 사용
+    quantity: Decimal | None = None              # default 1
     unit: ChargeUnit | None = None
     source: ChargeSource = ChargeSource.MANUAL
     description: str | None = Field(default=None, max_length=3000)
@@ -28,6 +30,7 @@ class LegChargeCreateRequest(RequestSchema):
 class LegChargeUpdateRequest(RequestSchema):
     charge_code_id: int | None = None
     amount: Decimal | None = None
+    snapshot_unit_amount: Decimal | None = None
     quantity: Decimal | None = None
     unit: ChargeUnit | None = None
     description: str | None = Field(default=None, max_length=3000)

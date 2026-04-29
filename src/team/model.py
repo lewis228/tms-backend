@@ -58,6 +58,16 @@ class TeamModel(Base):
     product_info_display = mapped_column(String(30), nullable=True, server_default="all")
     product_info_template = mapped_column(String(500), nullable=True)
 
+    # ── v3 표시 라벨 / 거리 provider (단위 무관 정책) ─────────────
+    # 환산 X — DB 는 단위 무관 Decimal. 라벨/심볼만 회사 설정으로 표시 시점에 붙음.
+    distance_unit_label = mapped_column(String(16), nullable=True, server_default="km")
+    currency_label      = mapped_column(String(16), nullable=True)
+    currency_symbol     = mapped_column(String(8),  nullable=True)
+    # OSRM | GOOGLE | MANUAL — 어댑터 패턴
+    distance_provider   = mapped_column(String(32), nullable=True, server_default="MANUAL")
+    # JSON 직렬화 문자열 (api_key, endpoint 등)
+    distance_provider_config = mapped_column(String(2000), nullable=True)
+
     # 엑셀 가져오기
     excel_product_identification = mapped_column(String(30), nullable=True, server_default="sku")
 

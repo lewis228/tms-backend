@@ -55,3 +55,11 @@ from push_token.model import PushTokenModel  # noqa: F401
 
 # ── API Keys ────────────────────────────────────────────────
 from api_key.model import ApiKeyModel  # noqa: F401
+
+# ── TMS Phase I-A (Container-First v3) ───────────────────────
+from container_stop.model import ContainerStopModel  # noqa: F401
+from leg_driver_segment.model import LegDriverSegmentModel  # noqa: F401
+from rate_quote.model import RateQuoteModel  # noqa: F401
+from rate_tariff.model import RateTariffModel  # noqa: F401
+from leg_rate.model import LegRateModel  # noqa: F401
+from distance_matrix.model import DistanceMatrixModel  # noqa: F401

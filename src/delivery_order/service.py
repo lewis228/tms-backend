@@ -67,11 +67,92 @@ class DeliveryOrderService:
             if c.get("sequence_no") is None:
                 c["sequence_no"] = idx
             c["delivery_order_id"] = row.id
+            # v3: stops 는 ContainerCreateInner 의 추가 필드. ContainerModel 에 없으므로 분리.
+            stops_data = c.pop("stops", []) or []
             container_row = await self.container_repo.create(c, actor_user_id=actor_user_id)
             created_containers.append(ContainerResponseSchema.model_validate(container_row))
+            # v3: AI Intake 가 추출한 stop 시퀀스를 ContainerStop row 로 자동 생성.
+            if stops_data:
+                try:
+                    await self._create_stops_from_payload(
+                        container_id=container_row.id,
+                        stops=stops_data,
+                        actor_user_id=actor_user_id,
+                    )
+                except Exception:  # noqa: BLE001
+                    # stop 생성 실패는 D/O/컨테이너 생성을 막지 않음.
+                    pass
 
         do_dict = DeliveryOrderResponseSchema.model_validate(row).model_dump()
         return DeliveryOrderDetailResponseSchema(**do_dict, containers=created_containers)
+
+    async def _create_stops_from_payload(
+        self,
+        *,
+        container_id: int,
+        stops: list[dict],
+        actor_user_id: int | None,
+    ) -> None:
+        """v3: ContainerCreateInner.stops 를 ContainerStop row 로 변환.
+
+        location_id 가 None 이면 location_name 으로 fuzzy 매칭 (case-insensitive contains).
+        매칭 실패 시 location_id null 로 stop 생성 (사용자가 후보 선택할 수 있도록).
+        """
+        from sqlalchemy import select, func as _func
+        from container_stop.model import ContainerStopModel
+        from leg.const.status import StopRole
+        from location.model import LocationModel
+        from container.state_derive import derive_and_save_state
+
+        # 한 번만 location 캐시
+        all_locs = (await self.db.execute(
+            select(LocationModel.id, LocationModel.name).where(
+                LocationModel.team_id == self.team_id,
+                LocationModel.is_active.is_(True),
+            )
+        )).all()
+
+        def fuzzy_lookup(name: str | None) -> int | None:
+            if not name:
+                return None
+            target = name.strip().lower()
+            # 1) exact case-insensitive
+            for lid, lname in all_locs:
+                if lname and lname.strip().lower() == target:
+                    return lid
+            # 2) substring contains (양방향)
+            for lid, lname in all_locs:
+                if not lname:
+                    continue
+                ln = lname.strip().lower()
+                if target in ln or ln in target:
+                    return lid
+            return None
+
+        for idx, s in enumerate(stops, start=1):
+            role_raw = (s.get("role") or "TRANSIT").upper()
+            try:
+                role = StopRole(role_raw)
+            except Exception:  # noqa: BLE001
+                role = StopRole.TRANSIT
+            location_id = s.get("location_id")
+            if location_id is None:
+                location_id = fuzzy_lookup(s.get("location_name"))
+            seq = s.get("sequence_no") if s.get("sequence_no") else idx
+            self.db.add(ContainerStopModel(
+                team_id=self.team_id,
+                container_id=container_id,
+                sequence_no=seq,
+                role=role,
+                location_id=location_id,
+                planned_arrival=s.get("planned_arrival"),
+                planned_departure=s.get("planned_departure"),
+                note=s.get("note"),
+                created_by_user_id=actor_user_id,
+            ))
+        await self.db.flush()
+        # work_state 자동 derive (DRAFT → PLANNED 가능)
+        await derive_and_save_state(self.db, self.team_id, container_id)
 
     # ═══════════════════════════════════════════════════════════════
     # Create (벌크) - 전체 성공 or 전체 실패

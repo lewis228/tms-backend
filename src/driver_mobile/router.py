@@ -19,10 +19,15 @@ from user.schemas.response import UserResponseSchema
 
 from driver_mobile.schemas.request import (
     CheckpointRequest, LocationBatchRequest, PushTokenRequest,
-    FirstPasswordChangeRequest,
+    FirstPasswordChangeRequest, StopReportRequest,
 )
-from driver_mobile.schemas.response import TodayTasksResponse, PushTokenResponse  # noqa: F401
+from driver_mobile.schemas.response import (  # noqa: F401
+    TodayTasksResponse, PushTokenResponse, DriverV3TodayResponse,
+)
 from driver_mobile.service import DriverMobileService
+from driver_mobile.service_v3 import (
+    get_today_containers_for_driver, report_stop_arrive, report_stop_depart,
+)
 from leg.schemas.response import LegResponseSchema
 
 router = APIRouter(prefix="/api/v1/driver", tags=["driver_mobile"])
@@ -269,3 +274,48 @@ async def change_first_password(
     await db.flush()
     await db.commit()
     return {"status": "ok"}
+
+
+# ─── v3 Container/Stop 단위 모바일 API ───────────────────────────
+
+@router.get("/v3/today", response_model=DriverV3TodayResponse)
+async def v3_today(
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """v3: 기사가 활성으로 배정된 컨테이너 + Stop 시퀀스."""
+    return await get_today_containers_for_driver(db, team_id, int(me.id))
+
+
+@router.post("/v3/stops/{stop_id}/arrive")
+async def v3_stop_arrive(
+    stop_id: int,
+    body: StopReportRequest,
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+):
+    """v3: stop 도착 보고 → actual_arrival 저장 + work_state derive."""
+    return await report_stop_arrive(
+        db, team_id, int(me.id), stop_id,
+        occurred_at=body.occurred_at,
+    )
+
+
+@router.post("/v3/stops/{stop_id}/depart")
+async def v3_stop_depart(
+    stop_id: int,
+    body: StopReportRequest,
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+):
+    """v3: stop 출발 보고 → actual_departure 저장 + work_state derive."""
+    return await report_stop_depart(
+        db, team_id, int(me.id), stop_id,
+        occurred_at=body.occurred_at,
+    )

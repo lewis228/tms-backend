@@ -10,7 +10,7 @@ from sqlalchemy import (
 from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
 from delivery_order.const.status import DeliveryStatus
-from leg.const.status import LegStatus, MoveType, ServiceType, LegKind
+from leg.const.status import LegStatus, MoveType, ServiceType, LegKind, MoveTypeV3
 
 
 class LegModel(Base, TeamScopedMixin):
@@ -26,6 +26,17 @@ class LegModel(Base, TeamScopedMixin):
         ForeignKey("container.id", ondelete="SET NULL"), nullable=True,
     )
 
+    # ── v3 Stop 시퀀스 FK (container_stop 참조) ─────────────
+    # Leg = "from_stop → to_stop" 사이의 이동.
+    # 차고→ORIGIN 같은 첫 leg 도 from_stop=차고 stop / to_stop=터미널 stop 으로 표현.
+    # 마이그레이션 직후 백필 전이라 우선 nullable, 백필 후 NOT NULL 으로 좁힐 예정.
+    from_stop_id: Mapped[int | None] = mapped_column(
+        ForeignKey("container_stop.id", ondelete="SET NULL"), nullable=True,
+    )
+    to_stop_id: Mapped[int | None] = mapped_column(
+        ForeignKey("container_stop.id", ondelete="SET NULL"), nullable=True,
+    )
+
     # 어떤 단계의 leg 인지 (D/O 상태 기준)
     step: Mapped[DeliveryStatus] = mapped_column(
         SAEnum(DeliveryStatus, name="delivery_status"), nullable=False,
@@ -33,6 +44,11 @@ class LegModel(Base, TeamScopedMixin):
 
     move_type: Mapped[MoveType] = mapped_column(
         SAEnum(MoveType, name="move_type"), nullable=False,
+    )
+    # ── v3 4축 형상 (TRUCK_ONLY/CHASSIS_ONLY/EMPTY_LOADED/FULL_LOADED) ─────
+    # 기존 move_type 은 H-7 까지 호환 유지. v3 부터 신규 컬럼으로 표현.
+    move_type_v3: Mapped[MoveTypeV3 | None] = mapped_column(
+        SAEnum(MoveTypeV3, name="move_type_v3"), nullable=True,
     )
     service_type: Mapped[ServiceType] = mapped_column(
         SAEnum(ServiceType, name="service_type"), nullable=False,

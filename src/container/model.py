@@ -13,7 +13,7 @@ from common.model.team_scoped_mixin import TeamScopedMixin
 from container.const.status import (
     ContainerStatus, ContainerSize, ContainerEventKind,
 )
-from leg.const.status import ServiceType
+from leg.const.status import ServiceType, ContainerState
 
 
 class ContainerModel(Base, TeamScopedMixin):
@@ -70,6 +70,15 @@ class ContainerModel(Base, TeamScopedMixin):
         SAEnum(ContainerStatus, name="delivery_status"),
         default=ContainerStatus.PLANNING,
         server_default=ContainerStatus.PLANNING.value,
+        nullable=False,
+    )
+
+    # ── v3 작업 단위 상태 8단계 (DRAFT/PLANNED/IN_TRANSIT/AT_STOP/WAITING_PLAN/HOLD/COMPLETED/CANCELLED) ─────
+    # 기존 status (DeliveryStatus) 와 직교. 자동 derive — HOLD/CANCELLED 만 수동 토글.
+    work_state: Mapped[ContainerState] = mapped_column(
+        SAEnum(ContainerState, name="container_state"),
+        default=ContainerState.DRAFT,
+        server_default=ContainerState.DRAFT.value,
         nullable=False,
     )
 

@@ -89,6 +89,13 @@ class TeamSettingsUpdateRequestSchema(RequestSchema):
     product_info_display: Optional[str] = Field(None, max_length=30)
     product_info_template: Optional[str] = Field(None, max_length=500)
 
+    # ── v3 표시 라벨 / distance provider ─────────────
+    distance_unit_label: Optional[str] = Field(None, max_length=16)
+    currency_label: Optional[str] = Field(None, max_length=16)
+    currency_symbol: Optional[str] = Field(None, max_length=8)
+    distance_provider: Optional[str] = Field(None, max_length=32)
+    distance_provider_config: Optional[str] = Field(None, max_length=2000)
+
     # 엑셀 가져오기
     excel_product_identification: Optional[str] = Field(None, max_length=30)
 

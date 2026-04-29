@@ -8,7 +8,11 @@ from common.schemas.base import ResponseSchema
 from container.const.status import (
     ContainerStatus, ContainerSize, ContainerEventKind,
 )
-from leg.const.status import ServiceType
+from leg.const.status import (
+    ServiceType, ContainerState, StopRole, MoveTypeV3,
+    LegStatus, LegRateSource, HandoverReason,
+)
+from charge_code.const.status import ChargeCategory, PartyKind
 
 
 class ContainerResponseSchema(ResponseSchema):
@@ -34,8 +38,23 @@ class ContainerResponseSchema(ResponseSchema):
     pier_pass_paid: bool
     customs_cleared: bool
     status: ContainerStatus
+    work_state: ContainerState | None = None
     note: str | None = None
     is_active: bool
+
+    # ── v3 list 행 enrich (Dispatch Workspace 컨테이너 단위 뷰용) ─────
+    # service 의 list_paginated 가 채움. 미사용 시 None.
+    bl_number:        str | None = None
+    booking_number:   str | None = None
+    customer_id:      int | None = None
+    customer_name:    str | None = None
+    direction:        str | None = None  # IMPORT / EXPORT
+    move_type_v3:     MoveTypeV3 | None = None
+    next_stop_id:     int | None = None
+    current_driver_id:   int | None = None
+    current_driver_name: str | None = None
+    legs_total:       int | None = None
+    legs_completed:   int | None = None
 
 
 class ContainerDeleteResponseSchema(ResponseSchema):
@@ -76,3 +95,105 @@ class BulkSummary(ResponseSchema):
 class ContainerBulkDeleteResponseSchema(ResponseSchema):
     results: List[BulkDeleteResultItem]
     summary: BulkSummary
+
+
+# ─── v3 Container 상세 (full) 응답 ──────────────────────────
+
+class StopResponseSchema(ResponseSchema):
+    id: int
+    container_id: int
+    sequence_no: int
+    role: StopRole
+    location_id: int | None = None
+    location_name: str | None = None
+    planned_arrival:   datetime | None = None
+    planned_departure: datetime | None = None
+    actual_arrival:    datetime | None = None
+    actual_departure:  datetime | None = None
+    note: str | None = None
+    is_active: bool
+
+
+class DriverSegmentResponseSchema(ResponseSchema):
+    id: int
+    leg_id: int
+    sequence_no: int
+    driver_id: int
+    driver_name: str | None = None
+    truck_id: int | None = None
+    started_at: datetime | None = None
+    ended_at:   datetime | None = None
+    handover_reason: HandoverReason | None = None
+    note: str | None = None
+    is_active: bool
+
+
+class LegRateResponseSchema(ResponseSchema):
+    id: int
+    leg_id: int
+    rate_quote_id:  int | None = None
+    rate_tariff_id: int | None = None
+
+    snapshot_distance_value: Decimal | None = None
+    snapshot_duration_min:   Decimal | None = None
+    snapshot_per_value:      Decimal | None = None
+    snapshot_per_min:        Decimal | None = None
+    snapshot_flat_base:      Decimal | None = None
+    snapshot_quote_fixed:    Decimal | None = None
+
+    base_amount: Decimal
+    source: LegRateSource
+    manual_override: bool
+    payee_driver_id: int | None = None
+    computed_at: datetime | None = None
+    note: str | None = None
+    is_active: bool
+
+
+class LegChargeLineSchema(ResponseSchema):
+    id: int
+    leg_id: int
+    charge_code_id: int
+    charge_code:   str | None = None
+    charge_name:   str | None = None
+    category:      ChargeCategory | None = None
+    snapshot_unit_amount: Decimal | None = None
+    quantity:      Decimal | None = None
+    subtotal:      Decimal       # = amount field
+    payee_kind:    PartyKind | None = None
+    payee_driver_id:   int | None = None
+    payee_driver_name: str | None = None
+    description:   str | None = None
+    is_active: bool
+
+
+class LegFullSchema(ResponseSchema):
+    id: int
+    delivery_order_id: int
+    container_id: int | None = None
+    from_stop_id: int | None = None
+    to_stop_id:   int | None = None
+    move_type_v3: MoveTypeV3 | None = None
+    service_type: ServiceType | None = None
+    status: LegStatus
+    driver_id: int | None = None
+    driver_name: str | None = None
+    started_at:   datetime | None = None
+    arrived_at:   datetime | None = None
+    completed_at: datetime | None = None
+    failure_reason: str | None = None
+    note: str | None = None
+    is_active: bool
+
+    segments: List[DriverSegmentResponseSchema] = []
+    rate:     LegRateResponseSchema | None = None
+    charges:  List[LegChargeLineSchema] = []
+    leg_total: Decimal = Decimal("0")  # base + Σ subtotal
+
+
+class ContainerFullResponseSchema(ResponseSchema):
+    container: ContainerResponseSchema
+    delivery_order: dict   # {id, bl_number, booking_number, reference, customer_id, customer_name, direction, eta, terminal_id, terminal_name, vessel_id, vessel_name, b_l_released}
+    stops: List[StopResponseSchema] = []
+    legs:  List[LegFullSchema] = []
+    events: List[ContainerEventResponseSchema] = []

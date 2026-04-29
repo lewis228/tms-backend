@@ -12,6 +12,7 @@ class LegChargeResponseSchema(ResponseSchema):
     charge_code_id: int
     rate_card_id: int | None = None
     amount: Decimal
+    snapshot_unit_amount: Decimal | None = None
     quantity: Decimal | None = None
     unit: ChargeUnit | None = None
     source: ChargeSource

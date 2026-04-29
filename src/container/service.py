@@ -56,8 +56,339 @@ class ContainerService:
         self, request: PaginateContainerRequest,
     ) -> CursorPaginationResult[ContainerResponseSchema]:
         result = await self.repo.get_paginated(request)
-        result.data = [ContainerResponseSchema.model_validate(r) for r in result.data]
+        rows = list(result.data)
+        if not rows:
+            result.data = []
+            return result
+
+        # ── v3 enrich: D/O 메타 + leg 진행률 + 현재 driver ──
+        from sqlalchemy import select, func, case
+        from delivery_order.model import DeliveryOrderModel
+        from customer.model import CustomerModel
+        from leg.model import LegModel
+        from leg.const.status import LegStatus
+        from driver.model import DriverModel
+        from user.model import UserModel
+        from container_stop.model import ContainerStopModel
+
+        ids = [r.id for r in rows]
+        do_ids = list({r.delivery_order_id for r in rows})
+
+        # D/O 메타 + customer 이름
+        dos = (await self.db.execute(
+            select(
+                DeliveryOrderModel.id,
+                DeliveryOrderModel.bl_number,
+                DeliveryOrderModel.booking_number,
+                DeliveryOrderModel.customer_id,
+                DeliveryOrderModel.direction,
+                CustomerModel.name.label("customer_name"),
+            )
+            .outerjoin(CustomerModel, CustomerModel.id == DeliveryOrderModel.customer_id)
+            .where(DeliveryOrderModel.team_id == self.repo.team_id, DeliveryOrderModel.id.in_(do_ids))
+        )).all()
+        do_map = {d.id: d for d in dos}
+
+        # leg 진행률 + 활성 leg 의 driver
+        legs_total_q = (await self.db.execute(
+            select(
+                LegModel.container_id,
+                func.count(LegModel.id).label("total"),
+                func.sum(case((LegModel.status == LegStatus.COMPLETED, 1), else_=0)).label("done"),
+            )
+            .where(
+                LegModel.team_id == self.repo.team_id,
+                LegModel.container_id.in_(ids),
+                LegModel.is_active.is_(True),
+            )
+            .group_by(LegModel.container_id)
+        )).all()
+        leg_count_map = {r.container_id: (int(r.total or 0), int(r.done or 0)) for r in legs_total_q}
+
+        # 활성 leg → 현재 driver
+        active_q = (await self.db.execute(
+            select(LegModel.container_id, LegModel.driver_id)
+            .where(
+                LegModel.team_id == self.repo.team_id,
+                LegModel.container_id.in_(ids),
+                LegModel.is_active.is_(True),
+                LegModel.status.in_([LegStatus.IN_TRANSIT, LegStatus.PENDING]),
+            )
+            .order_by(LegModel.id.asc())
+        )).all()
+        first_active_driver: dict[int, int | None] = {}
+        for cid, did in active_q:
+            if cid not in first_active_driver:
+                first_active_driver[cid] = did
+
+        # driver 이름 조회
+        driver_ids = [d for d in first_active_driver.values() if d]
+        driver_name_map: dict[int, str] = {}
+        if driver_ids:
+            for did, name in (await self.db.execute(
+                select(DriverModel.id, func.coalesce(UserModel.name, UserModel.email))
+                .outerjoin(UserModel, UserModel.id == DriverModel.user_id)
+                .where(DriverModel.id.in_(driver_ids))
+            )).all():
+                driver_name_map[did] = name or ""
+
+        # next stop = 가장 작은 sequence_no 의 stop with actual_arrival is null
+        next_stop_q = (await self.db.execute(
+            select(
+                ContainerStopModel.container_id,
+                func.min(ContainerStopModel.id).label("sid"),
+            )
+            .where(
+                ContainerStopModel.team_id == self.repo.team_id,
+                ContainerStopModel.container_id.in_(ids),
+                ContainerStopModel.is_active.is_(True),
+                ContainerStopModel.actual_arrival.is_(None),
+            )
+            .group_by(ContainerStopModel.container_id)
+        )).all()
+        next_stop_map = {r.container_id: r.sid for r in next_stop_q}
+
+        out = []
+        for r in rows:
+            schema = ContainerResponseSchema.model_validate(r)
+            do = do_map.get(r.delivery_order_id)
+            total, done = leg_count_map.get(r.id, (0, 0))
+            driver_id = first_active_driver.get(r.id)
+            schema = schema.model_copy(update={
+                "bl_number":         do.bl_number if do else None,
+                "booking_number":    do.booking_number if do else None,
+                "customer_id":       do.customer_id if do else None,
+                "customer_name":     do.customer_name if do else None,
+                "direction":         (do.direction.value if do and hasattr(do.direction, "value") else (do.direction if do else None)),
+                "next_stop_id":      next_stop_map.get(r.id),
+                "current_driver_id":   driver_id,
+                "current_driver_name": driver_name_map.get(driver_id) if driver_id else None,
+                "legs_total":     total,
+                "legs_completed": done,
+            })
+            out.append(schema)
+
+        result.data = out
         return result
+
+    # ── v3 Container 상세 (full) ──
+
+    async def get_full(self, container_id: int):
+        from container.schemas.response import (
+            ContainerFullResponseSchema, StopResponseSchema, LegFullSchema,
+            DriverSegmentResponseSchema, LegRateResponseSchema, LegChargeLineSchema,
+        )
+        from sqlalchemy import select
+        from delivery_order.model import DeliveryOrderModel
+        from customer.model import CustomerModel
+        from terminal.model import TerminalModel
+        from vessel.model import VesselModel
+        from location.model import LocationModel
+        from leg.model import LegModel
+        from leg_charge.model import LegChargeModel
+        from leg_rate.model import LegRateModel
+        from leg_driver_segment.model import LegDriverSegmentModel
+        from charge_code.model import ChargeCodeModel
+        from container_stop.model import ContainerStopModel
+        from container.model import ContainerEventModel
+        from driver.model import DriverModel
+        from user.model import UserModel
+        from decimal import Decimal as _D
+        from sqlalchemy import func
+
+        row = await self.repo.get(container_id)
+        if not row:
+            raise NotFoundException("컨테이너")
+        container = ContainerResponseSchema.model_validate(row)
+
+        # D/O + 마스터 메타
+        do_meta = (await self.db.execute(
+            select(
+                DeliveryOrderModel.id,
+                DeliveryOrderModel.bl_number,
+                DeliveryOrderModel.booking_number,
+                DeliveryOrderModel.reference,
+                DeliveryOrderModel.customer_id,
+                CustomerModel.name.label("customer_name"),
+                DeliveryOrderModel.direction,
+                DeliveryOrderModel.eta,
+                DeliveryOrderModel.terminal_id,
+                TerminalModel.name.label("terminal_name"),
+                DeliveryOrderModel.vessel_id,
+                VesselModel.name.label("vessel_name"),
+                DeliveryOrderModel.bl_released,
+            )
+            .outerjoin(CustomerModel, CustomerModel.id == DeliveryOrderModel.customer_id)
+            .outerjoin(TerminalModel, TerminalModel.id == DeliveryOrderModel.terminal_id)
+            .outerjoin(VesselModel,   VesselModel.id   == DeliveryOrderModel.vessel_id)
+            .where(DeliveryOrderModel.id == row.delivery_order_id)
+        )).first()
+        do_dict = {
+            "id": do_meta.id if do_meta else None,
+            "bl_number": do_meta.bl_number if do_meta else None,
+            "booking_number": do_meta.booking_number if do_meta else None,
+            "reference": do_meta.reference if do_meta else None,
+            "customer_id": do_meta.customer_id if do_meta else None,
+            "customer_name": do_meta.customer_name if do_meta else None,
+            "direction": (do_meta.direction.value if do_meta and hasattr(do_meta.direction, "value") else (do_meta.direction if do_meta else None)),
+            "eta": do_meta.eta.isoformat() if do_meta and do_meta.eta else None,
+            "terminal_id": do_meta.terminal_id if do_meta else None,
+            "terminal_name": do_meta.terminal_name if do_meta else None,
+            "vessel_id": do_meta.vessel_id if do_meta else None,
+            "vessel_name": do_meta.vessel_name if do_meta else None,
+            "bl_released": bool(do_meta.bl_released) if do_meta else False,
+        } if do_meta else {}
+
+        # Stops + location 이름
+        stop_rows = (await self.db.execute(
+            select(ContainerStopModel, LocationModel.name)
+            .outerjoin(LocationModel, LocationModel.id == ContainerStopModel.location_id)
+            .where(
+                ContainerStopModel.team_id == self.repo.team_id,
+                ContainerStopModel.container_id == container_id,
+                ContainerStopModel.is_active.is_(True),
+            )
+            .order_by(ContainerStopModel.sequence_no.asc())
+        )).all()
+        stops = []
+        for s, loc_name in stop_rows:
+            stops.append(StopResponseSchema.model_validate(s).model_copy(update={"location_name": loc_name}))
+
+        # Legs (active 만)
+        legs_rows = (await self.db.execute(
+            select(LegModel)
+            .where(
+                LegModel.team_id == self.repo.team_id,
+                LegModel.container_id == container_id,
+                LegModel.is_active.is_(True),
+            )
+            .order_by(LegModel.id.asc())
+        )).scalars().all()
+        leg_ids = [l.id for l in legs_rows]
+
+        # leg → segments
+        seg_map: dict[int, list] = {}
+        if leg_ids:
+            seg_rows = (await self.db.execute(
+                select(LegDriverSegmentModel, func.coalesce(UserModel.name, UserModel.email).label("dn"))
+                .outerjoin(DriverModel, DriverModel.id == LegDriverSegmentModel.driver_id)
+                .outerjoin(UserModel,   UserModel.id   == DriverModel.user_id)
+                .where(
+                    LegDriverSegmentModel.team_id == self.repo.team_id,
+                    LegDriverSegmentModel.leg_id.in_(leg_ids),
+                    LegDriverSegmentModel.is_active.is_(True),
+                )
+                .order_by(LegDriverSegmentModel.leg_id.asc(), LegDriverSegmentModel.sequence_no.asc())
+            )).all()
+            for s, dn in seg_rows:
+                seg_map.setdefault(s.leg_id, []).append(
+                    DriverSegmentResponseSchema.model_validate(s).model_copy(update={"driver_name": dn})
+                )
+
+        # leg → rate
+        rate_map: dict[int, LegRateResponseSchema] = {}
+        if leg_ids:
+            for r in (await self.db.execute(
+                select(LegRateModel).where(
+                    LegRateModel.team_id == self.repo.team_id,
+                    LegRateModel.leg_id.in_(leg_ids),
+                    LegRateModel.is_active.is_(True),
+                )
+            )).scalars().all():
+                rate_map[r.leg_id] = LegRateResponseSchema.model_validate(r)
+
+        # leg → charges (+ charge_code 메타 join)
+        charge_map: dict[int, list[LegChargeLineSchema]] = {}
+        if leg_ids:
+            charge_rows = (await self.db.execute(
+                select(
+                    LegChargeModel,
+                    ChargeCodeModel.code.label("cc_code"),
+                    ChargeCodeModel.name.label("cc_name"),
+                    ChargeCodeModel.category.label("cc_category"),
+                    func.coalesce(UserModel.name, UserModel.email).label("driver_name"),
+                )
+                .outerjoin(ChargeCodeModel, ChargeCodeModel.id == LegChargeModel.charge_code_id)
+                .outerjoin(DriverModel, DriverModel.id == LegChargeModel.payee_driver_id)
+                .outerjoin(UserModel,   UserModel.id   == DriverModel.user_id)
+                .where(
+                    LegChargeModel.team_id == self.repo.team_id,
+                    LegChargeModel.leg_id.in_(leg_ids),
+                    LegChargeModel.is_active.is_(True),
+                )
+                .order_by(LegChargeModel.leg_id.asc(), LegChargeModel.id.asc())
+            )).all()
+            for lc, cc_code, cc_name, cc_cat, driver_name in charge_rows:
+                line = LegChargeLineSchema(
+                    id=lc.id, leg_id=lc.leg_id, charge_code_id=lc.charge_code_id,
+                    charge_code=cc_code, charge_name=cc_name, category=cc_cat,
+                    snapshot_unit_amount=lc.snapshot_unit_amount,
+                    quantity=lc.quantity,
+                    subtotal=lc.amount,
+                    payee_kind=lc.payee_kind, payee_driver_id=lc.payee_driver_id,
+                    payee_driver_name=driver_name,
+                    description=lc.description, is_active=lc.is_active,
+                )
+                charge_map.setdefault(lc.leg_id, []).append(line)
+
+        # leg driver name (current segment driver_id 기반)
+        driver_names: dict[int, str] = {}
+        leg_driver_ids = list({l.driver_id for l in legs_rows if l.driver_id})
+        if leg_driver_ids:
+            for did, name in (await self.db.execute(
+                select(DriverModel.id, func.coalesce(UserModel.name, UserModel.email))
+                .outerjoin(UserModel, UserModel.id == DriverModel.user_id)
+                .where(DriverModel.id.in_(leg_driver_ids))
+            )).all():
+                driver_names[did] = name or ""
+
+        legs_full: list[LegFullSchema] = []
+        for l in legs_rows:
+            base = (rate_map.get(l.id).base_amount if l.id in rate_map else _D("0"))
+            charges = charge_map.get(l.id, [])
+            tot = base + sum((c.subtotal for c in charges), start=_D("0"))
+            legs_full.append(LegFullSchema(
+                id=l.id,
+                delivery_order_id=l.delivery_order_id,
+                container_id=l.container_id,
+                from_stop_id=l.from_stop_id,
+                to_stop_id=l.to_stop_id,
+                move_type_v3=l.move_type_v3,
+                service_type=l.service_type,
+                status=l.status,
+                driver_id=l.driver_id,
+                driver_name=driver_names.get(l.driver_id) if l.driver_id else None,
+                started_at=l.started_at,
+                arrived_at=l.arrived_at,
+                completed_at=l.completed_at,
+                failure_reason=l.failure_reason,
+                note=l.note,
+                is_active=l.is_active,
+                segments=seg_map.get(l.id, []),
+                rate=rate_map.get(l.id),
+                charges=charges,
+                leg_total=tot,
+            ))
+
+        # Events
+        events_rows = (await self.db.execute(
+            select(ContainerEventModel)
+            .where(
+                ContainerEventModel.team_id == self.repo.team_id,
+                ContainerEventModel.container_id == container_id,
+                ContainerEventModel.is_active.is_(True),
+            )
+            .order_by(ContainerEventModel.occurred_at.desc())
+        )).scalars().all()
+        events = [ContainerEventResponseSchema.model_validate(e) for e in events_rows]
+
+        return ContainerFullResponseSchema(
+            container=container,
+            delivery_order=do_dict,
+            stops=stops,
+            legs=legs_full,
+            events=events,
+        )
 
     # ── Update ──
 

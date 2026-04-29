@@ -17,6 +17,21 @@ from leg.const.status import ServiceType
 CONTAINER_NUMBER_PATTERN = r"^[A-Z]{4}\d{7}$"
 
 
+class StopCreateInner(RequestSchema):
+    """v3: D/O Create 시 컨테이너에 nested 로 받는 stop 1건.
+
+    AI Intake 추출 또는 수동 입력. location_id 가 None 이면 location_name 으로
+    fuzzy 매칭 시도 (DOService 가 처리). 매칭 실패 시 location_id null 로 stop 생성.
+    """
+    role: str  # ORIGIN / DELIVERY / TRANSIT / TERMINUS
+    sequence_no: int | None = None
+    location_id: int | None = None
+    location_name: str | None = None  # fuzzy 매칭용
+    planned_arrival: datetime | None = None
+    planned_departure: datetime | None = None
+    note: str | None = Field(default=None, max_length=500)
+
+
 class ContainerCreateInner(RequestSchema):
     """D/O Create 시 nested 로 받는 컨테이너 1건. (delivery_order_id 는 D/O 생성 시 부착)"""
     sequence_no: int | None = None
@@ -40,6 +55,8 @@ class ContainerCreateInner(RequestSchema):
     customs_cleared: bool = False
     status: ContainerStatus = ContainerStatus.PLANNING
     note: str | None = Field(default=None, max_length=3000)
+    # v3: AI Intake 가 추출한 stop 시퀀스. 비어있으면 stop 생성 X (수동 추가 가능).
+    stops: List["StopCreateInner"] = Field(default_factory=list)
 
 
 class ContainerCreateRequest(ContainerCreateInner):

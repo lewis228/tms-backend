@@ -49,6 +49,13 @@ class TeamDetailResponseSchema(TeamResponseSchema):
     product_info_display: Optional[str] = None
     product_info_template: Optional[str] = None
 
+    # ── v3 표시 라벨 / distance provider ─────────────
+    distance_unit_label: Optional[str] = None
+    currency_label: Optional[str] = None
+    currency_symbol: Optional[str] = None
+    distance_provider: Optional[str] = None
+    distance_provider_config: Optional[str] = None
+
     # 엑셀 가져오기
     excel_product_identification: Optional[str] = None
 

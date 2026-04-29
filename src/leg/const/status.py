@@ -54,6 +54,86 @@ class StopKind(StrEnum):
     OTHER            = "OTHER"
 
 
+class StopRole(StrEnum):
+    """v3 컨테이너 정차점(Stop)의 역할 — 4가지로 단순화.
+
+    - ORIGIN     : 첫 시작점 (보통 터미널, 항만, 차고 등 — 필수 X).
+    - DELIVERY   : 화주 도어/창고 등 화물을 내리거나 적재하는 지점. N개 가능 (LCL).
+    - TRANSIT    : 중간 경유 (휴식·환승). 적재 변화 없음.
+    - TERMINUS   : 마지막 종료점 (보통 빈 컨 반납 디포 — 필수 X).
+
+    액션(픽업/드롭/empty/full)은 이 role + 인접 leg.move_type 조합으로 derive.
+    시간 소비형(WAIT/FUEL/SCALE) 은 더 이상 stop 으로 만들지 않고 LegCharge 로 흡수.
+    """
+    ORIGIN   = "ORIGIN"
+    DELIVERY = "DELIVERY"
+    TRANSIT  = "TRANSIT"
+    TERMINUS = "TERMINUS"
+
+
+class HandoverReason(StrEnum):
+    """v3 LegDriverSegment 의 기사 인계 사유."""
+    TERMINAL_CLOSED = "TERMINAL_CLOSED"
+    ACCIDENT        = "ACCIDENT"
+    SHIFT_CHANGE    = "SHIFT_CHANGE"
+    OTHER           = "OTHER"
+
+
+class ContainerState(StrEnum):
+    """v3 Container 작업 단위 상태 8단계 (자동 derive — HOLD/CANCELLED 만 수동).
+
+    DRAFT          : Stop 0 개. 디스패처 아직 손 안 댐.
+    PLANNED        : Stop 1+, 모든 leg PENDING. 출발 전.
+    IN_TRANSIT     : 활성 leg = IN_TRANSIT. 도로 위.
+    AT_STOP        : 어떤 Stop 도착, 다음 leg 는 있고 PENDING.
+    WAITING_PLAN   : 마지막 plan 된 Stop 도착, 다음 Stop/leg 미생성. ⚠️
+    HOLD           : 사고/사유로 보류 (수동 토글).
+    COMPLETED      : 마지막 TERMINUS 도착 + 모든 leg COMPLETED. 종착.
+    CANCELLED      : 의뢰 취소 (수동 토글).
+    """
+    DRAFT        = "DRAFT"
+    PLANNED      = "PLANNED"
+    IN_TRANSIT   = "IN_TRANSIT"
+    AT_STOP      = "AT_STOP"
+    WAITING_PLAN = "WAITING_PLAN"
+    HOLD         = "HOLD"
+    COMPLETED    = "COMPLETED"
+    CANCELLED    = "CANCELLED"
+
+
+class MoveTypeV3(StrEnum):
+    """v3 Leg.move_type 4축 형상.
+
+    - TRUCK_ONLY    : 트럭만. 차고→터미널 등.
+    - CHASSIS_ONLY  : 트럭+섀시만. 섀시 픽업/반납/이동.
+    - EMPTY_LOADED  : 빈 컨 적재 상태 이동.
+    - FULL_LOADED   : 적재 컨 이동.
+
+    기존 MoveType 매핑: LOADED→FULL_LOADED, EMPTY→EMPTY_LOADED, BOBTAIL→TRUCK_ONLY.
+    """
+    TRUCK_ONLY    = "TRUCK_ONLY"
+    CHASSIS_ONLY  = "CHASSIS_ONLY"
+    EMPTY_LOADED  = "EMPTY_LOADED"
+    FULL_LOADED   = "FULL_LOADED"
+
+
+class LegRateSource(StrEnum):
+    """v3 LegRate.base_amount 가 어떻게 산출됐는지 추적."""
+    QUOTE_FIXED   = "QUOTE_FIXED"     # rate_quote 정찰가 매칭
+    TARIFF_CALC   = "TARIFF_CALC"     # rate_tariff 거리×단가 계산
+    TARIFF_FLAT   = "TARIFF_FLAT"     # 거리 미등록 → flat_base 만
+    MANUAL        = "MANUAL"          # 디스패처 수동 입력
+    NONE          = "NONE"            # 매칭/계산 모두 실패 (₩0 + ⚠️)
+
+
+class DistanceProvider(StrEnum):
+    """v3 거리 측정 제공자 어댑터."""
+    OSRM   = "OSRM"
+    GOOGLE = "GOOGLE"
+    MANUAL = "MANUAL"
+    CACHED = "CACHED"
+
+
 class ChassisEventKind(StrEnum):
     """챠시 라이프사이클 이벤트."""
     PICKED_UP             = "PICKED_UP"              # 챠시 픽업

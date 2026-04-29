@@ -70,6 +70,17 @@ from street_turn.router import router as street_turn_router
 from settlement.router import router as settlement_router
 from analytics.router import router as analytics_router
 
+# ── Phase I-B v3 routers ────────────────────────────────────
+from container_stop.router import router as container_stop_router
+from leg_driver_segment.router import router as leg_driver_segment_router
+from rate_quote.router import router as rate_quote_router
+from rate_tariff.router import router as rate_tariff_router
+from distance_matrix.router import router as distance_matrix_router
+from leg_rate.router import router as leg_rate_router
+from location_ping.router import router as location_ping_router
+from demurrage.router import router as demurrage_router
+from settlement_report.router import router as settlement_report_router
+
 # ── TMS Phase D routers (Notification / Realtime / AI Intake / Driver Mobile) ──
 from notification.router import router as notification_router
 from realtime.router import router as realtime_router
@@ -143,6 +154,17 @@ app.include_router(leg_charge_router)
 app.include_router(street_turn_router)
 app.include_router(settlement_router)
 app.include_router(analytics_router)
+
+# ── Phase I-B v3 routers ────────────────────────────────────
+app.include_router(container_stop_router)
+app.include_router(leg_driver_segment_router)
+app.include_router(rate_quote_router)
+app.include_router(rate_tariff_router)
+app.include_router(distance_matrix_router)
+app.include_router(leg_rate_router)
+app.include_router(location_ping_router)
+app.include_router(demurrage_router)
+app.include_router(settlement_report_router)
 
 # ── TMS Phase D router 등록 ──────────────────────────────────
 app.include_router(notification_router)

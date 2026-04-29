@@ -1,4 +1,10 @@
 # src/leg_stop/model.py
+#
+# ⚠️ DEPRECATED (Phase v3): leg_stop 은 leg 내부 정차 액션 표현용으로 만들었으나
+# v3 부터는 *Container 시퀀스* 를 별도 도메인 `container_stop` 에 분리.
+# 신규 leg 생성 시에는 더 이상 leg_stop row 를 만들지 않는다.
+# 기존 데이터(H-7 까지의 시드)는 보존하되 새 코드에서 의존 금지.
+#
 from __future__ import annotations
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column

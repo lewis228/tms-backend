@@ -9,7 +9,7 @@ from sqlalchemy import (
 
 from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
-from charge_code.const.status import ChargeKind, ChargeUnit
+from charge_code.const.status import ChargeKind, ChargeUnit, ChargeCategory, PartyKind
 
 
 class ChargeCodeModel(Base, TeamScopedMixin):
@@ -36,6 +36,25 @@ class ChargeCodeModel(Base, TeamScopedMixin):
     )
     gl_account: Mapped[str | None] = mapped_column(String(64), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── v3 보강 (LegCharge 변동 라인 마스터 정밀화) ─────────────
+    # UI 라벨 (예: "10분", "건", "정차", "%")
+    unit_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # 변동 라인 분류 (UI 그룹핑/필터)
+    category: Mapped[ChargeCategory | None] = mapped_column(
+        SAEnum(ChargeCategory, name="charge_category"), nullable=True,
+    )
+    # 음수 입력 허용 (페널티/할인 등)
+    signed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False,
+    )
+    # LegCharge 생성 시 payee 기본값
+    payee_default: Mapped[PartyKind | None] = mapped_column(
+        SAEnum(PartyKind, name="party_kind"), nullable=True,
+    )
+    payer_default: Mapped[PartyKind | None] = mapped_column(
+        SAEnum(PartyKind, name="party_kind"), nullable=True,
+    )
 
     __table_args__ = (
         UniqueConstraint("team_id", "id", name="uq_charge_code_team_id_id"),

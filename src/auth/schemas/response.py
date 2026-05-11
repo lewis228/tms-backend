@@ -38,3 +38,18 @@ class PasswordCodeVerifyResponseSchema(ResponseSchema):
 class PasswordResetConfirmResponseSchema(ResponseSchema):
     """비밀번호 재설정 최종 확인 응답"""
     ok: bool = True
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Driver Mobile (폰번호 OTP)
+# ══════════════════════════════════════════════════════════════════════════
+
+class DriverOtpSendResponseSchema(ResponseSchema):
+    """기사 모바일 OTP 발송 응답."""
+    request_id: str
+    expires_in_sec: int
+
+
+class DriverOtpVerifyResponseSchema(ResponseSchema):
+    """기사 모바일 OTP 검증 성공 응답."""
+    request_id: str

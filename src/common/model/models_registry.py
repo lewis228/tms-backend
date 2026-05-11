@@ -63,3 +63,6 @@ from rate_quote.model import RateQuoteModel  # noqa: F401
 from rate_tariff.model import RateTariffModel  # noqa: F401
 from leg_rate.model import LegRateModel  # noqa: F401
 from distance_matrix.model import DistanceMatrixModel  # noqa: F401
+
+# ── Demo (Driver mobile) — 채팅 ──────────────────────────────
+from chat.model import ChatMessageModel  # noqa: F401

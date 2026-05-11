@@ -106,6 +106,15 @@ class LegModel(Base, TeamScopedMixin):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # ── Mobile 수락 / 거절 (Driver app) ──────────────────────
+    # driver 에게 offered 된 시각 (driver_id 가 세팅된 시각). NULL 이면 미할당.
+    offered_at:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # driver 가 수락한 시각. NULL = 미수락
+    accepted_at:  Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # driver 가 거절한 시각. NULL = 미거절
+    rejected_at:  Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # ── 정산 ────────────────────────────────────────────────────
     storage_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     is_settled:   Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
@@ -127,4 +136,6 @@ class LegModel(Base, TeamScopedMixin):
         Index("ix_leg_team_pickup",    "team_id", "pickup_date"),
         Index("ix_leg_team_active_id", "team_id", "is_active", "id"),
         Index("ix_leg_team_updated_at","team_id", "updated_at"),
+        # Mobile: driver 별 미수락 leg 빠른 조회
+        Index("ix_leg_team_driver_offered", "team_id", "driver_id", "offered_at", "accepted_at"),
     )

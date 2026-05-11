@@ -25,6 +25,9 @@ from auth.schemas.request import (
     PasswordResetSendCodeRequestSchema,
     PasswordResetVerifyCodeRequestSchema,
     PasswordResetConfirmRequestSchema,
+    DriverOtpRequestSchema,
+    DriverOtpVerifySchema,
+    DriverLoginSchema,
 )
 from auth.schemas.response import (
     TokenResponseSchema,
@@ -33,6 +36,8 @@ from auth.schemas.response import (
     PasswordCodeSendResponseSchema,
     PasswordCodeVerifyResponseSchema,
     PasswordResetConfirmResponseSchema,
+    DriverOtpSendResponseSchema,
+    DriverOtpVerifyResponseSchema,
 )
 from user.schemas.response import UserResponseSchema
 from common.const.settings import settings
@@ -361,3 +366,68 @@ async def _handle_oauth_callback(
     except Exception as e:
         redirect_url = f"{frontend_url}/login?error=oauth_failed"
         return RedirectResponse(url=redirect_url, status_code=302)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Driver Mobile — 폰번호 OTP 로그인
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post(
+    "/driver/otp/request",
+    response_model=DriverOtpSendResponseSchema,
+    summary="기사 모바일 OTP 발송 (폰번호)",
+)
+async def driver_otp_request(
+    body: DriverOtpRequestSchema,
+    db: AsyncSession = Depends(get_write_db),
+    redis: Redis = Depends(get_write_redis),
+):
+    """
+    기사 폰번호로 OTP 발송.
+    - 데모: SMS 는 콘솔 출력 (로그 + print)
+    - 사용자 enumeration 방지: phone 이 DB 에 없어도 성공 응답
+    """
+    svc = AuthService(db, redis)
+    return await svc.request_driver_otp(phone=body.phone)
+
+
+@router.post(
+    "/driver/otp/verify",
+    response_model=DriverOtpVerifyResponseSchema,
+    summary="기사 모바일 OTP 검증",
+)
+async def driver_otp_verify(
+    body: DriverOtpVerifySchema,
+    db: AsyncSession = Depends(get_write_db),
+    redis: Redis = Depends(get_write_redis),
+):
+    """OTP 검증 성공 시 ok 키 발급 (다음 단계 driver_login 에서 사용)."""
+    svc = AuthService(db, redis)
+    return await svc.verify_driver_otp(
+        phone=body.phone, request_id=body.request_id, code=body.code,
+    )
+
+
+@router.post(
+    "/driver/login",
+    response_model=TokenResponseSchema,
+    summary="기사 모바일 최종 로그인 (verify 통과 후 토큰 발급)",
+)
+async def driver_login(
+    body: DriverLoginSchema,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_write_db),
+    redis: Redis = Depends(get_write_redis),
+):
+    """
+    polled flow:
+      1. /driver/otp/request → SMS 발송
+      2. /driver/otp/verify  → ok 키 발급
+      3. /driver/login       → user.phone 매칭 + 토큰 발급
+    """
+    svc = AuthService(db, redis)
+    return await svc.driver_login(
+        request, response,
+        phone=body.phone, request_id=body.request_id,
+    )

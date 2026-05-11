@@ -16,3 +16,10 @@ class PaymentTermsKind(StrEnum):
     PER_LEG            = "PER_LEG"
     HOURLY             = "HOURLY"
     SALARY             = "SALARY"
+
+
+class DutyStatus(StrEnum):
+    """기사 근무 상태 (모바일 앱 토글)."""
+    OFF_DUTY = "OFF_DUTY"   # 비번 (기본)
+    ON_DUTY  = "ON_DUTY"    # 근무 중 (배차 가능)
+    IN_BREAK = "IN_BREAK"   # 휴식 중

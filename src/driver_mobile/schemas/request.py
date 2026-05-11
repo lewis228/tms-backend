@@ -45,3 +45,29 @@ class StopReportRequest(RequestSchema):
     latitude: Decimal | None = None
     longitude: Decimal | None = None
     note: str | None = Field(default=None, max_length=500)
+
+
+# ══════════════════════════════════════════════════════════════════
+# 신규: 데모용 BFF 라우트 (홈 / 배차 / 정산 / 채팅)
+# ══════════════════════════════════════════════════════════════════
+
+class DutyToggleRequest(RequestSchema):
+    """근무 상태 토글."""
+    target: str = Field(..., description="OFF_DUTY / ON_DUTY / IN_BREAK")
+
+
+class LegRejectRequest(RequestSchema):
+    """배차 거절 사유."""
+    reason: str = Field(..., max_length=500)
+
+
+class ChatSendRequest(RequestSchema):
+    """채팅 메시지 전송."""
+    content: str = Field(..., min_length=1, max_length=2000)
+
+
+class ChatMarkReadRequest(RequestSchema):
+    """채팅 읽음 처리."""
+    before_id: int | None = Field(
+        None, description="None 이면 전체. id 명시 시 그 id 이하만 읽음 처리.",
+    )

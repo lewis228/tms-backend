@@ -20,10 +20,17 @@ from user.schemas.response import UserResponseSchema
 from driver_mobile.schemas.request import (
     CheckpointRequest, LocationBatchRequest, PushTokenRequest,
     FirstPasswordChangeRequest, StopReportRequest,
+    DutyToggleRequest, LegRejectRequest, ChatSendRequest, ChatMarkReadRequest,
 )
 from driver_mobile.schemas.response import (  # noqa: F401
     TodayTasksResponse, PushTokenResponse, DriverV3TodayResponse,
+    DriverMeResponse, TodaySummaryResponse, LegOfferView, LegOfferListResponse,
+    LegSummaryView, LegHistoryListResponse, WeeklyRevenuePoint,
+    MonthlySettlementResponse, SettlementListItem, ChatMessageView,
+    DutyToggleResponse, LegDetailResponse,
 )
+from chat.service import ChatService
+from chat.schemas.request import PaginateChatMessageRequest, ChatMessageCreateRequest as _ChatCreate
 from driver_mobile.service import DriverMobileService
 from driver_mobile.service_v3 import (
     get_today_containers_for_driver, report_stop_arrive, report_stop_depart,
@@ -319,3 +326,236 @@ async def v3_stop_depart(
         db, team_id, int(me.id), stop_id,
         occurred_at=body.occurred_at,
     )
+
+
+# ════════════════════════════════════════════════════════════════════
+#  데모용 BFF 라우트 (홈 / 배차 / 정산 / 채팅)
+# ════════════════════════════════════════════════════════════════════
+
+@router.get("/me", response_model=DriverMeResponse)
+async def get_me(
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """본인 driver + user + 차량 정보 (홈 / 마이페이지)."""
+    data = await DriverMobileService(db, team_id).get_me(int(me.id))
+    return DriverMeResponse(**data)
+
+
+@router.post("/duty-status", response_model=DutyToggleResponse)
+async def toggle_duty(
+    body: DutyToggleRequest,
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+):
+    """근무 상태 토글 (OFF_DUTY / ON_DUTY / IN_BREAK)."""
+    data = await DriverMobileService(db, team_id).toggle_duty(int(me.id), body.target)
+    return DutyToggleResponse(**data)
+
+
+@router.get("/today/summary", response_model=TodaySummaryResponse)
+async def today_summary(
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """오늘 요약 — 완료 수 + 예상 수익 + 거리 + on_duty 분."""
+    data = await DriverMobileService(db, team_id).today_summary(int(me.id))
+    return TodaySummaryResponse(**data)
+
+
+@router.get("/legs/active", response_model=list[LegResponseSchema])
+async def list_active_legs(
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """진행 중 leg (IN_TRANSIT, accepted)."""
+    legs = await DriverMobileService(db, team_id).list_active_legs(int(me.id))
+    return [LegResponseSchema.model_validate(l) for l in legs]
+
+
+@router.get("/legs/pending", response_model=LegOfferListResponse)
+async def list_pending_offers(
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """미수락 배차 (배차 알림 모달 polling)."""
+    data = await DriverMobileService(db, team_id).list_pending_offers(int(me.id))
+    return LegOfferListResponse(offers=[LegOfferView(**d) for d in data])
+
+
+@router.post("/legs/{leg_id}/accept", response_model=LegResponseSchema)
+async def accept_leg(
+    leg_id: int,
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+):
+    """배차 수락 — accepted_at 기록."""
+    leg = await DriverMobileService(db, team_id).accept_offer(leg_id, user_id=int(me.id))
+    return LegResponseSchema.model_validate(leg)
+
+
+@router.post("/legs/{leg_id}/reject", response_model=LegResponseSchema)
+async def reject_leg(
+    leg_id: int,
+    body: LegRejectRequest,
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+):
+    """배차 거절 + 사유 기록 + driver_id NULL 처리."""
+    leg = await DriverMobileService(db, team_id).reject_offer(
+        leg_id, user_id=int(me.id), reason=body.reason,
+    )
+    return LegResponseSchema.model_validate(leg)
+
+
+@router.get("/legs/history", response_model=LegHistoryListResponse)
+async def list_history(
+    before_id: int | None = None,
+    limit: int = 20,
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """운행 이력 페이지네이션 (COMPLETED 만)."""
+    data = await DriverMobileService(db, team_id).list_history(
+        int(me.id), before_id=before_id, limit=min(limit, 100),
+    )
+    return LegHistoryListResponse(
+        items=[LegSummaryView(**d) for d in data["items"]],
+        has_more=data["has_more"],
+        next_cursor=data["next_cursor"],
+    )
+
+
+@router.get("/settlement/monthly", response_model=MonthlySettlementResponse)
+async def settlement_monthly(
+    year: int | None = None,
+    month: int | None = None,
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """정산 월간 통계 (총액 + 주간추이 + 상태별 카운트)."""
+    data = await DriverMobileService(db, team_id).monthly_settlement_summary(
+        int(me.id), year=year, month=month,
+    )
+    return MonthlySettlementResponse(
+        year=data["year"], month=data["month"],
+        total_amount=data["total_amount"],
+        completed_count=data["completed_count"],
+        pending_count=data["pending_count"],
+        on_hold_count=data["on_hold_count"],
+        weekly_trend=[WeeklyRevenuePoint(**w) for w in data["weekly_trend"]],
+    )
+
+
+@router.get("/settlement/list")
+async def settlement_list(
+    before_id: int | None = None,
+    limit: int = 20,
+    status: str | None = None,
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """정산 목록 (페이지네이션, 상태 필터)."""
+    data = await DriverMobileService(db, team_id).list_settlements(
+        int(me.id), before_id=before_id, limit=min(limit, 100), status_filter=status,
+    )
+    # camelCase 응답 (ResponseSchema 정책과 일치 — Flutter/Web 클라이언트 호환)
+    return {
+        "items": [SettlementListItem(**d).model_dump(by_alias=True) for d in data["items"]],
+        "hasMore": data["has_more"],
+        "nextCursor": data["next_cursor"],
+    }
+
+
+# ── 채팅 ─────────────────────────────────────────────────────
+
+@router.get("/chat/messages")
+async def chat_list_messages(
+    take: int = 30,
+    where__id__less_than: int | None = None,
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """본인 conversation 메시지 페이지네이션 (DESC = 최신부터)."""
+    req = PaginateChatMessageRequest(
+        take=take, where__id__less_than=where__id__less_than,
+    )
+    result = await ChatService(db, team_id).list_paginated_for_driver(req, int(me.id))
+    return result
+
+
+@router.post("/chat/messages")
+async def chat_send_message(
+    body: ChatSendRequest,
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+):
+    """driver → 관제. 데모용 자동 응답 1.5초 후 자동 생성."""
+    create = _ChatCreate(content=body.content)
+    return await ChatService(db, team_id).send_from_driver(create, driver_user_id=int(me.id))
+
+
+@router.post("/chat/messages/read", status_code=204)
+async def chat_mark_read(
+    body: ChatMarkReadRequest,
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+):
+    """수신 메시지 읽음 처리."""
+    await ChatService(db, team_id).mark_read(int(me.id), before_id=body.before_id)
+    return None
+
+
+@router.get("/chat/unread-count")
+async def chat_unread_count(
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """배지 카운트용 — 읽지 않은 dispatcher/system 메시지 수."""
+    count = await ChatService(db, team_id).unread_count_for_driver(int(me.id))
+    return {"unread_count": count}
+
+
+# ── 오더 상세 (화면 4) ───────────────────────────
+
+@router.get("/legs/{leg_id}", response_model=LegDetailResponse)
+async def get_leg_detail(
+    leg_id: int,
+    _1: None = Depends(access_token),
+    me: UserResponseSchema = Depends(require_driver),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """오더 상세 — leg + delivery_order + customer + locations + container 한 응답."""
+    data = await DriverMobileService(db, team_id).get_leg_detail(
+        leg_id, user_id=int(me.id),
+    )
+    return LegDetailResponse(**data)

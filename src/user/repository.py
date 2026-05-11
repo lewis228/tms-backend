@@ -221,6 +221,15 @@ class UserRepository:
         stmt = self._with_options_detail(stmt)
         return await self.db.scalar(stmt)
 
+    async def get_user_by_phone(self, phone: str) -> Optional[UserModel]:
+        """폰번호로 활성 사용자 조회 (driver mobile login). phone 은 정규화된 숫자만."""
+        stmt = select(UserModel).where(
+            UserModel.phone == phone,
+            UserModel.is_active.is_(True),
+        )
+        stmt = self._with_options_detail(stmt)
+        return await self.db.scalar(stmt)
+
     async def has_active_email_conflict(self, email: str, exclude_user_id: Optional[int] = None) -> bool:
         """유틸: 활성 이메일 충돌 여부 (자기 자신 제외 가능)"""
         email = _norm(email)

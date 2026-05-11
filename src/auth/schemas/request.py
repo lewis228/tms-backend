@@ -40,3 +40,25 @@ class PasswordResetConfirmRequestSchema(RequestSchema):
     email: EmailStr
     request_id: str = Field(min_length=8)   #  alias 제거
     new_password: str = Field(min_length=8)  #  alias 제거
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Driver Mobile (폰번호 OTP)
+# ══════════════════════════════════════════════════════════════════════════
+
+class DriverOtpRequestSchema(RequestSchema):
+    """기사 모바일 OTP 발송 요청 (폰번호)."""
+    phone: str = Field(min_length=8, max_length=30, description="010-1234-5678 또는 +82 형식")
+
+
+class DriverOtpVerifySchema(RequestSchema):
+    """기사 모바일 OTP 검증 요청."""
+    phone: str = Field(min_length=8, max_length=30)
+    request_id: str = Field(min_length=8)
+    code: str = Field(min_length=6, max_length=6)
+
+
+class DriverLoginSchema(RequestSchema):
+    """기사 모바일 최종 로그인 (verify 통과 후)."""
+    phone: str = Field(min_length=8, max_length=30)
+    request_id: str = Field(min_length=8)

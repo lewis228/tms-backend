@@ -1,20 +1,25 @@
 # src/driver/model.py
 from __future__ import annotations
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    String, Text, Integer, Numeric, Date, ForeignKey,
+    String, Text, Integer, Numeric, Date, DateTime, ForeignKey,
     Index, UniqueConstraint, Enum as SAEnum,
 )
 
 from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
-from driver.const.status import EmploymentKind, PaymentTermsKind
+from driver.const.status import EmploymentKind, PaymentTermsKind, DutyStatus
 
 
 class DriverModel(Base, TeamScopedMixin):
-    """기사 (Team-Scoped). User 와 1:1 — User.role=DRIVER. H-3: 트럭 분리. H-5: 고용/정산 확장."""
+    """기사 (Team-Scoped). User 와 1:1 — User.role=DRIVER. H-3: 트럭 분리. H-5: 고용/정산 확장.
+
+    Mobile (driver app) 추가:
+      - duty_status: 근무 상태 토글 (OFF_DUTY / ON_DUTY / IN_BREAK)
+      - duty_changed_at: 마지막 토글 시각 (오늘 근무시간 계산용)
+    """
     __tablename__ = "driver"
 
     user_id: Mapped[int] = mapped_column(
@@ -23,6 +28,17 @@ class DriverModel(Base, TeamScopedMixin):
     license_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     license_state:  Mapped[str | None] = mapped_column(String(8),  nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── Mobile 근무 상태 ──────────────────────────────
+    duty_status: Mapped[DutyStatus] = mapped_column(
+        SAEnum(DutyStatus, name="duty_status"),
+        default=DutyStatus.OFF_DUTY,
+        server_default=DutyStatus.OFF_DUTY.value,
+        nullable=False,
+    )
+    duty_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
 
     # ── H-5: 고용 형태 + 외부 carrier 소속 ─────────────
     employment_kind: Mapped[EmploymentKind] = mapped_column(

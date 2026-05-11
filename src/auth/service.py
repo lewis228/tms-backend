@@ -832,3 +832,187 @@ class AuthService:
         rt = authz.split(" ", 1)[1]
         _, new_refresh = await self.rotate_token(rt, is_refresh=True)
         return RefreshTokenOnlyResponseSchema(refresh_token=new_refresh)  #  snake_case
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Driver Mobile — 폰번호 OTP 로그인
+    # ══════════════════════════════════════════════════════════════════════════
+    # Redis 키:
+    #   drvotp:{phone}        = "code|request_id|exp_epoch"  TTL OTP_TTL+grace
+    #   drvotp_try:{phone}    = 시도 횟수 카운터
+    #   drvotp_send:{phone}   = 발송 횟수 (rate limit)
+    #   drvotp_ok:{phone}     = request_id (verify 통과 후 login 단계 token)
+
+    def _drvotp_key(self, phone: str) -> str:    return f"drvotp:{phone}"
+    def _drvotp_try(self, phone: str) -> str:    return f"drvotp_try:{phone}"
+    def _drvotp_send(self, phone: str) -> str:   return f"drvotp_send:{phone}"
+    def _drvotp_ok(self, phone: str) -> str:     return f"drvotp_ok:{phone}"
+
+    async def request_driver_otp(self, *, phone: str):
+        """기사 모바일 OTP 발송 (Mock SMS — 콘솔 출력).
+
+        반환: DriverOtpSendResponseSchema(request_id, expires_in_sec)
+        ⚠️ 사용자 enumeration 방지 — phone 이 DB 에 없어도 성공 응답.
+           실제 user 검증은 driver_login 단계에서.
+        """
+        from auth.utils.sms import send_otp_sms, normalize_phone
+        from auth.schemas.response import DriverOtpSendResponseSchema
+
+        phone_n = normalize_phone(phone)
+        if len(phone_n) < 8:
+            raise AppException(code="INVALID_PHONE", message="유효하지 않은 폰번호.", status_code=400)
+
+        # rate limit (발송 횟수)
+        send_key = self._drvotp_send(phone_n)
+        n = await self.redis.incr(send_key)
+        if n == 1:
+            await self.redis.expire(send_key, int(settings.OTP_BLOCK_SEC))
+        if n > settings.OTP_SEND_LIMIT:
+            ttl = await self.redis.ttl(send_key)
+            ttl = int(settings.OTP_BLOCK_SEC) if (ttl is None or ttl < 0) else int(ttl)
+            raise AppException(
+                code="TOO_MANY_REQUESTS",
+                message="요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+                status_code=429,
+                detail={"send_limit": settings.OTP_SEND_LIMIT, "seconds_left": max(0, ttl)},
+            )
+
+        now = int(time.time())
+        code = f"{secrets.randbelow(10**6):06d}"
+        request_id = uuid.uuid4().hex
+        expire_epoch = now + settings.OTP_TTL
+        value = f"{code}|{request_id}|{expire_epoch}"
+
+        pipe = self.redis.pipeline(transaction=True)
+        pipe.set(self._drvotp_key(phone_n), value, ex=settings.OTP_TTL + settings.OTP_GRACE_SEC)
+        pipe.delete(self._drvotp_try(phone_n))
+        await pipe.execute()
+
+        # SMS 발송 (mock — 콘솔 출력)
+        send_otp_sms(phone=phone_n, code=code, app_name=settings.APP_NAME)
+
+        return DriverOtpSendResponseSchema(
+            request_id=request_id, expires_in_sec=settings.OTP_TTL,
+        )
+
+    async def verify_driver_otp(self, *, phone: str, request_id: str, code: str):
+        """기사 모바일 OTP 검증.
+
+        반환: DriverOtpVerifyResponseSchema(request_id)
+        성공 시 drvotp_ok:{phone} = request_id 가 OTP_OK_TTL 동안 보관.
+        다음 단계 driver_login 에서 이 ok 키를 검증.
+        """
+        from auth.utils.sms import normalize_phone
+        from auth.schemas.response import DriverOtpVerifyResponseSchema
+
+        phone_n = normalize_phone(phone)
+
+        # 기존 _verify_otp_common 은 email 인자라 — 여기 별도로 구현 (phone 키 prefix 사용)
+        otp_key = self._drvotp_key(phone_n)
+        try_key = self._drvotp_try(phone_n)
+
+        raw = await self.redis.get(otp_key)
+        if not raw:
+            raise AppException(
+                code="OTP_NOT_FOUND",
+                message="요청 내역이 없습니다. 다시 시도해 주세요.",
+                status_code=404,
+                detail={"attempts_left": settings.OTP_MAX_TRIES, "seconds_left": 0},
+            )
+        raw = raw.decode() if isinstance(raw, (bytes, bytearray)) else raw
+
+        try:
+            saved_code, saved_req, exp = raw.split("|")
+            exp = int(exp)
+        except Exception:
+            raise AppException(code="OTP_CORRUPTED", message="잘못된 상태입니다.", status_code=400)
+
+        now = int(time.time())
+        if request_id != saved_req:
+            raise AppException(code="OTP_REQUEST_MISMATCH", message="이전 코드이거나 잘못된 요청입니다.", status_code=400)
+        if now > (exp + settings.OTP_GRACE_SEC):
+            raise AppException(code="OTP_EXPIRED", message="코드가 만료되었습니다.", status_code=400)
+
+        if code != saved_code:
+            n = await self.redis.incr(try_key)
+            await self.redis.expire(try_key, max(1, (exp + settings.OTP_GRACE_SEC) - now))
+            attempts_left = max(0, settings.OTP_MAX_TRIES - int(n))
+            if int(n) >= settings.OTP_MAX_TRIES:
+                pipe = self.redis.pipeline(transaction=True)
+                pipe.delete(otp_key)
+                pipe.delete(try_key)
+                await pipe.execute()
+                raise AppException(
+                    code="OTP_TOO_MANY_TRIES",
+                    message="시도 횟수가 초과되었습니다. 인증 코드를 재발송해 주세요.",
+                    status_code=429,
+                    detail={"attempts_left": 0},
+                )
+            raise AppException(
+                code="OTP_NOT_MATCH",
+                message="코드가 일치하지 않습니다.",
+                status_code=400,
+                detail={"attempts_left": attempts_left},
+            )
+
+        # OK 키 발급 (login 단계에서 검증)
+        ok_ttl = int(getattr(settings, "OTP_OK_TTL", 900))
+        await self.redis.set(self._drvotp_ok(phone_n), request_id, ex=ok_ttl)
+
+        return DriverOtpVerifyResponseSchema(request_id=request_id)
+
+    async def driver_login(
+        self,
+        request: Request,
+        response: Response,
+        *,
+        phone: str,
+        request_id: str,
+    ) -> TokenResponseSchema:
+        """기사 모바일 최종 로그인. ok 키 검증 + user.phone 으로 user 찾기 + tokens 발급.
+
+        에러:
+          - DRIVER_OTP_NOT_VERIFIED: verify 단계 미완 (또는 만료)
+          - DRIVER_NOT_REGISTERED: 폰번호로 등록된 driver 없음 (관리자가 미리 driver 추가 필요)
+          - DRIVER_INACTIVE: user.is_active=False
+        """
+        from auth.utils.sms import normalize_phone
+
+        phone_n = normalize_phone(phone)
+
+        # 1) ok 키 검증
+        ok_raw = await self.redis.get(self._drvotp_ok(phone_n))
+        if not ok_raw:
+            raise AppException(
+                code="DRIVER_OTP_NOT_VERIFIED",
+                message="OTP 인증이 만료되었거나 완료되지 않았습니다. 다시 시도해 주세요.",
+                status_code=400,
+            )
+        ok_req = ok_raw.decode() if isinstance(ok_raw, (bytes, bytearray)) else ok_raw
+        if ok_req != request_id:
+            raise AppException(
+                code="DRIVER_OTP_REQUEST_MISMATCH",
+                message="요청 정보가 일치하지 않습니다. 처음부터 다시 시도해 주세요.",
+                status_code=400,
+            )
+
+        # 2) user 찾기 (phone 으로)
+        user = await self.user_repository.get_user_by_phone(phone_n)
+        if not user:
+            raise AppException(
+                code="DRIVER_NOT_REGISTERED",
+                message="등록되지 않은 폰번호입니다. 관리자에게 문의해주세요.",
+                status_code=404,
+            )
+        if not user.is_active:
+            raise AppException(
+                code="DRIVER_INACTIVE",
+                message="비활성 계정입니다. 관리자에게 문의해주세요.",
+                status_code=403,
+            )
+
+        # 3) ok 키 즉시 삭제 (단회용)
+        await self.redis.delete(self._drvotp_ok(phone_n))
+
+        # 4) UserResponseSchema 변환 후 기존 login_user 위임 (세션/토큰 발급)
+        user_schema = UserResponseSchema.model_validate(user)
+        return await self.login_user(request, response, user_schema)

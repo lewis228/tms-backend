@@ -23,4 +23,8 @@ def decode_jwt_token(token: str) -> TokenPayloadResponseSchema:
         type=payload.get("type", "access"),
         iat=payload.get("iat"),
         exp=payload.get("exp"),
+        # access_payload 에 박힌 role / team_id claim 도 노출.
+        # team_id 는 DRIVER 만 박힘 → 다른 role 은 None.
+        role=payload.get("role"),
+        team_id=payload.get("team_id"),
     )

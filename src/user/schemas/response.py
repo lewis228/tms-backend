@@ -88,6 +88,10 @@ class TokenPayloadResponseSchema(ResponseSchema):
     type: str
     iat: Optional[int] = None
     exp: int
+    # JWT claim — 토큰만으로 role / team 판정 (DB 0).
+    # role: 모든 access 토큰에 박힘. team_id: driver 만 박힘 (1:1 가정).
+    role: Optional[str] = None
+    team_id: Optional[int] = None
 
 
 # ─────────────────────────────────────────────

@@ -3,6 +3,7 @@
 X-Team-Id 헤더에서 팀 ID를 추출하고, 요청 유저의 팀 소속 여부를 검증한다.
 
 검증 순서:
+  0) 헤더 없으면 → 토큰 claim 의 team_id fallback (DRIVER 1:1 가정) — DB/Redis 0
   1) Redis 캐시 (RBAC 메타 또는 멤버십 캐시) → O(1)
   2) 캐시 미스 시 DB 조회 → user_team 테이블 EXISTS
   3) 비소속 → 403 Forbidden
@@ -28,7 +29,18 @@ async def get_team_scope(
     w_redis: Redis = Depends(get_write_redis),
     db: AsyncSession = Depends(get_read_db),
 ) -> int:
+    # ── Fallback: 헤더 없으면 토큰 claim 의 team_id 사용 (DRIVER 1:1 가정) ──
+    # DRIVER 는 한 운전기사 = 한 회사 → 토큰 발급 시 access_payload 에 team_id 박힘.
+    # bearer_token 가드가 raw JWT payload 를 request.state.payload 에 저장 (decode 결과 dict).
+    # request.state.user 는 UserResponseSchema 라 team_id 필드 없음 → payload 를 직접 본다.
+    # DB / Redis 추가 호출 0 — O(1) 추출. JWT 서명으로 위변조 차단.
+    # Dispatcher / Admin 은 토큰에 team_id claim 없음 (N:M) → 기존 헤더 검증 경로 그대로.
     if x_team_id is None:
+        payload = getattr(request.state, "payload", None)
+        if isinstance(payload, dict):
+            token_team_id = payload.get("team_id")
+            if token_team_id is not None:
+                return int(token_team_id)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-Team-Id header 가 없다.",

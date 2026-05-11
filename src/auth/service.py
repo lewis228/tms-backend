@@ -271,13 +271,33 @@ class AuthService:
 
         access_jti = new_token_id()
         access_exp = exp_in(settings.ACCESS_TTL)
+        role_str = getattr(getattr(user, "role", None), "value", str(getattr(user, "role", "")))
         access_payload = {
             "sub": str(uid), "sid": sid, "did": did,
             "type": "access", "jti": access_jti,
             "iat": utc_ts(), "exp": access_exp,
-            # WS / 미들웨어가 토큰만으로 role 판정할 수 있게 노출 (N:M team 는 별도 query 로 결정)
-            "role": getattr(getattr(user, "role", None), "value", str(getattr(user, "role", ""))),
+            # WS / 미들웨어가 토큰만으로 role 판정할 수 있게 노출.
+            "role": role_str,
         }
+
+        # DRIVER 는 1:1 team 관계 (한 운전기사 = 한 회사) → 토큰에 team_id claim 박아
+        # 이후 모든 요청에서 DB/Redis 0 으로 team_id 추출 (X-Team-Id 헤더 불필요).
+        # Dispatcher / Admin 은 N:M 가능 → 기존대로 X-Team-Id 헤더 사용.
+        if role_str == "DRIVER":
+            # 지역 import — auth → driver 의존 방향 침범 최소화 (예외적 cross-domain).
+            from driver.model import DriverModel
+            from sqlalchemy import select
+            driver_team_id = await self.db.scalar(
+                select(DriverModel.team_id)
+                .where(
+                    DriverModel.user_id == uid,
+                    DriverModel.is_active.is_(True),
+                )
+                .limit(1)
+            )
+            if driver_team_id is not None:
+                access_payload["team_id"] = int(driver_team_id)
+
         access = jwt.encode(access_payload, settings.JWT_SECRET, algorithm=settings.ALGORITHM)
         refresh = self.sign_token(sub=uid, sid=sid, did=did, is_refresh=True)
 

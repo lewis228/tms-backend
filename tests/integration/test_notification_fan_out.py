@@ -97,7 +97,7 @@ async def test_fan_out_inactive_membership_excluded(db_session):
     ut.is_active = False
     await db_session.commit()
 
-    event = RealtimeEvent.now(type="settlement.calculated", team_id=team.id)
+    event = RealtimeEvent.now(type="leg.created", team_id=team.id)
     n = await fan_out_event(db_session, event)
     await db_session.commit()
     assert n == 1

@@ -232,7 +232,7 @@ class DriverMobileService:
         earnings = await self._earnings_by_leg(leg_ids)
         revenue = sum((e["amount"] for e in earnings.values()), Decimal(0))
 
-        # 거리 — 데모용 단순화: 완료된 leg 1건당 35km 가정 (실제는 distance_matrix join)
+        # 거리 — 데모용 단순화: 완료된 leg 1건당 35km 가정 (실제 거리 연동은 추후)
         distance_km = Decimal(completed_count * 35)
 
         # on_duty 누적 — duty_changed_at 기반 단순 계산 (현재 ON_DUTY 면 now - changed_at)
@@ -487,16 +487,12 @@ class DriverMobileService:
         limit: int = 20,
         status_filter: str | None = None,
     ) -> dict:
-        """정산 목록 — driver 의 leg 들의 settlement 페이지네이션."""
+        """정산 목록 — 재설계: 구 settlement 제거. driver 의 COMPLETED leg 를 payroll 라인 수익과 함께 페이지네이션."""
         driver_id = await self.resolve_driver_id(user_id)
 
-        # 본 driver 의 settlement 만 (leg.driver_id 매칭)
+        # 본 driver 의 완료 leg (leg 단위로 정산 표시 — per-leg settlement 폐지, payroll_line 으로 대체)
         stmt = (
-            select(SettlementModel, LegModel, DeliveryOrderModel, CustomerModel)
-            .join(LegModel, and_(
-                LegModel.team_id == SettlementModel.team_id,
-                LegModel.id == SettlementModel.leg_id,
-            ))
+            select(LegModel, DeliveryOrderModel, CustomerModel)
             .join(DeliveryOrderModel, and_(
                 DeliveryOrderModel.team_id == LegModel.team_id,
                 DeliveryOrderModel.id == LegModel.delivery_order_id,
@@ -506,38 +502,37 @@ class DriverMobileService:
                 CustomerModel.id == DeliveryOrderModel.customer_id,
             ))
             .where(
-                SettlementModel.team_id == self.team_id,
-                SettlementModel.is_active.is_(True),
+                LegModel.team_id == self.team_id,
+                LegModel.is_active.is_(True),
                 LegModel.driver_id == driver_id,
+                LegModel.status == LegStatus.COMPLETED,
             )
-            .order_by(SettlementModel.id.desc())
+            .order_by(LegModel.id.desc())
             .limit(limit + 1)
         )
-        if status_filter:
-            try:
-                status_enum = SettlementStatus(status_filter)
-                stmt = stmt.where(SettlementModel.settlement_status == status_enum)
-            except ValueError:
-                pass
         if before_id is not None:
-            stmt = stmt.where(SettlementModel.id < before_id)
+            stmt = stmt.where(LegModel.id < before_id)
 
         rows = (await self.db.execute(stmt)).all()
         has_more = len(rows) > limit
         rows = rows[:limit]
 
-        items = [
-            {
-                "settlement_id": s.id,
-                "leg_id": s.leg_id,
+        earnings = await self._earnings_by_leg([leg.id for leg, _do, _c in rows])
+        items = []
+        for leg, _do, customer in rows:
+            e = earnings.get(leg.id)
+            status = "PAID" if (e and e["settled"]) else ("PENDING" if e else "UNBILLED")
+            if status_filter and status_filter.upper() != status:
+                continue
+            items.append({
+                "settlement_id": leg.id,   # leg 기준 (per-leg settlement 폐지)
+                "leg_id": leg.id,
                 "delivery_order_id": leg.delivery_order_id,
                 "customer_name": customer.name if customer else None,
-                "settlement_status": s.settlement_status.value,
-                "final_amount": s.final_amount,
+                "settlement_status": status,
+                "final_amount": e["amount"] if e else None,
                 "completed_at": leg.completed_at,
-            }
-            for s, leg, _do, customer in rows
-        ]
+            })
         next_cursor = items[-1]["settlement_id"] if has_more and items else None
         return {"items": items, "has_more": has_more, "next_cursor": next_cursor}
 
@@ -598,16 +593,12 @@ class DriverMobileService:
                 select(LocationModel).where(LocationModel.id == leg.delivery_location_id)
             )).scalar_one_or_none()
 
-        # settlement 가 있으면 운임 가져옴
+        # 운임 — payroll 라인 base (재설계: 구 settlement 제거)
         revenue: Decimal | None = None
-        s_stmt = select(SettlementModel).where(
-            SettlementModel.team_id == self.team_id,
-            SettlementModel.leg_id == leg.id,
-            SettlementModel.is_active.is_(True),
-        )
-        settle = (await self.db.execute(s_stmt)).scalar_one_or_none()
-        if settle:
-            revenue = settle.final_amount or settle.system_total
+        earnings = await self._earnings_by_leg([leg.id])
+        e = earnings.get(leg.id)
+        if e:
+            revenue = e["amount"]
 
         return {
             "leg_id": leg.id,

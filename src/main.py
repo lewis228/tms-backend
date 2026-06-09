@@ -8,10 +8,9 @@ ste/backend_sample 패턴:
   - 예외 핸들러 일괄 등록
   - 도메인 router 명시 등록
 
-TMS Phase A — 시스템 도메인만 등록 (auth/user/team/rbac/file).
-TMS 도메인 router (customer/terminal/vessel/location/driver/delivery_order/leg/
-street_turn/settlement/rate_setting/notification/realtime/ai_intake/driver_mobile)
-는 Phase B 이후 추가.
+전 도메인 router 를 명시 등록 (마스터 / D-O·Container·Leg / 요율 서브시스템 /
+payroll·invoice / 모바일·실시간·AI·시스템). 재설계로 구 v3 요율·정산 클러스터
+(rate_card/quote/tariff/leg_rate/distance_matrix/leg_charge/settlement) 는 제거됨.
 """
 import asyncio
 import logging  # noqa: F401

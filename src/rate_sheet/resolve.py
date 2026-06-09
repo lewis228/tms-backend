@@ -1,9 +1,9 @@
 # src/rate_sheet/resolve.py
 """요율 종합 해석 엔진 — driver → 유효 요율그룹 → method 분기 → 단가 산출.
 
-leg 재설계(Phase 3) 전에 정산/디스패치 미리보기에 쓰는 resolve_leg_rate 의 전구체.
-leg 가 생기면 leg 의 (driver, work_date, move_type, from_point, dest_zip/city, container_size,
-miles/hours) 를 뽑아 이 RateResolver.resolve 를 호출해 LegRate snapshot 을 동결한다.
+payroll/invoice 가 정산·청구 시점에 사용. payroll.resolve.resolve_leg_rate 가 leg 의
+(driver, work_date, move_type, rate_point, dest_zip/city, container_size, miles/hours) 를
+뽑아 이 RateResolver.resolve 를 호출하고, 결과 base 를 payroll_line 에 snapshot 동결한다.
 """
 from __future__ import annotations
 from datetime import date

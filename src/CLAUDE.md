@@ -52,24 +52,34 @@ src/
 ├── equipment_pool/            ─ 장비 풀
 ├── chassis/                   ─ 샤시
 │
-│  ─── D/O / Container / Leg / Settlement (Phase C) ────
-├── rate_setting/              ─ 운임 설정 (전사 단위)
+│  ─── D/O / Container / Leg (Phase C) ────
 ├── charge_code/               ─ 요금 코드 마스터
-├── rate_card/                 ─ 운임 카드 (고객별)
-├── delivery_order/            ─ ⭐ TMS 대표 도메인 (헤더, state machine)
-├── container/                 ─ D/O 의 컨테이너 라인
+├── delivery_order/            ─ ⭐ TMS 대표 도메인 (헤더, state machine, Hold/Cancel overlay)
+├── container/                 ─ D/O 의 컨테이너 라인 (=Shipment) + container_event
 ├── container_stop/            ─ 컨테이너의 정차 지점
 ├── chassis_event/             ─ 샤시 이벤트 (append-only)
-├── leg/                       ─ 트럭 한 대의 운송 구간 (state machine)
+├── leg/                       ─ 트럭 한 대의 운송 구간 (state machine, apply_load_type/reissue)
 ├── leg_stop/                  ─ leg 의 stop 들
-├── leg_charge/                ─ leg 의 추가 요금
+├── leg_layer/                 ─ leg Layer2 addon / Layer3 charge_event / stop_off
 ├── leg_driver_segment/        ─ leg 안에서 driver 가 바뀌는 구간
-├── leg_rate/                  ─ leg 의 운임 산출
+├── load_type_template/        ─ Leg 청사진 템플릿 → leg 자동생성
 ├── street_turn/               ─ 컨테이너 직접 이전 (창고 우회) — 승인 워크플로우
-├── settlement/                ─ 정산
-├── settlement_report/         ─ 정산 리포트
-├── demurrage/                 ─ demurrage / detention 산출
-├── distance_matrix/           ─ 거리 매트릭스 (지오 헬퍼)
+├── dual_transaction/          ─ 반납 leg + 픽업 leg 1드라이버 묶음
+│
+│  ─── 요율 서브시스템 (재설계) ──────────────────────────
+├── rate_point/                ─ 요율표 행 (Terminal/Yard)
+├── rate_zone/                 ─ 요율표 열 (zip/city member) + geojson
+├── rate_group/                ─ 정산/요율 그룹 (method ZONE/CITY/MILE/HOURLY)
+├── rate_sheet/                ─ 요율표 슬롯 + rate_entry(유효일자) + versioning/resolve
+├── rate_multiplier/           ─ 컨테이너 배율
+├── driver_rate_assignment/    ─ 드라이버↔요율그룹 배정 (유효일자)
+├── accessorial/               ─ 부가요금 규칙 마스터
+├── rate_import/               ─ Excel/CSV 입출력
+│
+│  ─── 정산 · 청구 (재설계) ──────────────────────────────
+├── payroll/                   ─ 드라이버 정산 (settlement/line/charge) — RateResolver snapshot
+├── invoice/                   ─ 고객 청구 (cost-plus 원가프리필+마진)
+├── audit_log/                 ─ 활동 타임라인 (append-only)
 │
 │  ─── Mobile / Realtime / AI (Phase D) ──────────────────
 ├── location_ping/             ─ driver 의 실시간 위치 (append-only)
@@ -91,8 +101,9 @@ src/
 | 글로벌 마스터 | `user`, `team`, `rbac/permissions`, `file` | ❌ | ✅ | 멀티테넌시 예외 |
 | 인증 | `auth`, `invite`, `api_key` | 부분 | ✅ | invite/api_key 는 팀 scoped |
 | 비즈니스 마스터 | `customer`, `terminal`, `vessel`, `location`, `driver`, `truck`, `equipment_pool`, `chassis` | ✅ | ✅ | TMS 마스터 |
-| 비즈니스 트랜잭션 | `delivery_order`, `container`, `container_stop`, `chassis_event`, `leg`, `leg_stop`, `leg_charge`, `leg_driver_segment`, `leg_rate`, `street_turn` | ✅ | ✅ | D/O ↔ Leg 핵심 워크플로우 |
-| Rate / Settlement | `rate_setting`, `charge_code`, `rate_card`, `rate_quote`, `rate_tariff`, `settlement`, `settlement_report`, `demurrage`, `distance_matrix` | ✅ | ✅ | 운임 / 정산 |
+| 비즈니스 트랜잭션 | `delivery_order`, `container`, `container_stop`, `chassis_event`, `leg`, `leg_stop`, `leg_layer`, `leg_driver_segment`, `load_type_template`, `street_turn`, `dual_transaction` | ✅ | ✅ | D/O ↔ Leg 핵심 워크플로우 |
+| Rate (재설계) | `charge_code`, `rate_point`, `rate_zone`, `rate_group`, `rate_sheet`, `rate_multiplier`, `driver_rate_assignment`, `accessorial`, `rate_import` | ✅ | ✅ | 요율 서브시스템 (유효일자/4방식) |
+| 정산 · 청구 (재설계) | `payroll`, `invoice`, `audit_log` | ✅ | ✅ | 드라이버 정산 + 고객 청구(cost-plus) |
 | Mobile / Realtime | `location_ping`, `push_token`, `notification`, `realtime` | ✅ | ✅ | 모바일 백엔드 |
 | AI / Analytics | `ai_intake`, `analytics` | ✅ | ai_intake ✅ / analytics ❌ | AI 자동입력 / 집계 |
 | BFF | `driver_mobile` | — | ❌ | 다른 도메인 service 조립 |

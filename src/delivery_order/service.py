@@ -221,7 +221,7 @@ class DeliveryOrderService:
         """
         커서 기반 페이지네이션 + H-10 enrich:
           - container_count / container_completed_count
-          - margin_preview (revenue - payouts from leg_charge)
+          - margin_preview (재설계: 매출 invoice 청구 − 지급 payroll base)
           - eta_status (OVERDUE / URGENT / OK / NONE)
         """
         result = await self.repo.get_paginated(request)

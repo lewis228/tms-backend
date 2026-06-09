@@ -2,8 +2,8 @@
 """요율 조회 엔진 — work_date 기준 셀 단가 해석.
 
 셀 단위 해석만 담당(시트/셀 좌표 + work_date). 드라이버→유효그룹→method→시트 선택과
-컨테이너 배율 적용 등 leg 단위 종합 해석(resolve_leg_rate)은 leg 재설계(Phase 3) 에서
-이 모듈의 resolve_cell 을 호출해 조립한다.
+컨테이너 배율 적용 등 leg 단위 종합 해석은 rate_sheet/resolve.py 의 RateResolver 가
+이 모듈의 resolve_cell 을 호출해 조립한다(payroll/invoice 가 사용).
 """
 from __future__ import annotations
 from datetime import date

@@ -26,10 +26,7 @@ _EVENT_TITLES: dict[str, str] = {
     "do.status_changed":    "D/O 상태가 변경되었습니다",
     "leg.created":          "새 Leg 이 생성되었습니다",
     "leg.status_changed":   "Leg 상태가 변경되었습니다",
-    "settlement.calculated":"정산이 계산되었습니다",
-    "settlement.adjusted":  "정산이 조정되었습니다",
-    "settlement.approved":  "정산이 승인되었습니다",
-    "settlement.unapproved":"정산 승인이 취소되었습니다",
+    # 재설계: 구 settlement 도메인 제거 → settlement.* 알림 제거(정산은 payroll 도메인).
     # v3: 컨테이너가 WAITING_PLAN 으로 진입할 때만 디스패처에게 inbox 알림 (next-stop 미생성).
     "container.waiting_plan": "⚠️ 컨테이너 다음 stop 미생성",
 }
@@ -45,10 +42,6 @@ def _format_body(event: RealtimeEvent) -> str | None:
         do_id = p.get("deliveryOrderId")
         if do_id:
             return f"D/O {do_id}"
-    if event.type.startswith("settlement."):
-        sid = p.get("settlementId")
-        if sid:
-            return f"Settlement {sid}"
     if event.type == "container.waiting_plan":
         cid = p.get("containerId")
         if cid:

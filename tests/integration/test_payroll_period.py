@@ -12,7 +12,7 @@ import pytest
 
 from leg.const.status import LegStatus
 from payroll.periods import biweekly_period, next_period, period_index
-from payroll.schemas.request import PayrollBuildPeriodRequest
+from payroll.schemas.request import PayrollBuildPeriodRequest, PayrollBuildRequest
 from payroll.service import PayrollService
 
 from tests.integration.factories import (
@@ -107,3 +107,35 @@ async def test_period_summary_aggregates(db_session):
     assert summary.count == 1
     assert summary.driver_count == 1
     assert summary.period_start == _PERIOD_START
+
+
+@pytest.mark.asyncio
+async def test_confirm_blocked_when_lines_unresolved(db_session):
+    """요율 미설정 leg → UNRESOLVED 라인 → confirm 차단(핵심 비즈니스 룰)."""
+    from common.exceptions.base import ConflictException
+    from payroll.const.status import PayrollLineSource, PayrollStatus
+
+    team = await make_team(db_session)
+    customer = await make_customer(db_session, team=team)
+    do = await make_delivery_order(db_session, team=team, customer=customer)
+    user = await make_user(db_session)
+    driver = await make_driver(db_session, team=team)
+    await _completed_leg(db_session, team, do, driver, day=9)  # 요율 설정 없음 → UNRESOLVED
+    await db_session.commit()
+
+    svc = PayrollService(db_session, team.id)
+    detail = await svc.build(
+        PayrollBuildRequest(driver_id=driver.id, period_start=_PERIOD_START, period_end=_PERIOD_END),
+        actor_user_id=user.id,
+    )
+    await db_session.commit()
+    # 라인이 UNRESOLVED 인지 확인
+    assert any(l.source == PayrollLineSource.UNRESOLVED for l in detail.lines)
+
+    # confirm 은 ConflictException 으로 차단되어야 한다
+    with pytest.raises(ConflictException):
+        await svc.confirm(detail.id, actor_user_id=user.id)
+
+    # 상태는 여전히 DRAFT
+    refetched = await svc.get(detail.id)
+    assert refetched.status == PayrollStatus.DRAFT

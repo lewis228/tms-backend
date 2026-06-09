@@ -532,26 +532,31 @@ from equipment_pool.model import EquipmentPoolModel
 
 # D/O / Container / Leg
 from delivery_order.model import DeliveryOrderModel
-from container.model import ContainerModel
+from container.model import ContainerModel, ContainerEventModel
 from container_stop.model import ContainerStopModel
 from chassis_event.model import ChassisEventModel
 from leg.model import LegModel
 from leg_stop.model import LegStopModel
-from leg_charge.model import LegChargeModel
+from leg_layer.model import LegAddonModel, LegChargeEventModel, LegStopOffModel
 from leg_driver_segment.model import LegDriverSegmentModel
-from leg_rate.model import LegRateModel
+from load_type_template.model import LoadTypeTemplateModel, LoadTypeTemplateStepModel
 from street_turn.model import StreetTurnModel
+from dual_transaction.model import DualTransactionModel
 
-# Rate / Settlement
-from rate_setting.model import RateSettingModel
+# Rate (재설계) — 요율 서브시스템
 from charge_code.model import ChargeCodeModel
-from rate_card.model import RateCardModel
-from rate_quote.model import RateQuoteModel
-from rate_tariff.model import RateTariffModel
-from settlement.model import SettlementModel
-from settlement_report.model import SettlementReportModel
-from demurrage.model import DemurrageModel
-from distance_matrix.model import DistanceMatrixModel
+from rate_point.model import RatePointModel
+from rate_zone.model import RateZoneModel, RateZoneMemberModel
+from rate_group.model import RateGroupModel
+from rate_sheet.model import RateSheetModel, RateEntryModel, RateEntryHistoryModel
+from rate_multiplier.model import RateMultiplierModel
+from driver_rate_assignment.model import DriverRateAssignmentModel
+from accessorial.model import AccessorialModel
+
+# Settlement / Invoice (재설계)
+from payroll.model import PayrollSettlementModel, PayrollLineModel, PayrollChargeModel
+from invoice.model import InvoiceModel, InvoiceLineModel
+from audit_log.model import AuditLogModel
 
 # Mobile / Realtime
 from location_ping.model import LocationPingModel

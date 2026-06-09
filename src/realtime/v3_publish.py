@@ -33,13 +33,5 @@ EVT_LEG_SEGMENT_CREATED = "leg_segment.created"
 EVT_LEG_SEGMENT_UPDATED = "leg_segment.updated"
 EVT_LEG_SEGMENT_DELETED = "leg_segment.deleted"
 
-EVT_LEG_RATE_UPDATED = "leg_rate.updated"
-EVT_LEG_CHARGE_CREATED = "leg_charge.created"
-EVT_LEG_CHARGE_UPDATED = "leg_charge.updated"
-EVT_LEG_CHARGE_DELETED = "leg_charge.deleted"
-
 EVT_CONTAINER_STATE_CHANGED = "container.state_changed"
-
-EVT_RATE_QUOTE_CHANGED  = "rate_quote.changed"
-EVT_RATE_TARIFF_CHANGED = "rate_tariff.changed"
-EVT_DISTANCE_CHANGED    = "distance_matrix.changed"
+# 재설계: 구 leg_rate/leg_charge/rate_quote/rate_tariff/distance_matrix 제거 → 해당 이벤트 상수 삭제.

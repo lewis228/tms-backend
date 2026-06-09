@@ -1,0 +1,101 @@
+# src/rate_sheet/schemas/response.py
+from __future__ import annotations
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Literal, List
+
+from common.schemas.base import ResponseSchema
+from rate_sheet.const.status import (
+    SheetKind, RateMoveType, RateContainerSize, RateEntrySource, RateEntryAction, SheetStatus,
+)
+
+
+class RateSheetResponseSchema(ResponseSchema):
+    """Rate Sheet(슬롯) 응답. status/entry_count 는 서비스가 계산."""
+    id: int
+    rate_group_id: int
+    kind: SheetKind
+    move_type: RateMoveType | None = None
+    row_point_id: int | None = None
+    note: str | None = None
+    is_active: bool
+    status: SheetStatus = SheetStatus.EMPTY
+    open_entry_count: int = 0
+
+
+class RateEntryResponseSchema(ResponseSchema):
+    id: int
+    rate_sheet_id: int
+    col_zone_id: int | None = None
+    col_point_id: int | None = None
+    col_city: str | None = None
+    col_state: str | None = None
+    container_size: RateContainerSize | None = None
+    amount: Decimal | None = None
+    per_unit: Decimal | None = None
+    effective_from: date
+    effective_to: date | None = None
+    source: RateEntrySource
+    change_reason: str | None = None
+    is_active: bool
+
+
+class RateSheetDetailResponseSchema(RateSheetResponseSchema):
+    """시트 + 현재 유효 셀들 (그리드 렌더용)."""
+    entries: List[RateEntryResponseSchema] = []
+
+
+class RateSheetDeleteResponseSchema(ResponseSchema):
+    id: int
+    object: Literal["rate_sheet"] = "rate_sheet"
+    deleted: bool = True
+    soft_deleted: bool = False
+
+
+class RateEntryHistoryResponseSchema(ResponseSchema):
+    id: int
+    rate_sheet_id: int
+    rate_entry_id: int | None = None
+    col_zone_id: int | None = None
+    col_point_id: int | None = None
+    col_city: str | None = None
+    col_state: str | None = None
+    container_size: RateContainerSize | None = None
+    old_amount: Decimal | None = None
+    new_amount: Decimal | None = None
+    old_per_unit: Decimal | None = None
+    new_per_unit: Decimal | None = None
+    effective_from: date | None = None
+    action: RateEntryAction
+    reason: str | None = None
+    created_at: datetime | None = None
+
+
+class RateLookupResultSchema(ResponseSchema):
+    """work_date 기준 셀 조회 결과 (미등록이면 found=False + 경고)."""
+    found: bool
+    amount: Decimal | None = None
+    per_unit: Decimal | None = None
+    rate_entry_id: int | None = None
+    effective_from: date | None = None
+    message: str | None = None
+
+
+class RateResolveResultSchema(ResponseSchema):
+    """요율 종합 해석 결과 — 정산 snapshot 의 원천.
+
+    base_amount = (MILE/HOURLY: per_unit×quantity) | (ZONE/CITY: amount×multiplier).
+    found=False 면 message 로 사유(그룹 미배정 / 시트 없음 / zip→zone 실패 / 요율 미등록).
+    """
+    found: bool
+    method: str | None = None
+    rate_group_id: int | None = None
+    rate_sheet_id: int | None = None
+    rate_entry_id: int | None = None
+    zone_id: int | None = None
+    amount: Decimal | None = None        # 매트릭스 셀 원단가
+    per_unit: Decimal | None = None      # MILE/HOURLY 단가
+    quantity: Decimal | None = None      # miles / hours
+    multiplier: Decimal | None = None    # 컨테이너 배율
+    base_amount: Decimal | None = None   # 최종 산출 (정산 base)
+    message: str | None = None

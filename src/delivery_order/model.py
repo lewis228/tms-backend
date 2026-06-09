@@ -52,6 +52,13 @@ class DeliveryOrderModel(Base, TeamScopedMixin):
     # ── 게이트 (BL 단위) ────────────────────────────────────────
     bl_released: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
 
+    # ── Hold / Cancel (워크플로우 status 와 직교한 overlay) ───────
+    # Hold 는 어느 단계서든 걸고 풀 수 있는 오버레이(자동 파생 일시정지). Cancel 은 사실상 종료.
+    is_on_hold:   Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
+    hold_reason:  Mapped[str | None] = mapped_column(String(500), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # ── 메모 ────────────────────────────────────────────────────
     internal_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 

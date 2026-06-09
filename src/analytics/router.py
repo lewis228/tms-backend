@@ -12,9 +12,21 @@ from analytics.service import AnalyticsService
 from analytics.schemas.response import (
     MarginTrendResponse, DriverUtilizationResponse,
     ContainerTurnoverResponse, StreetTurnSavingsResponse,
+    ExpiringComplianceResponse,
 )
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
+
+
+@router.get("/expiring-compliance", response_model=ExpiringComplianceResponse)
+async def expiring_compliance(
+    days: int = Query(30, ge=1, le=365),
+    _1: None = Depends(access_token),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """장비/DQ 만료 임박·만료 항목 (truck/chassis/driver, 기본 30일)."""
+    return await AnalyticsService(db, team_id).expiring_compliance(days)
 
 
 @router.get("/margin-trend", response_model=MarginTrendResponse)

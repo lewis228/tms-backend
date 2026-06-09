@@ -1,5 +1,6 @@
 # src/chassis/schemas/response.py
 from __future__ import annotations
+from datetime import date
 from typing import Literal, List, Optional
 from common.schemas.base import ResponseSchema
 from chassis.const.status import ChassisOwnerKind, ChassisSize, ChassisStatus
@@ -14,6 +15,8 @@ class ChassisResponseSchema(ResponseSchema):
     owner_pool_id: int | None = None
     status: ChassisStatus
     current_location_id: int | None = None
+    registration_expires_at: date | None = None
+    inspection_expires_at: date | None = None
     note: str | None = None
     is_active: bool
 

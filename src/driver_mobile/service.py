@@ -16,8 +16,8 @@ from leg.model import LegModel
 from delivery_order.model import DeliveryOrderModel
 from customer.model import CustomerModel
 from location.model import LocationModel
-from settlement.model import SettlementModel
-from settlement.const.status import SettlementStatus
+from payroll.model import PayrollLineModel, PayrollSettlementModel
+from payroll.const.status import PayrollStatus
 from user.model import UserModel
 from truck.model import TruckModel
 
@@ -26,6 +26,40 @@ class DriverMobileService:
     def __init__(self, db: AsyncSession, team_id: int) -> None:
         self.db = db
         self.team_id = team_id
+
+    async def _earnings_by_leg(self, leg_ids: list[int]) -> dict[int, dict]:
+        """leg_id → {amount, settled, pending} (재설계: 구 settlement → payroll_line).
+
+        leg 의 payroll base(비-VOID 정산 라인) + 부모 정산 status 로 수익/상태 표시.
+        """
+        if not leg_ids:
+            return {}
+        stmt = (
+            select(
+                PayrollLineModel.leg_id,
+                PayrollLineModel.base_amount,
+                PayrollSettlementModel.status,
+            )
+            .join(PayrollSettlementModel, and_(
+                PayrollSettlementModel.team_id == PayrollLineModel.team_id,
+                PayrollSettlementModel.id == PayrollLineModel.settlement_id,
+            ))
+            .where(
+                PayrollLineModel.team_id == self.team_id,
+                PayrollLineModel.leg_id.in_(leg_ids),
+                PayrollSettlementModel.status != PayrollStatus.VOID,
+                PayrollSettlementModel.is_active.is_(True),
+            )
+        )
+        out: dict[int, dict] = {}
+        for leg_id, base, status in (await self.db.execute(stmt)).all():
+            cur = out.setdefault(leg_id, {"amount": Decimal(0), "settled": False, "pending": False})
+            cur["amount"] += base or Decimal(0)
+            if status == PayrollStatus.PAID:
+                cur["settled"] = True
+            else:
+                cur["pending"] = True
+        return out
 
     async def resolve_driver_id(self, user_id: int) -> int:
         """User → 그 team 의 Driver row.id 매핑."""
@@ -193,16 +227,10 @@ class DriverMobileService:
 
         completed_count = len(completed_legs)
 
-        # 예상 수익 — 해당 leg 의 settlement.final_amount (없으면 0)
+        # 예상 수익 — 해당 leg 의 payroll base 합 (재설계: 구 settlement → payroll_line)
         leg_ids = [l.id for l in completed_legs]
-        revenue = Decimal(0)
-        if leg_ids:
-            sum_stmt = select(func.coalesce(func.sum(SettlementModel.final_amount), 0)).where(
-                SettlementModel.team_id == self.team_id,
-                SettlementModel.leg_id.in_(leg_ids),
-                SettlementModel.is_active.is_(True),
-            )
-            revenue = Decimal(str((await self.db.execute(sum_stmt)).scalar_one() or 0))
+        earnings = await self._earnings_by_leg(leg_ids)
+        revenue = sum((e["amount"] for e in earnings.values()), Decimal(0))
 
         # 거리 — 데모용 단순화: 완료된 leg 1건당 35km 가정 (실제는 distance_matrix join)
         distance_km = Decimal(completed_count * 35)
@@ -346,19 +374,11 @@ class DriverMobileService:
 
         items = []
         leg_ids = [r[0].id for r in rows]
-        # settlement final_amount 같이 조회
-        settlements = {}
-        if leg_ids:
-            s_stmt = select(SettlementModel).where(
-                SettlementModel.team_id == self.team_id,
-                SettlementModel.leg_id.in_(leg_ids),
-                SettlementModel.is_active.is_(True),
-            )
-            for s in (await self.db.execute(s_stmt)).scalars().all():
-                settlements[s.leg_id] = s
+        # leg 별 수익 — payroll base (재설계: 구 settlement → payroll_line)
+        earnings = await self._earnings_by_leg(leg_ids)
 
         for leg, do, customer in rows:
-            s = settlements.get(leg.id)
+            e = earnings.get(leg.id)
             items.append({
                 "leg_id": leg.id,
                 "delivery_order_id": leg.delivery_order_id,
@@ -370,7 +390,7 @@ class DriverMobileService:
                 "delivery_date": leg.delivery_date,
                 "completed_at": leg.completed_at,
                 "distance_km": Decimal("35"),       # 데모 단순화
-                "revenue": s.final_amount if s else None,
+                "revenue": e["amount"] if e else None,
             })
 
         next_cursor = items[-1]["leg_id"] if has_more and items else None
@@ -413,20 +433,15 @@ class DriverMobileService:
                 "weekly_trend": [],
             }
 
-        # 정산 모음
-        s_stmt = select(SettlementModel).where(
-            SettlementModel.team_id == self.team_id,
-            SettlementModel.leg_id.in_(leg_ids),
-            SettlementModel.is_active.is_(True),
-        )
-        settlements = list((await self.db.execute(s_stmt)).scalars().all())
+        # 정산 모음 — payroll base (재설계: 구 settlement → payroll_line)
+        earnings = await self._earnings_by_leg(leg_ids)
 
-        total_amount = sum((s.final_amount or Decimal(0) for s in settlements), Decimal(0))
+        total_amount = sum((e["amount"] for e in earnings.values()), Decimal(0))
 
-        # 상태별 카운트 (단순 매핑)
-        completed_count = sum(1 for s in settlements if s.is_settled)
-        pending_count   = sum(1 for s in settlements if not s.is_settled and not s.has_flag)
-        on_hold_count   = sum(1 for s in settlements if s.has_flag)
+        # 상태별 카운트 (payroll 정산 status 기반)
+        completed_count = sum(1 for e in earnings.values() if e["settled"])
+        pending_count   = sum(1 for e in earnings.values() if e["pending"] and not e["settled"])
+        on_hold_count   = 0  # 구 settlement has_flag 대체 — 신규엔 hold 개념 없음
 
         # 주간 추이 — leg.completed_at 기준 4~5 주 split
         weekly_buckets: dict[int, Decimal] = {}
@@ -436,14 +451,14 @@ class DriverMobileService:
                 select(LegModel).where(LegModel.id.in_(leg_ids))
             )).scalars().all()
         }
-        for s in settlements:
-            leg = leg_map.get(s.leg_id)
+        for leg_id, e in earnings.items():
+            leg = leg_map.get(leg_id)
             if not leg or not leg.completed_at:
                 continue
             # 월 내 몇 번째 주인지 (1-based)
             week_no = (leg.completed_at.day - 1) // 7 + 1
             weekly_buckets.setdefault(week_no, Decimal(0))
-            weekly_buckets[week_no] += s.final_amount or Decimal(0)
+            weekly_buckets[week_no] += e["amount"]
             weekly_starts.setdefault(week_no, datetime(y, m, (week_no - 1) * 7 + 1, tzinfo=timezone.utc))
 
         weekly_trend = [

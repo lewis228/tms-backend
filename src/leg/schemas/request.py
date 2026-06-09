@@ -1,12 +1,15 @@
 # src/leg/schemas/request.py
 from __future__ import annotations
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional, Literal, List
 from pydantic import Field, field_validator
 from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
 from delivery_order.const.status import DeliveryStatus
-from leg.const.status import LegStatus, MoveType, ServiceType, LegKind
+from leg.const.status import (
+    LegStatus, MoveType, ServiceType, LegKind, LegLocationType, LegMoveCode,
+)
 
 
 class LegCreateRequest(RequestSchema):
@@ -16,6 +19,10 @@ class LegCreateRequest(RequestSchema):
     move_type: MoveType
     service_type: ServiceType
     leg_kind: LegKind | None = None
+    # 재설계: From×To×MoveType×ServiceType + Layer1 move_code
+    from_location_type: LegLocationType | None = None
+    to_location_type: LegLocationType | None = None
+    move_code: LegMoveCode | None = None
     driver_id: int | None = None
     truck_id: int | None = None
     chassis_id: int | None = None
@@ -37,6 +44,15 @@ class LegUpdateRequest(RequestSchema):
     move_type: MoveType | None = None
     service_type: ServiceType | None = None
     leg_kind: LegKind | None = None
+    from_location_type: LegLocationType | None = None
+    to_location_type: LegLocationType | None = None
+    move_code: LegMoveCode | None = None
+    rate_point_id: int | None = None
+    dest_zip: str | None = Field(default=None, max_length=16)
+    dest_city: str | None = Field(default=None, max_length=120)
+    dest_state: str | None = Field(default=None, max_length=8)
+    rate_miles: Decimal | None = None
+    rate_hours: Decimal | None = None
     driver_id: int | None = None
     truck_id: int | None = None
     chassis_id: int | None = None
@@ -56,6 +72,25 @@ class LegTransitionRequest(RequestSchema):
     """Leg 상태 전이. FAILED 의 경우 failure_reason 필수."""
     target: LegStatus
     failure_reason: str | None = Field(default=None, max_length=500)
+
+
+class LegAssignRequest(RequestSchema):
+    """드라이버 배차 — PENDING leg 를 ASSIGNED 로."""
+    driver_id: int
+    truck_id: int | None = None
+    chassis_id: int | None = None
+
+
+class LegApplyLoadTypeRequest(RequestSchema):
+    """Load Type 템플릿 → container leg 자동 생성."""
+    container_id: int
+    template_id: int
+    replace_existing: bool = False
+
+
+class LegReissueRequest(RequestSchema):
+    """Dry Run 재발급 — 빠꾸 사유."""
+    reason: str | None = None
 
 
 class PaginateLegRequest(BasePaginationSchema):

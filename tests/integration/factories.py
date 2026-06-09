@@ -24,8 +24,6 @@ from leg.const.status import LegStatus, MoveType, ServiceType
 from leg.model import LegModel
 from location.const.kind import LocationKind
 from location.model import LocationModel
-from settlement.const.status import SettlementStatus
-from settlement.model import SettlementModel
 from team.model import TeamModel, UserTeamModel
 from terminal.model import TerminalModel
 from user.const.roles import RolesEnum
@@ -135,8 +133,6 @@ async def make_delivery_order(
     db: AsyncSession, *, team: TeamModel, customer: CustomerModel,
     direction: ShipmentDirection = ShipmentDirection.IMPORT,
     status: DeliveryStatus = DeliveryStatus.PLANNING,
-    delivery_location_id: int | None = None,
-    return_location_id: int | None = None,
     **kw,
 ) -> DeliveryOrderModel:
     do = DeliveryOrderModel(
@@ -144,8 +140,6 @@ async def make_delivery_order(
         customer_id=customer.id,
         direction=direction,
         status=status,
-        delivery_location_id=delivery_location_id,
-        return_location_id=return_location_id,
         **kw,
     )
     db.add(do)
@@ -179,15 +173,3 @@ async def make_leg(
     return leg
 
 
-async def make_settlement(
-    db: AsyncSession, *, team: TeamModel, leg: LegModel,
-    settlement_status: SettlementStatus = SettlementStatus.PENDING,
-) -> SettlementModel:
-    s = SettlementModel(
-        team_id=team.id,
-        leg_id=leg.id,
-        settlement_status=settlement_status,
-    )
-    db.add(s)
-    await db.flush()
-    return s

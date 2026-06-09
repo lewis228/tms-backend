@@ -1,5 +1,6 @@
 # src/chassis/schemas/request.py
 from __future__ import annotations
+from datetime import date
 from typing import Optional, Literal, List
 from pydantic import Field, field_validator, model_validator
 from common.schemas.base import RequestSchema
@@ -15,6 +16,8 @@ class ChassisCreateRequest(RequestSchema):
     owner_pool_id: int | None = None
     status: ChassisStatus = ChassisStatus.AVAILABLE
     current_location_id: int | None = None
+    registration_expires_at: date | None = None
+    inspection_expires_at: date | None = None
     note: str | None = Field(default=None, max_length=3000)
 
     @model_validator(mode="after")
@@ -36,6 +39,8 @@ class ChassisUpdateRequest(RequestSchema):
     owner_pool_id: int | None = None
     status: ChassisStatus | None = None
     current_location_id: int | None = None
+    registration_expires_at: date | None = None
+    inspection_expires_at: date | None = None
     note: str | None = Field(default=None, max_length=3000)
 
 

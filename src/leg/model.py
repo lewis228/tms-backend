@@ -1,16 +1,19 @@
 # src/leg/model.py
 from __future__ import annotations
 from datetime import datetime
+from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    String, Integer, Boolean, Text, ForeignKey, DateTime,
+    String, Integer, Boolean, Text, ForeignKey, DateTime, Numeric,
     Index, UniqueConstraint, Enum as SAEnum,
 )
 
 from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
 from delivery_order.const.status import DeliveryStatus
-from leg.const.status import LegStatus, MoveType, ServiceType, LegKind, MoveTypeV3
+from leg.const.status import (
+    LegStatus, MoveType, ServiceType, LegKind, MoveTypeV3, LegLocationType, LegMoveCode,
+)
 
 
 class LegModel(Base, TeamScopedMixin):
@@ -58,6 +61,29 @@ class LegModel(Base, TeamScopedMixin):
         SAEnum(LegKind, name="leg_kind"), nullable=True,
     )
 
+    # ── 재설계(컨플루언스): From × To × MoveType × ServiceType + Layer1 move_code ──
+    # 기존 from_stop/to_stop(container_stop 기반) 과 병행. move_type/service_type 는 위 기존 컬럼 재사용.
+    from_location_type: Mapped[LegLocationType | None] = mapped_column(
+        SAEnum(LegLocationType, name="leg_from_location_type"), nullable=True,
+    )
+    to_location_type: Mapped[LegLocationType | None] = mapped_column(
+        SAEnum(LegLocationType, name="leg_to_location_type"), nullable=True,
+    )
+    move_code: Mapped[LegMoveCode | None] = mapped_column(
+        SAEnum(LegMoveCode, name="leg_move_code"), nullable=True,
+    )
+
+    # ── 재설계: 요율 해석 입력 (RateResolver 가 사용) ──────────────
+    # row_point(터미널/야드) + 목적지(zip/city) + 거리/시간. 정산 시 driver→그룹→method 로 해석.
+    rate_point_id: Mapped[int | None] = mapped_column(
+        ForeignKey("rate_point.id", ondelete="SET NULL"), nullable=True,
+    )
+    dest_zip:   Mapped[str | None] = mapped_column(String(16), nullable=True)
+    dest_city:  Mapped[str | None] = mapped_column(String(120), nullable=True)
+    dest_state: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    rate_miles: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)  # MILE 방식
+    rate_hours: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)   # HOURLY 방식
+
     status: Mapped[LegStatus] = mapped_column(
         SAEnum(LegStatus, name="leg_status"),
         default=LegStatus.PENDING,
@@ -101,10 +127,15 @@ class LegModel(Base, TeamScopedMixin):
     delivery_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # ── 진행 시각 ───────────────────────────────────────────────
+    assigned_at:  Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # 재설계: ASSIGNED 진입
     started_at:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     arrived_at:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # ── Dry Run 재발급 (빠꾸 → 새 leg) ──────────────────────────
+    # 이 leg 가 어떤 DRY_RUN leg 에서 재발급됐는지(원본 leg.id). 같은 도메인 self-ref → 단순 int.
+    reissued_from_leg_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # ── Mobile 수락 / 거절 (Driver app) ──────────────────────
     # driver 에게 offered 된 시각 (driver_id 가 세팅된 시각). NULL 이면 미할당.
@@ -116,11 +147,9 @@ class LegModel(Base, TeamScopedMixin):
     rejection_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # ── 정산 ────────────────────────────────────────────────────
+    # 재설계: 구 settlement 도메인 제거. 정산은 payroll(payroll_line.leg_id 역참조)이 담당.
     storage_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     is_settled:   Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
-    settlement_id: Mapped[int | None] = mapped_column(
-        ForeignKey("settlement.id", ondelete="SET NULL"), nullable=True,
-    )
 
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 

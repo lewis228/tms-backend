@@ -57,3 +57,20 @@ class StreetTurnSavingsResponse(ResponseSchema):
     rejected_count: int
     savings_amount: Decimal
     saving_per_turn: Decimal
+
+
+# ── 장비/DQ 만료 알림 (Phase 6) ─────────────────────────────────
+class ExpiringItem(ResponseSchema):
+    entity_type: str            # "truck" / "chassis" / "driver"
+    entity_id: int
+    label: str                  # plate_no / chassis_number / driver name
+    field: str                  # insurance/registration/inspection/license/medical/twic
+    expires_at: date
+    days_left: int              # 음수 = 이미 만료
+
+
+class ExpiringComplianceResponse(ResponseSchema):
+    days: int
+    expired_count: int
+    soon_count: int
+    items: List[ExpiringItem]

@@ -11,6 +11,7 @@ class DeliveryStatus(StrEnum):
                            └──► FINAL_DELIVERY ───────────────┴─► COMPLETED
     """
     PLANNING       = "PLANNING"
+    DISPATCHING    = "DISPATCHING"   # 재설계: 일부 leg 배차됨(미배차 leg 존재) — 자동 파생
     DISPATCHED     = "DISPATCHED"
     YARD_STAGED    = "YARD_STAGED"
     FINAL_DELIVERY = "FINAL_DELIVERY"

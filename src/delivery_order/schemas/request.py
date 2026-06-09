@@ -43,6 +43,17 @@ class DeliveryOrderTransitionRequest(RequestSchema):
     target: DeliveryStatus
 
 
+class DeliveryOrderHoldRequest(RequestSchema):
+    """Hold 설정/해제."""
+    on_hold: bool = True
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class DeliveryOrderCancelRequest(RequestSchema):
+    """D/O 취소."""
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class PaginateDeliveryOrderRequest(BasePaginationSchema):
     order__id: Optional[Literal['ASC', 'DESC']] = 'DESC'
     include_inactive: bool = False

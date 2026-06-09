@@ -34,9 +34,14 @@ class TransitionContext:
     legs: list[LegModel]
 
 
+# 재설계: DISPATCHING(자동 파생) 추가. PLANNING↔DISPATCHING↔DISPATCHED 는 보통
+# delivery_order/state_derive.py 가 leg 기준으로 자동 관리. 수동 전이도 허용되도록 그래프에 포함.
 _ALLOWED: dict[DeliveryStatus, set[DeliveryStatus]] = {
-    DeliveryStatus.PLANNING:       {DeliveryStatus.DISPATCHED},
-    DeliveryStatus.DISPATCHED:     {DeliveryStatus.YARD_STAGED, DeliveryStatus.FINAL_DELIVERY, DeliveryStatus.PLANNING},
+    DeliveryStatus.PLANNING:       {DeliveryStatus.DISPATCHING, DeliveryStatus.DISPATCHED},
+    DeliveryStatus.DISPATCHING:    {DeliveryStatus.DISPATCHED, DeliveryStatus.PLANNING,
+                                    DeliveryStatus.YARD_STAGED, DeliveryStatus.FINAL_DELIVERY},
+    DeliveryStatus.DISPATCHED:     {DeliveryStatus.DISPATCHING, DeliveryStatus.YARD_STAGED,
+                                    DeliveryStatus.FINAL_DELIVERY, DeliveryStatus.PLANNING},
     DeliveryStatus.YARD_STAGED:    {DeliveryStatus.FINAL_DELIVERY, DeliveryStatus.DISPATCHED},
     DeliveryStatus.FINAL_DELIVERY: {DeliveryStatus.EMPTY_STAGED, DeliveryStatus.COMPLETED, DeliveryStatus.YARD_STAGED},
     DeliveryStatus.EMPTY_STAGED:   {DeliveryStatus.COMPLETED, DeliveryStatus.FINAL_DELIVERY},

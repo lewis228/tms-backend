@@ -57,29 +57,33 @@ from equipment_pool.router import router as equipment_pool_router
 from chassis.router import router as chassis_router
 
 # ── TMS D/O / Leg / Settlement routers (Phase C) ─────────────
-from rate_setting.router import router as rate_setting_router
 from charge_code.router import router as charge_code_router
-from rate_card.router import router as rate_card_router
+from rate_point.router import router as rate_point_router
+from rate_group.router import router as rate_group_router
+from driver_rate_assignment.router import router as driver_rate_assignment_router
+from rate_zone.router import router as rate_zone_router
+from rate_sheet.router import router as rate_sheet_router
+from rate_multiplier.router import router as rate_multiplier_router
+from rate_import.router import router as rate_import_router
+from load_type_template.router import router as load_type_template_router
+from accessorial.router import router as accessorial_router
+from audit_log.router import router as audit_log_router
+from leg_layer.router import router as leg_layer_router
+from payroll.router import router as payroll_router
+from invoice.router import router as invoice_router
+from dual_transaction.router import router as dual_transaction_router
 from delivery_order.router import router as delivery_order_router
 from container.router import router as container_router
 from leg.router import router as leg_router
 from leg_stop.router import router as leg_stop_router
 from chassis_event.router import router as chassis_event_router
-from leg_charge.router import router as leg_charge_router
 from street_turn.router import router as street_turn_router
-from settlement.router import router as settlement_router
 from analytics.router import router as analytics_router
 
 # ── Phase I-B v3 routers ────────────────────────────────────
 from container_stop.router import router as container_stop_router
 from leg_driver_segment.router import router as leg_driver_segment_router
-from rate_quote.router import router as rate_quote_router
-from rate_tariff.router import router as rate_tariff_router
-from distance_matrix.router import router as distance_matrix_router
-from leg_rate.router import router as leg_rate_router
 from location_ping.router import router as location_ping_router
-from demurrage.router import router as demurrage_router
-from settlement_report.router import router as settlement_report_router
 
 # ── TMS Phase D routers (Notification / Realtime / AI Intake / Driver Mobile) ──
 from notification.router import router as notification_router
@@ -142,29 +146,33 @@ app.include_router(equipment_pool_router)
 app.include_router(chassis_router)
 
 # ── TMS D/O / Leg / Settlement router 등록 (Phase C) ─────────
-app.include_router(rate_setting_router)
 app.include_router(charge_code_router)
-app.include_router(rate_card_router)
+app.include_router(rate_point_router)
+app.include_router(rate_group_router)
+app.include_router(driver_rate_assignment_router)
+app.include_router(rate_zone_router)
+app.include_router(rate_sheet_router)
+app.include_router(rate_multiplier_router)
+app.include_router(rate_import_router)
+app.include_router(load_type_template_router)
+app.include_router(accessorial_router)
+app.include_router(audit_log_router)
+app.include_router(leg_layer_router)
+app.include_router(payroll_router)
+app.include_router(invoice_router)
+app.include_router(dual_transaction_router)
 app.include_router(delivery_order_router)
 app.include_router(container_router)
 app.include_router(leg_router)
 app.include_router(leg_stop_router)
 app.include_router(chassis_event_router)
-app.include_router(leg_charge_router)
 app.include_router(street_turn_router)
-app.include_router(settlement_router)
 app.include_router(analytics_router)
 
 # ── Phase I-B v3 routers ────────────────────────────────────
 app.include_router(container_stop_router)
 app.include_router(leg_driver_segment_router)
-app.include_router(rate_quote_router)
-app.include_router(rate_tariff_router)
-app.include_router(distance_matrix_router)
-app.include_router(leg_rate_router)
 app.include_router(location_ping_router)
-app.include_router(demurrage_router)
-app.include_router(settlement_report_router)
 
 # ── TMS Phase D router 등록 ──────────────────────────────────
 app.include_router(notification_router)

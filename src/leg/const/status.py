@@ -4,12 +4,16 @@ from enum import StrEnum
 
 
 class LegStatus(StrEnum):
-    """Leg 상태 머신: PENDING → IN_TRANSIT → COMPLETED / FAILED / DRY_RUN."""
+    """Leg 상태 머신 (컨플루언스 재설계):
+    PENDING → ASSIGNED → IN_TRANSIT → COMPLETED / FAILED.
+    (ASSIGNED = 드라이버 배차 완료, 운행 시작 전. DRY_RUN 은 레거시 호환 유지.)
+    """
     PENDING    = "PENDING"
+    ASSIGNED   = "ASSIGNED"     # 재설계: 드라이버 배차 완료, 운행 전
     IN_TRANSIT = "IN_TRANSIT"
     COMPLETED  = "COMPLETED"
     FAILED     = "FAILED"
-    DRY_RUN    = "DRY_RUN"
+    DRY_RUN    = "DRY_RUN"      # 레거시 호환
 
 
 class MoveType(StrEnum):
@@ -20,9 +24,30 @@ class MoveType(StrEnum):
 
 
 class ServiceType(StrEnum):
-    """서비스 방식."""
+    """서비스 방식 (도착지 처리)."""
     LIVE = "LIVE"  # 즉시 처리 (기사 대기)
     DROP = "DROP"  # 야드 드롭 후 픽업
+    NONE = "NONE"  # 재설계: Bobtail/Shunt/Failed (처리 없음)
+
+
+class LegLocationType(StrEnum):
+    """재설계: Leg From/To 의 Location 종류 (컨플루언스 Leg 유형 분석)."""
+    TERMINAL = "TERMINAL"
+    YARD     = "YARD"
+    CUSTOMER = "CUSTOMER"
+
+
+class LegMoveCode(StrEnum):
+    """재설계: Layer1 Move Type 코드 (요율 계산 기준)."""
+    PPU = "PPU"   # Port Pick-up
+    PRE = "PRE"   # Port Return
+    PPL = "PPL"   # Pre-pull
+    DRP = "DRP"   # Drop & Pick
+    STR = "STR"   # Street Turn
+    TRL = "TRL"   # Transload
+    RMP = "RMP"   # Rail Ramp
+    OTR = "OTR"   # Over-the-Road
+    ERP = "ERP"   # Empty Reposition
 
 
 class LegKind(StrEnum):

@@ -1,10 +1,13 @@
 # src/leg/schemas/response.py
 from __future__ import annotations
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal, List, Optional
 from common.schemas.base import ResponseSchema
 from delivery_order.const.status import DeliveryStatus
-from leg.const.status import LegStatus, MoveType, ServiceType, LegKind
+from leg.const.status import (
+    LegStatus, MoveType, ServiceType, LegKind, LegLocationType, LegMoveCode,
+)
 
 
 class LegResponseSchema(ResponseSchema):
@@ -21,8 +24,21 @@ class LegResponseSchema(ResponseSchema):
     move_type: MoveType
     service_type: ServiceType
     leg_kind: LegKind | None = None
+    from_location_type: LegLocationType | None = None
+    to_location_type: LegLocationType | None = None
+    move_code: LegMoveCode | None = None
+    rate_point_id: int | None = None
+    dest_zip: str | None = None
+    dest_city: str | None = None
+    dest_state: str | None = None
+    rate_miles: Decimal | None = None
+    rate_hours: Decimal | None = None
     status: LegStatus
     driver_id: int | None = None
+    assigned_at: datetime | None = None
+    offered_at: datetime | None = None
+    accepted_at: datetime | None = None
+    rejected_at: datetime | None = None
     pickup_location_id: int | None = None
     pickup_date: datetime | None = None
     delivery_location_id: int | None = None
@@ -31,6 +47,7 @@ class LegResponseSchema(ResponseSchema):
     arrived_at: datetime | None = None
     completed_at: datetime | None = None
     failure_reason: str | None = None
+    reissued_from_leg_id: int | None = None
     storage_days: int
     is_settled: bool
     remarks: str | None = None

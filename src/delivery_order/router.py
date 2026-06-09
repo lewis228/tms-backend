@@ -15,10 +15,11 @@ from common.pagination.schemas.pagination_response import CursorPaginationResult
 from common.pagination.schemas.sync_response import SyncResponse
 from delivery_order.service import DeliveryOrderService
 from delivery_order.schemas.request import (
-    DeliveryOrderTransitionRequest,
+    DeliveryOrderTransitionRequest, DeliveryOrderHoldRequest, DeliveryOrderCancelRequest,
     DeliveryOrderCreateRequest, DeliveryOrderUpdateRequest, PaginateDeliveryOrderRequest,
     DeliveryOrderBulkCreateRequest, DeliveryOrderBulkUpdateRequest, DeliveryOrderBulkDeleteRequest,
 )
+from audit_log.schemas.response import AuditLogResponseSchema
 from delivery_order.schemas.response import (
     DeliveryOrderResponseSchema, DeliveryOrderDetailResponseSchema, DeliveryOrderDeleteResponseSchema,
     DeliveryOrderBulkCreateResponseSchema, DeliveryOrderBulkUpdateResponseSchema, DeliveryOrderBulkDeleteResponseSchema,
@@ -219,3 +220,47 @@ async def transition_delivery_order(
     return await DeliveryOrderService(db, team_id).transition(
         delivery_order_id, body.target, actor_user_id=int(me.id),
     )
+
+
+@router.post("/{delivery_order_id}/hold", response_model=DeliveryOrderResponseSchema)
+async def hold_delivery_order(
+    delivery_order_id: int,
+    body: DeliveryOrderHoldRequest,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard("DO_TRANSITION")),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """D/O Hold 설정/해제 (워크플로우 status 와 직교)."""
+    return await DeliveryOrderService(db, team_id).set_hold(
+        delivery_order_id, on_hold=body.on_hold, reason=body.reason, actor_user_id=int(me.id),
+    )
+
+
+@router.post("/{delivery_order_id}/cancel", response_model=DeliveryOrderResponseSchema)
+async def cancel_delivery_order(
+    delivery_order_id: int,
+    body: DeliveryOrderCancelRequest,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard("DO_TRANSITION")),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """D/O 취소."""
+    return await DeliveryOrderService(db, team_id).cancel(
+        delivery_order_id, reason=body.reason, actor_user_id=int(me.id),
+    )
+
+
+@router.get("/{delivery_order_id}/activity", response_model=list[AuditLogResponseSchema])
+async def delivery_order_activity(
+    delivery_order_id: int,
+    _1: None = Depends(access_token),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """D/O 활동 타임라인 (audit_log)."""
+    from audit_log.service import AuditLogService
+    return await AuditLogService(db, team_id).list_for_entity("delivery_order", delivery_order_id)

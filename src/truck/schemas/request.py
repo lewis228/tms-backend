@@ -1,5 +1,6 @@
 # src/truck/schemas/request.py
 from __future__ import annotations
+from datetime import date
 from typing import Optional, Literal, List
 from pydantic import Field, field_validator, model_validator
 from common.schemas.base import RequestSchema
@@ -16,6 +17,9 @@ class TruckCreateRequest(RequestSchema):
     owner_kind: TruckOwnerKind = TruckOwnerKind.COMPANY
     owner_driver_id: int | None = None
     status: TruckStatus = TruckStatus.ACTIVE
+    registration_expires_at: date | None = None
+    insurance_expires_at: date | None = None
+    inspection_expires_at: date | None = None
     note: str | None = Field(default=None, max_length=3000)
 
     @model_validator(mode="after")
@@ -36,6 +40,9 @@ class TruckUpdateRequest(RequestSchema):
     owner_kind: TruckOwnerKind | None = None
     owner_driver_id: int | None = None
     status: TruckStatus | None = None
+    registration_expires_at: date | None = None
+    insurance_expires_at: date | None = None
+    inspection_expires_at: date | None = None
     note: str | None = Field(default=None, max_length=3000)
 
 

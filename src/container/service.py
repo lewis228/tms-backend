@@ -176,7 +176,7 @@ class ContainerService:
     async def get_full(self, container_id: int):
         from container.schemas.response import (
             ContainerFullResponseSchema, StopResponseSchema, LegFullSchema,
-            DriverSegmentResponseSchema, LegRateResponseSchema, LegChargeLineSchema,
+            DriverSegmentResponseSchema,
         )
         from sqlalchemy import select
         from delivery_order.model import DeliveryOrderModel
@@ -185,10 +185,7 @@ class ContainerService:
         from vessel.model import VesselModel
         from location.model import LocationModel
         from leg.model import LegModel
-        from leg_charge.model import LegChargeModel
-        from leg_rate.model import LegRateModel
         from leg_driver_segment.model import LegDriverSegmentModel
-        from charge_code.model import ChargeCodeModel
         from container_stop.model import ContainerStopModel
         from container.model import ContainerEventModel
         from driver.model import DriverModel
@@ -285,51 +282,10 @@ class ContainerService:
                     DriverSegmentResponseSchema.model_validate(s).model_copy(update={"driver_name": dn})
                 )
 
-        # leg → rate
-        rate_map: dict[int, LegRateResponseSchema] = {}
-        if leg_ids:
-            for r in (await self.db.execute(
-                select(LegRateModel).where(
-                    LegRateModel.team_id == self.repo.team_id,
-                    LegRateModel.leg_id.in_(leg_ids),
-                    LegRateModel.is_active.is_(True),
-                )
-            )).scalars().all():
-                rate_map[r.leg_id] = LegRateResponseSchema.model_validate(r)
-
-        # leg → charges (+ charge_code 메타 join)
-        charge_map: dict[int, list[LegChargeLineSchema]] = {}
-        if leg_ids:
-            charge_rows = (await self.db.execute(
-                select(
-                    LegChargeModel,
-                    ChargeCodeModel.code.label("cc_code"),
-                    ChargeCodeModel.name.label("cc_name"),
-                    ChargeCodeModel.category.label("cc_category"),
-                    func.coalesce(UserModel.name, UserModel.email).label("driver_name"),
-                )
-                .outerjoin(ChargeCodeModel, ChargeCodeModel.id == LegChargeModel.charge_code_id)
-                .outerjoin(DriverModel, DriverModel.id == LegChargeModel.payee_driver_id)
-                .outerjoin(UserModel,   UserModel.id   == DriverModel.user_id)
-                .where(
-                    LegChargeModel.team_id == self.repo.team_id,
-                    LegChargeModel.leg_id.in_(leg_ids),
-                    LegChargeModel.is_active.is_(True),
-                )
-                .order_by(LegChargeModel.leg_id.asc(), LegChargeModel.id.asc())
-            )).all()
-            for lc, cc_code, cc_name, cc_cat, driver_name in charge_rows:
-                line = LegChargeLineSchema(
-                    id=lc.id, leg_id=lc.leg_id, charge_code_id=lc.charge_code_id,
-                    charge_code=cc_code, charge_name=cc_name, category=cc_cat,
-                    snapshot_unit_amount=lc.snapshot_unit_amount,
-                    quantity=lc.quantity,
-                    subtotal=lc.amount,
-                    payee_kind=lc.payee_kind, payee_driver_id=lc.payee_driver_id,
-                    payee_driver_name=driver_name,
-                    description=lc.description, is_active=lc.is_active,
-                )
-                charge_map.setdefault(lc.leg_id, []).append(line)
+        # 재설계: 구 leg_rate/leg_charge 제거. leg 별 요율/원가는 정산 시점에
+        # payroll(RateResolver) 가, 고객 청구는 invoice 가 담당. 상세 응답엔 미포함.
+        rate_map: dict[int, object] = {}
+        charge_map: dict[int, list] = {}
 
         # leg driver name (current segment driver_id 기반)
         driver_names: dict[int, str] = {}

@@ -1,8 +1,9 @@
 # src/truck/model.py
 from __future__ import annotations
+from datetime import date
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    String, Integer, Text, ForeignKey,
+    String, Integer, Text, Date, ForeignKey,
     Index, UniqueConstraint, Enum as SAEnum,
 )
 
@@ -38,6 +39,11 @@ class TruckModel(Base, TeamScopedMixin):
         server_default=TruckStatus.ACTIVE.value,
         nullable=False,
     )
+
+    # ── 장비 만료 추적 (Phase 6 만료 알림) ───────────────────────
+    registration_expires_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    insurance_expires_at:    Mapped[date | None] = mapped_column(Date, nullable=True)
+    inspection_expires_at:   Mapped[date | None] = mapped_column(Date, nullable=True)
 
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 

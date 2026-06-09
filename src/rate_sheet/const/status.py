@@ -1,0 +1,59 @@
+# src/rate_sheet/const/status.py
+from __future__ import annotations
+from enum import StrEnum
+
+
+class SheetKind(StrEnum):
+    """Rate Sheet(요율표 슬롯) 종류.
+
+    컨플루언스 [Terry] 요율표 기획:
+    - POINT_ZONE : (MoveType, Point) × Zone 매트릭스 (가장 일반)
+    - POINT_CITY : (MoveType, Point) × City/Zip 매트릭스 (Zone 대신 City 방식)
+    - POINT_POINT: Point × Point 고정 구간 (Terminal↔Yard 등)
+    - MILE       : 거리 × per_unit (요율표 불필요, per_unit 단일 셀)
+    - HOURLY     : 시간 × per_unit (요율표 불필요, per_unit 단일 셀)
+    """
+    POINT_ZONE  = "POINT_ZONE"
+    POINT_CITY  = "POINT_CITY"
+    POINT_POINT = "POINT_POINT"
+    MILE        = "MILE"
+    HOURLY      = "HOURLY"
+
+
+class RateMoveType(StrEnum):
+    """요율 산정용 이동 적재상태 (leg 도메인과 디커플 — 재설계 독립)."""
+    LOAD  = "LOAD"   # 적재
+    EMPTY = "EMPTY"  # 공컨
+    NONE  = "NONE"   # Bobtail (배율 미적용)
+
+
+class RateContainerSize(StrEnum):
+    """요율 배율 기준 컨테이너 사이즈 (40ft 기준)."""
+    SIZE_20 = "SIZE_20"   # 40ft × 0.85 (기본)
+    SIZE_40 = "SIZE_40"   # 기준
+    SIZE_45 = "SIZE_45"   # 40ft × 1.0 (기본)
+
+
+class RateEntrySource(StrEnum):
+    """요율 셀(rate_entry) 의 출처."""
+    SHEET       = "SHEET"        # 그리드 수기 입력 (매트릭스)
+    MILE_RATE   = "MILE_RATE"    # 마일 단가
+    HOURLY_RATE = "HOURLY_RATE"  # 시간 단가
+    MANUAL      = "MANUAL"       # 단건 수동 보정
+    IMPORT      = "IMPORT"       # Excel/CSV import
+
+
+class RateEntryAction(StrEnum):
+    """rate_entry_history 의 변경 액션."""
+    SET    = "SET"      # 새 값 등록
+    CLOSE  = "CLOSE"    # 기존 버전 종료(effective_to 지정)
+    SUPERSEDE = "SUPERSEDE"  # 같은 시작일 값 폐기(is_active=False)
+    DELETE = "DELETE"   # 삭제(soft)
+
+
+class SheetStatus(StrEnum):
+    """슬롯 충진 상태 (서비스가 계산해서 응답에 노출 — 컬럼 아님)."""
+    EMPTY    = "EMPTY"     # 셀 0
+    PARTIAL  = "PARTIAL"   # 일부만
+    ACTIVE   = "ACTIVE"    # 충진 (열린 셀 존재)
+    INACTIVE = "INACTIVE"  # 비활성(시트 soft delete)

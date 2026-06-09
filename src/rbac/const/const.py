@@ -26,6 +26,7 @@ LEG_STOP_WRITE       = "LEG_STOP_WRITE"       # leg 의 stop 시퀀스
 CHASSIS_EVENT_WRITE  = "CHASSIS_EVENT_WRITE"  # 챠시 이벤트 로그
 STREET_TURN_WRITE = "STREET_TURN_WRITE" # Street turn 생성/취소
 STREET_TURN_APPROVE = "STREET_TURN_APPROVE" # Street turn 승인/거절 (선사 통신)
+LOAD_TYPE_TEMPLATE_WRITE = "LOAD_TYPE_TEMPLATE_WRITE"  # Load Type 템플릿 등록/수정/삭제 (재설계)
 
 # ===== Settlement / Rate =====
 SETTLEMENT_WRITE      = "SETTLEMENT_WRITE"       # 등록/수정/삭제 (lifecycle 외)
@@ -36,8 +37,14 @@ SETTLEMENT_UNAPPROVE  = "SETTLEMENT_UNAPPROVE"   # 승인 취소 (사유 필수,
 RATE_SETTING_WRITE    = "RATE_SETTING_WRITE"     # 요율 등록/수정 (rate_setting alias)
 RATE_WRITE            = "RATE_WRITE"             # 요율 등록/수정 (legacy alias)
 CHARGE_CODE_WRITE     = "CHARGE_CODE_WRITE"      # 청구 코드 마스터 등록/수정/삭제
-RATE_CARD_WRITE       = "RATE_CARD_WRITE"        # 요율 카드 매트릭스 등록/수정/삭제
-LEG_CHARGE_WRITE      = "LEG_CHARGE_WRITE"       # leg 별 청구 라인 add/edit (수동 보정)
+RATE_POINT_WRITE      = "RATE_POINT_WRITE"       # 요율표 Point(Terminal/Yard) 등록/수정/삭제 (재설계)
+RATE_ZONE_WRITE       = "RATE_ZONE_WRITE"        # 요율표 Zone(+zip/city 멤버) 등록/수정/삭제 (재설계)
+RATE_SHEET_WRITE      = "RATE_SHEET_WRITE"       # 요율표 슬롯/셀(유효일자 버전) 등록/수정/삭제 (재설계)
+ACCESSORIAL_WRITE     = "ACCESSORIAL_WRITE"      # 부가요금 규칙 마스터 등록/수정/삭제 (재설계)
+RATE_GROUP_WRITE      = "RATE_GROUP_WRITE"       # 정산/요율 그룹 등록/수정/삭제 (재설계)
+DRIVER_RATE_WRITE     = "DRIVER_RATE_WRITE"      # 드라이버↔요율그룹 배정 등록/수정/삭제 (재설계)
+INVOICE_WRITE         = "INVOICE_WRITE"          # 고객 인보이스 생성/라인 수정/삭제 (재설계 2c)
+INVOICE_ISSUE         = "INVOICE_ISSUE"          # 인보이스 발행/수금/취소 (lifecycle, 재설계 2c)
 
 # ===== Notification =====
 NOTIFICATION_WRITE    = "NOTIFICATION_WRITE"     # 알림 mark_read 등 본인 inbox 액션
@@ -74,10 +81,13 @@ ALL_PERMISSION_CODES = _unique([
     # D/O / Leg / StreetTurn
     DO_WRITE, DO_TRANSITION, LEG_WRITE, LEG_TRANSITION,
     LEG_STOP_WRITE, CHASSIS_EVENT_WRITE, STREET_TURN_WRITE, STREET_TURN_APPROVE,
+    LOAD_TYPE_TEMPLATE_WRITE,
     # Settlement / Rate
     SETTLEMENT_WRITE, SETTLEMENT_CALCULATE, SETTLEMENT_ADJUST, SETTLEMENT_APPROVE,
     SETTLEMENT_UNAPPROVE, RATE_SETTING_WRITE, RATE_WRITE,
-    CHARGE_CODE_WRITE, RATE_CARD_WRITE, LEG_CHARGE_WRITE,
+    CHARGE_CODE_WRITE, RATE_POINT_WRITE, RATE_ZONE_WRITE,
+    RATE_SHEET_WRITE, RATE_GROUP_WRITE, DRIVER_RATE_WRITE, ACCESSORIAL_WRITE,
+    INVOICE_WRITE, INVOICE_ISSUE,
     # Notification
     NOTIFICATION_WRITE,
     # Analytics
@@ -102,7 +112,9 @@ DEFAULT_MEMBER_CODES = [
     DO_WRITE, DO_TRANSITION, LEG_WRITE, LEG_TRANSITION,
     LEG_STOP_WRITE, CHASSIS_EVENT_WRITE, STREET_TURN_WRITE, STREET_TURN_APPROVE,
     # Settlement — 계산/조정만 (승인/취소는 ADMIN)
-    SETTLEMENT_CALCULATE, SETTLEMENT_ADJUST, LEG_CHARGE_WRITE,
+    SETTLEMENT_CALCULATE, SETTLEMENT_ADJUST,
+    # Invoice — 작성/라인편집 (발행/수금/취소는 ADMIN)
+    INVOICE_WRITE,
     # Notification
     NOTIFICATION_WRITE,
     # Analytics
@@ -143,5 +155,8 @@ CUSTOMIZABLE_CODES = [
     SETTLEMENT_CALCULATE, SETTLEMENT_ADJUST,
     SETTLEMENT_APPROVE, SETTLEMENT_UNAPPROVE,
     # Rate
-    RATE_WRITE,
+    RATE_WRITE, RATE_POINT_WRITE, RATE_ZONE_WRITE, RATE_SHEET_WRITE,
+    RATE_GROUP_WRITE, DRIVER_RATE_WRITE,
+    # Invoice
+    INVOICE_WRITE, INVOICE_ISSUE,
 ]

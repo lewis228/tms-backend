@@ -67,9 +67,11 @@ class DriverModel(Base, TeamScopedMixin):
         ForeignKey("chassis.id", ondelete="SET NULL"), nullable=True,
     )
 
-    # ── 컴플라이언스 ──────────────────────────────────
+    # ── 컴플라이언스 (DQ — Driver Qualification) ──────────
     license_expires_at:      Mapped[date | None] = mapped_column(Date, nullable=True)
     medical_cert_expires_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    twic_expires_at:         Mapped[date | None] = mapped_column(Date, nullable=True)
+    hire_date:               Mapped[date | None] = mapped_column(Date, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("team_id", "id", name="uq_driver_team_id_id"),

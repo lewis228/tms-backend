@@ -14,14 +14,16 @@ from typing import List
 from sqlalchemy import select, func, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from charge_code.const.status import PartyKind
 from container.const.status import ContainerEventKind
 from container.model import ContainerEventModel
 from driver.model import DriverModel
 from leg.const.status import LegStatus
 from leg.model import LegModel
 from user.model import UserModel
-from leg_charge.model import LegChargeModel
+from payroll.model import PayrollLineModel, PayrollSettlementModel
+from payroll.const.status import PayrollStatus
+from invoice.model import InvoiceModel, InvoiceLineModel
+from invoice.const.status import InvoiceStatus
 from street_turn.const.status import StreetTurnStatus
 from street_turn.model import StreetTurnModel
 
@@ -42,64 +44,126 @@ class AnalyticsService:
         self.team_id = team_id
 
     async def margin_trend(self, days: int = 30) -> MarginTrendResponse:
-        """leg_charge 기반 일자별 매출/지급/마진."""
+        """일자별 매출/지급/마진 (재설계: 지급=payroll base@leg완료일, 매출=invoice 청구@발행일)."""
         days = max(1, min(days, 90))
         since = datetime.now(tz=timezone.utc) - timedelta(days=days)
+        since_date = since.date()
 
-        # leg.completed_at 으로 매출/지급을 그루핑
-        bucket = func.date(LegModel.completed_at).label("bucket")
-        revenue = func.coalesce(
-            func.sum(case(
-                (LegChargeModel.payer_kind == PartyKind.CUSTOMER, LegChargeModel.amount),
-                else_=0,
-            )),
-            0,
-        ).label("revenue")
-        payouts = func.coalesce(
-            func.sum(case(
-                (LegChargeModel.payee_kind.in_([
-                    PartyKind.DRIVER, PartyKind.CARRIER, PartyKind.POOL,
-                ]), LegChargeModel.amount),
-                else_=0,
-            )),
-            0,
-        ).label("payouts")
-
-        q = (
-            select(bucket, revenue, payouts)
-            .select_from(LegChargeModel)
-            .join(LegModel, LegModel.id == LegChargeModel.leg_id)
+        # 지급(payout) — payroll base, leg.completed_at 버킷
+        pay_bucket = func.date(LegModel.completed_at).label("bucket")
+        pay_q = (
+            select(pay_bucket, func.coalesce(func.sum(PayrollLineModel.base_amount), 0).label("payouts"))
+            .select_from(PayrollLineModel)
+            .join(LegModel, LegModel.id == PayrollLineModel.leg_id)
+            .join(PayrollSettlementModel, and_(
+                PayrollSettlementModel.team_id == PayrollLineModel.team_id,
+                PayrollSettlementModel.id == PayrollLineModel.settlement_id,
+            ))
             .where(
-                LegChargeModel.team_id == self.team_id,
-                LegChargeModel.is_active.is_(True),
+                PayrollLineModel.team_id == self.team_id,
+                PayrollSettlementModel.status != PayrollStatus.VOID,
                 LegModel.completed_at.is_not(None),
                 LegModel.completed_at >= since,
             )
-            .group_by(bucket)
-            .order_by(bucket.asc())
+            .group_by(pay_bucket)
         )
-        rows = (await self.db.execute(q)).all()
+
+        # 매출(revenue) — invoice 청구액, issue_date(없으면 created_at) 버킷, ISSUED/PAID 만 인식
+        rev_bucket = func.coalesce(InvoiceModel.issue_date, func.date(InvoiceModel.created_at)).label("bucket")
+        rev_q = (
+            select(rev_bucket, func.coalesce(func.sum(InvoiceLineModel.amount), 0).label("revenue"))
+            .select_from(InvoiceLineModel)
+            .join(InvoiceModel, and_(
+                InvoiceModel.team_id == InvoiceLineModel.team_id,
+                InvoiceModel.id == InvoiceLineModel.invoice_id,
+            ))
+            .where(
+                InvoiceLineModel.team_id == self.team_id,
+                InvoiceModel.is_active.is_(True),
+                InvoiceModel.status.in_([InvoiceStatus.ISSUED, InvoiceStatus.PAID]),
+                func.coalesce(InvoiceModel.issue_date, func.date(InvoiceModel.created_at)) >= since_date,
+            )
+            .group_by(rev_bucket)
+        )
+
+        buckets: dict[date, dict] = {}
+        for b, payouts in (await self.db.execute(pay_q)).all():
+            if b is None:
+                continue
+            buckets.setdefault(b, {"revenue": Decimal("0"), "payouts": Decimal("0")})["payouts"] = Decimal(payouts or 0)
+        for b, revenue in (await self.db.execute(rev_q)).all():
+            if b is None:
+                continue
+            buckets.setdefault(b, {"revenue": Decimal("0"), "payouts": Decimal("0")})["revenue"] = Decimal(revenue or 0)
 
         points: List[MarginTrendPoint] = []
         total_rev = Decimal("0")
         total_pay = Decimal("0")
-        for r in rows:
-            rev = Decimal(r.revenue or 0)
-            pay = Decimal(r.payouts or 0)
+        for b in sorted(buckets):
+            rev = buckets[b]["revenue"]
+            pay = buckets[b]["payouts"]
             total_rev += rev
             total_pay += pay
-            points.append(MarginTrendPoint(
-                bucket=r.bucket,
-                revenue=rev,
-                payouts=pay,
-                margin=rev - pay,
-            ))
+            points.append(MarginTrendPoint(bucket=b, revenue=rev, payouts=pay, margin=rev - pay))
         return MarginTrendResponse(
-            days=days,
-            points=points,
-            total_revenue=total_rev,
-            total_payouts=total_pay,
+            days=days, points=points,
+            total_revenue=total_rev, total_payouts=total_pay,
             total_margin=total_rev - total_pay,
+        )
+
+    async def expiring_compliance(self, days: int = 30):
+        """truck/chassis/driver 의 만료 임박/만료된 장비·DQ 항목 (Phase 6)."""
+        from datetime import date as _date
+        from truck.model import TruckModel
+        from chassis.model import ChassisModel
+        from driver.model import DriverModel
+        from user.model import UserModel
+        from analytics.schemas.response import ExpiringItem, ExpiringComplianceResponse
+
+        days = max(1, min(days, 365))
+        today = datetime.now(tz=timezone.utc).date()
+        cutoff = today + timedelta(days=days)
+        items: list[ExpiringItem] = []
+
+        def _add(entity_type, eid, label, field, exp):
+            if exp is None or exp > cutoff:
+                return
+            items.append(ExpiringItem(
+                entity_type=entity_type, entity_id=eid, label=label or str(eid),
+                field=field, expires_at=exp, days_left=(exp - today).days,
+            ))
+
+        trucks = (await self.db.execute(select(TruckModel).where(
+            TruckModel.team_id == self.team_id, TruckModel.is_active.is_(True),
+        ))).scalars().all()
+        for t in trucks:
+            _add("truck", t.id, t.plate_no, "registration", t.registration_expires_at)
+            _add("truck", t.id, t.plate_no, "insurance", t.insurance_expires_at)
+            _add("truck", t.id, t.plate_no, "inspection", t.inspection_expires_at)
+
+        chs = (await self.db.execute(select(ChassisModel).where(
+            ChassisModel.team_id == self.team_id, ChassisModel.is_active.is_(True),
+        ))).scalars().all()
+        for c in chs:
+            _add("chassis", c.id, c.chassis_number, "registration", c.registration_expires_at)
+            _add("chassis", c.id, c.chassis_number, "inspection", c.inspection_expires_at)
+
+        drv = (await self.db.execute(
+            select(DriverModel, func.coalesce(UserModel.name, UserModel.email))
+            .outerjoin(UserModel, UserModel.id == DriverModel.user_id)
+            .where(DriverModel.team_id == self.team_id, DriverModel.is_active.is_(True))
+        )).all()
+        for d, name in drv:
+            _add("driver", d.id, name, "license", d.license_expires_at)
+            _add("driver", d.id, name, "medical", d.medical_cert_expires_at)
+            _add("driver", d.id, name, "twic", d.twic_expires_at)
+
+        items.sort(key=lambda x: x.days_left)
+        return ExpiringComplianceResponse(
+            days=days,
+            expired_count=sum(1 for i in items if i.days_left < 0),
+            soon_count=sum(1 for i in items if i.days_left >= 0),
+            items=items,
         )
 
     async def driver_utilization(self, days: int = 7) -> DriverUtilizationResponse:

@@ -1,0 +1,79 @@
+# src/rate_sheet/versioning.py
+"""요율 셀(rate_entry) 유효일자 버전관리 — append-only set_rate.
+
+핵심 규약 (컨플루언스 + 우리 결정):
+- 셀 값을 바꿔도 이전 기록은 절대 UPDATE 하지 않는다.
+- 변경 시 effective_from(>= 가능; 당일/이후) 을 지정 → 기존 유효 버전을 그 전날로 close,
+  같은 시작일이면 기존 버전을 supersede(is_active=False) 후 새 버전 insert.
+- 미래에 이미 등록된 버전이 있으면 새 버전의 effective_to 를 그 전날로 capping.
+- 공백 구간(요율 미등록일) 은 lookup 에서 found=False → 정산 시 "미등록" 경고.
+"""
+from __future__ import annotations
+from datetime import date, timedelta
+from decimal import Decimal
+
+from rate_sheet.repository import RateSheetRepository
+from rate_sheet.model import RateEntryModel
+from rate_sheet.const.status import RateEntrySource, RateEntryAction
+
+
+async def set_rate(
+    repo: RateSheetRepository,
+    sheet_id: int,
+    cell: dict,
+    *,
+    amount: Decimal | None,
+    per_unit: Decimal | None,
+    effective_from: date,
+    source: RateEntrySource,
+    reason: str | None,
+    actor_user_id: int | None,
+) -> RateEntryModel:
+    # 1) effective_from 시점에 유효한 기존 버전 찾기
+    existing = await repo.find_open_entry(sheet_id, cell, effective_from)
+    old_amount = existing.amount if existing else None
+    old_per_unit = existing.per_unit if existing else None
+
+    if existing is not None:
+        if existing.effective_from == effective_from:
+            # 같은 시작일 — 기존 버전 폐기(supersede). 정산에 이미 박힌 값은 snapshot 이라 영향 없음.
+            await repo.supersede_entry(existing, actor_user_id)
+            await repo.add_history(
+                sheet_id=sheet_id, rate_entry_id=existing.id, cell=cell,
+                old_amount=old_amount, new_amount=amount,
+                old_per_unit=old_per_unit, new_per_unit=per_unit,
+                effective_from=effective_from, action=RateEntryAction.SUPERSEDE,
+                reason=reason, actor_user_id=actor_user_id,
+            )
+        else:
+            # 기존 버전을 새 시작일 전날로 종료(동결).
+            await repo.close_entry(existing, effective_from - timedelta(days=1), actor_user_id)
+            await repo.add_history(
+                sheet_id=sheet_id, rate_entry_id=existing.id, cell=cell,
+                old_amount=old_amount, new_amount=old_amount,
+                old_per_unit=old_per_unit, new_per_unit=old_per_unit,
+                effective_from=existing.effective_from, action=RateEntryAction.CLOSE,
+                reason=reason, actor_user_id=actor_user_id,
+            )
+
+    # 2) 새 버전 insert
+    new_entry = await repo.insert_entry(
+        sheet_id, cell, amount=amount, per_unit=per_unit,
+        effective_from=effective_from, source=source, reason=reason,
+        actor_user_id=actor_user_id,
+    )
+
+    # 3) 미래 버전이 있으면 새 버전 종료일 capping
+    future = await repo.find_next_entry(sheet_id, cell, effective_from)
+    if future is not None:
+        await repo.close_entry(new_entry, future.effective_from - timedelta(days=1), actor_user_id)
+
+    # 4) SET 이력
+    await repo.add_history(
+        sheet_id=sheet_id, rate_entry_id=new_entry.id, cell=cell,
+        old_amount=old_amount, new_amount=amount,
+        old_per_unit=old_per_unit, new_per_unit=per_unit,
+        effective_from=effective_from, action=RateEntryAction.SET,
+        reason=reason, actor_user_id=actor_user_id,
+    )
+    return new_entry

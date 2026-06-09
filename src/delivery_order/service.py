@@ -88,6 +88,8 @@ class DeliveryOrderService:
                         pass
                     raise
 
+        await self._audit(row.id, "created", summary=row.bl_number or row.booking_number,
+                          actor_user_id=actor_user_id)
         do_dict = DeliveryOrderResponseSchema.model_validate(row).model_dump()
         return DeliveryOrderDetailResponseSchema(**do_dict, containers=created_containers)
 
@@ -240,10 +242,12 @@ class DeliveryOrderService:
         """List 페이지 단위로 파생 필드 일괄 계산. team_id 스코프."""
         from datetime import timezone, timedelta
         from decimal import Decimal as _Decimal
-        from sqlalchemy import func, case
-        from charge_code.const.status import PartyKind
+        from sqlalchemy import func, case, and_ as _and
         from container.model import ContainerModel
-        from leg_charge.model import LegChargeModel
+        from payroll.model import PayrollLineModel, PayrollSettlementModel
+        from payroll.const.status import PayrollStatus
+        from invoice.model import InvoiceModel
+        from invoice.const.status import InvoiceStatus
         from delivery_order.schemas.response import EtaStatus
 
         # 1) 컨테이너 카운트 (전체 / 도착완료)
@@ -274,31 +278,39 @@ class DeliveryOrderService:
                 "next_eta": r.next_eta,
             }
 
-        # 2) margin (leg_charge): revenue - payouts where leg.delivery_order_id in ids
-        rev = func.sum(case(
-            (LegChargeModel.payer_kind == PartyKind.CUSTOMER, LegChargeModel.amount),
-            else_=0,
-        )).label("rev")
-        pay = func.sum(case(
-            (LegChargeModel.payee_kind.in_([
-                PartyKind.DRIVER, PartyKind.CARRIER, PartyKind.POOL,
-            ]), LegChargeModel.amount),
-            else_=0,
-        )).label("pay")
-        mq = (
-            select(LegModel.delivery_order_id, rev, pay)
-            .select_from(LegChargeModel)
-            .join(LegModel, LegModel.id == LegChargeModel.leg_id)
+        # 2) margin_preview (재설계): 매출(invoice 청구) - 지급(payroll base) per D/O
+        # 지급 — payroll base by leg.delivery_order_id (비-VOID 정산)
+        payq = (
+            select(LegModel.delivery_order_id, func.coalesce(func.sum(PayrollLineModel.base_amount), 0).label("pay"))
+            .select_from(PayrollLineModel)
+            .join(LegModel, LegModel.id == PayrollLineModel.leg_id)
+            .join(PayrollSettlementModel, _and(
+                PayrollSettlementModel.team_id == PayrollLineModel.team_id,
+                PayrollSettlementModel.id == PayrollLineModel.settlement_id,
+            ))
             .where(
-                LegChargeModel.team_id == self.team_id,
-                LegChargeModel.is_active.is_(True),
+                PayrollLineModel.team_id == self.team_id,
+                PayrollSettlementModel.status != PayrollStatus.VOID,
                 LegModel.delivery_order_id.in_(ids),
             )
             .group_by(LegModel.delivery_order_id)
         )
+        # 매출 — invoice 청구액 by invoice.delivery_order_id (비-VOID)
+        revq = (
+            select(InvoiceModel.delivery_order_id, func.coalesce(func.sum(InvoiceModel.charge_total), 0).label("rev"))
+            .where(
+                InvoiceModel.team_id == self.team_id,
+                InvoiceModel.is_active.is_(True),
+                InvoiceModel.status != InvoiceStatus.VOID,
+                InvoiceModel.delivery_order_id.in_(ids),
+            )
+            .group_by(InvoiceModel.delivery_order_id)
+        )
         mmap: dict[int, _Decimal] = {}
-        for r in (await self.db.execute(mq)).all():
-            mmap[r.delivery_order_id] = _Decimal(r.rev or 0) - _Decimal(r.pay or 0)
+        for r in (await self.db.execute(payq)).all():
+            mmap[r.delivery_order_id] = mmap.get(r.delivery_order_id, _Decimal(0)) - _Decimal(r.pay or 0)
+        for r in (await self.db.execute(revq)).all():
+            mmap[r.delivery_order_id] = mmap.get(r.delivery_order_id, _Decimal(0)) + _Decimal(r.rev or 0)
 
         # 3) ETA status — DB 의 naive datetime 과 비교를 위해 양쪽 다 naive 로
         now = datetime.utcnow()
@@ -573,4 +585,77 @@ class DeliveryOrderService:
         except Exception:
             pass
 
+        # 6) 활동 타임라인 기록 (best-effort)
+        await self._audit(
+            do.id, "status_changed",
+            summary=f"{previous.value} → {target.value}",
+            before={"status": previous.value}, after={"status": target.value},
+            actor_user_id=actor_user_id,
+        )
         return DeliveryOrderResponseSchema.model_validate(do)
+
+    # ── Hold / Cancel (overlay) ──────────────────────────────────
+    async def _get_raw(self, do_id: int) -> "DeliveryOrderModel":
+        team_id = self.repo._require_team()
+        do = (await self.db.execute(select(DeliveryOrderModel).where(
+            DeliveryOrderModel.team_id == team_id,
+            DeliveryOrderModel.id == do_id,
+            DeliveryOrderModel.is_active.is_(True),
+        ))).scalar_one_or_none()
+        if not do:
+            raise NotFoundException("D/O")
+        return do
+
+    async def set_hold(self, do_id: int, *, on_hold: bool, reason: str | None = None,
+                       actor_user_id: int | None = None) -> DeliveryOrderResponseSchema:
+        do = await self._get_raw(do_id)
+        if do.cancelled_at is not None:
+            from common.exceptions.base import ConflictException
+            raise ConflictException("취소된 D/O 는 Hold 변경 불가.")
+        do.is_on_hold = on_hold
+        do.hold_reason = reason if on_hold else None
+        if actor_user_id is not None:
+            do.updated_by_user_id = actor_user_id
+        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(do)
+        await self._audit(
+            do.id, "hold_set" if on_hold else "hold_cleared",
+            summary=reason, actor_user_id=actor_user_id,
+        )
+        return DeliveryOrderResponseSchema.model_validate(do)
+
+    async def cancel(self, do_id: int, *, reason: str | None = None,
+                     actor_user_id: int | None = None) -> DeliveryOrderResponseSchema:
+        from datetime import datetime, timezone
+        do = await self._get_raw(do_id)
+        if do.cancelled_at is not None:
+            return DeliveryOrderResponseSchema.model_validate(do)
+        do.cancelled_at = datetime.now(timezone.utc)
+        do.cancel_reason = reason
+        do.is_on_hold = False
+        if actor_user_id is not None:
+            do.updated_by_user_id = actor_user_id
+        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(do)
+        await self._audit(do.id, "cancelled", summary=reason, actor_user_id=actor_user_id)
+        return DeliveryOrderResponseSchema.model_validate(do)
+
+    async def _audit(self, do_id: int, action: str, *, summary: str | None = None,
+                     before: dict | None = None, after: dict | None = None,
+                     actor_user_id: int | None = None) -> None:
+        """활동 타임라인 기록 — 실패해도 메인 작업 안전(best-effort)."""
+        try:
+            from audit_log.service import AuditLogService
+            await AuditLogService(self.db, self.repo._require_team()).record(
+                entity_type="delivery_order", entity_id=do_id, action=action,
+                summary=summary, before_state=before, after_state=after,
+                actor_user_id=actor_user_id,
+            )
+            await self.db.commit()
+        except Exception:  # noqa: BLE001
+            try:
+                await self.db.rollback()
+            except Exception:  # noqa: BLE001
+                pass

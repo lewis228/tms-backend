@@ -15,7 +15,7 @@ from common.pagination.schemas.pagination_response import CursorPaginationResult
 from common.pagination.schemas.sync_response import SyncResponse
 from leg.service import LegService
 from leg.schemas.request import (
-    LegTransitionRequest,
+    LegTransitionRequest, LegAssignRequest, LegApplyLoadTypeRequest, LegReissueRequest,
     LegCreateRequest, LegUpdateRequest, PaginateLegRequest,
     LegBulkCreateRequest, LegBulkUpdateRequest, LegBulkDeleteRequest,
 )
@@ -218,4 +218,66 @@ async def transition_leg(
     """Leg 상태 전이. FAILED 의 경우 failure_reason 필수."""
     return await LegService(db, team_id).transition(
         leg_id, body.target, failure_reason=body.failure_reason, actor_user_id=int(me.id),
+    )
+
+
+@router.post("/{leg_id}/assign", response_model=LegResponseSchema)
+async def assign_leg_driver(
+    leg_id: int,
+    body: LegAssignRequest,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(LEG_WRITE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """드라이버 배차 — PENDING leg 를 ASSIGNED 로 (+truck/chassis 선택)."""
+    return await LegService(db, team_id).assign_driver(
+        leg_id, body.driver_id, truck_id=body.truck_id, chassis_id=body.chassis_id,
+        actor_user_id=int(me.id),
+    )
+
+
+@router.post("/{leg_id}/unassign", response_model=LegResponseSchema)
+async def unassign_leg_driver(
+    leg_id: int,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(LEG_WRITE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """배차 취소 — ASSIGNED leg 를 PENDING 으로 되돌림."""
+    return await LegService(db, team_id).unassign_driver(leg_id, actor_user_id=int(me.id))
+
+
+@router.post("/apply-load-type", response_model=list[LegResponseSchema])
+async def apply_load_type(
+    body: LegApplyLoadTypeRequest,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(LEG_WRITE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """Load Type 템플릿 → container 에 leg N개 자동 생성 (재설계 1d)."""
+    return await LegService(db, team_id).apply_load_type(
+        body.container_id, body.template_id,
+        replace_existing=body.replace_existing, actor_user_id=int(me.id),
+    )
+
+
+@router.post("/{leg_id}/reissue", response_model=LegResponseSchema)
+async def reissue_leg(
+    leg_id: int,
+    body: LegReissueRequest,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(LEG_WRITE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """Dry Run 재발급 — 원본 leg DRY_RUN 종료 + 동일 구간 새 leg(PENDING) 발급."""
+    return await LegService(db, team_id).reissue_dry_run(
+        leg_id, reason=body.reason, actor_user_id=int(me.id),
     )

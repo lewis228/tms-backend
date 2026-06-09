@@ -30,6 +30,10 @@ class DeliveryOrderResponseSchema(ResponseSchema):
     vessel_id: int | None = None
     eta: datetime | None = None
     bl_released: bool
+    is_on_hold: bool = False
+    hold_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancel_reason: str | None = None
     internal_note: str | None = None
     is_active: bool
 

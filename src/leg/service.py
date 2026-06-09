@@ -49,17 +49,15 @@ class LegService:
             payload.model_dump(),
             actor_user_id=actor_user_id,
         )
-        # v3 자동 hook (best-effort) — 실패 시 rollback 으로 세션 invalid 회피.
-        # ⚠️ 주의: 외부 dependency 가 트랜잭션 commit 을 담당하므로 여기서 rollback 시
-        # 본 leg row 도 같이 롤백된다. 그게 의미상 맞음 (LegRate 없는 leg 는 v3 정책상 X).
+        # 자동 hook (best-effort) — 실패 시 rollback 으로 세션 invalid 회피.
+        # 재설계: 구 LegRate 자동계산 제거(payroll/RateResolver 가 정산 시점에 해석).
         try:
-            from leg_rate.service import LegRateService
-            await LegRateService(self.db, self.team_id).get_or_calc(
-                row.id, actor_user_id=actor_user_id,
-            )
             if row.container_id is not None:
                 from container.state_derive import derive_and_save_state
                 await derive_and_save_state(self.db, self.team_id, row.container_id)
+            # 재설계: 새 leg(미배차) → D/O DISPATCHING 자동 파생
+            from delivery_order.state_derive import derive_do_dispatch_state
+            await derive_do_dispatch_state(self.db, self.team_id, row.delivery_order_id)
         except Exception:  # noqa: BLE001
             try:
                 await self.db.rollback()
@@ -182,6 +180,173 @@ class LegService:
         return LegResponseSchema.model_validate(row)
 
     # ═══════════════════════════════════════════════════════════════
+    # 배차 (Assign / Unassign) — 재설계: 드라이버 배차 시 PENDING→ASSIGNED
+    # ═══════════════════════════════════════════════════════════════
+
+    async def _fetch_active_leg(self, leg_id: int):
+        from sqlalchemy import select
+        from leg.model import LegModel
+        team_id = self.repo._require_team()
+        leg = (await self.db.execute(select(LegModel).where(
+            LegModel.team_id == team_id, LegModel.id == leg_id, LegModel.is_active.is_(True),
+        ))).scalar_one_or_none()
+        if not leg:
+            raise NotFoundException("Leg")
+        return leg
+
+    async def _derive_container_after(self, container_id: int | None) -> None:
+        """배차/상태 변경 후 container.work_state 재파생 (commit 이후, 실패해도 안전)."""
+        if container_id is None:
+            return
+        try:
+            from container.state_derive import derive_and_save_state
+            await derive_and_save_state(self.db, self.team_id, container_id)
+            await self.db.commit()
+        except Exception:  # noqa: BLE001
+            try:
+                await self.db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def _derive_do_dispatch_after(self, do_id: int | None) -> None:
+        """배차/leg CRUD 후 D/O dispatch-phase(PLANNING/DISPATCHING/DISPATCHED) 자동 파생."""
+        if do_id is None:
+            return
+        try:
+            from delivery_order.state_derive import derive_do_dispatch_state
+            await derive_do_dispatch_state(self.db, self.team_id, do_id)
+            await self.db.commit()
+        except Exception:  # noqa: BLE001
+            try:
+                await self.db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def assign_driver(
+        self, leg_id: int, driver_id: int, *,
+        truck_id: int | None = None, chassis_id: int | None = None,
+        actor_user_id: int | None = None,
+    ) -> LegResponseSchema:
+        """드라이버 배차. PENDING 이면 ASSIGNED 로 전이(+assigned_at). 이미 운행중이면 status 유지(재배차)."""
+        from datetime import datetime, timezone
+        from leg.const.status import LegStatus
+        leg = await self._fetch_active_leg(leg_id)
+        now = datetime.now(timezone.utc)
+        leg.driver_id = driver_id
+        if truck_id is not None:
+            leg.truck_id = truck_id
+        if chassis_id is not None:
+            leg.chassis_id = chassis_id
+        leg.offered_at = now  # mobile 호환: 드라이버에 offered
+        if leg.status == LegStatus.PENDING:
+            leg.status = LegStatus.ASSIGNED
+            leg.assigned_at = now
+        if actor_user_id is not None:
+            leg.updated_by_user_id = actor_user_id
+        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(leg)
+        await self._derive_container_after(leg.container_id)
+        await self._derive_do_dispatch_after(leg.delivery_order_id)
+        return LegResponseSchema.model_validate(leg)
+
+    async def unassign_driver(self, leg_id: int, *, actor_user_id: int | None = None) -> LegResponseSchema:
+        """배차 취소. ASSIGNED 이면 PENDING 으로 되돌림. 운행 시작 후엔 driver 만 비움."""
+        from leg.const.status import LegStatus
+        leg = await self._fetch_active_leg(leg_id)
+        leg.driver_id = None
+        leg.offered_at = None
+        leg.accepted_at = None
+        leg.rejected_at = None
+        if leg.status == LegStatus.ASSIGNED:
+            leg.status = LegStatus.PENDING
+            leg.assigned_at = None
+        if actor_user_id is not None:
+            leg.updated_by_user_id = actor_user_id
+        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(leg)
+        await self._derive_container_after(leg.container_id)
+        await self._derive_do_dispatch_after(leg.delivery_order_id)
+        return LegResponseSchema.model_validate(leg)
+
+    # ═══════════════════════════════════════════════════════════════
+    # Load Type 템플릿 → leg 자동 생성 (재설계 1d)
+    # ═══════════════════════════════════════════════════════════════
+
+    async def apply_load_type(
+        self,
+        container_id: int,
+        template_id: int,
+        *,
+        replace_existing: bool = False,
+        actor_user_id: int | None = None,
+    ) -> List[LegResponseSchema]:
+        """container 에 Load Type 템플릿 step 대로 leg 들을 생성한다."""
+        from leg.generator import apply_load_type as _apply
+        rows = await _apply(
+            self.db, self.team_id,
+            container_id=container_id, template_id=template_id,
+            actor_user_id=actor_user_id, replace_existing=replace_existing,
+        )
+        return [LegResponseSchema.model_validate(r) for r in rows]
+
+    # ═══════════════════════════════════════════════════════════════
+    # Dry Run 재발급 (빠꾸 → 원본 DRY_RUN + 새 leg 발급)
+    # ═══════════════════════════════════════════════════════════════
+
+    async def reissue_dry_run(
+        self,
+        leg_id: int,
+        *,
+        reason: str | None = None,
+        actor_user_id: int | None = None,
+    ) -> LegResponseSchema:
+        """현장 도착했으나 작업 불가(빠꾸) → 원본 leg 를 DRY_RUN 으로 종료하고
+        동일 구간의 새 leg(PENDING, 미배차)를 발급한다."""
+        from leg.const.status import LegStatus
+        from leg.model import LegModel
+        orig = await self._fetch_active_leg(leg_id)
+        if orig.status not in (LegStatus.ASSIGNED, LegStatus.IN_TRANSIT):
+            raise BadRequestException("ASSIGNED/IN_TRANSIT leg 만 Dry Run 재발급 가능")
+
+        # 원본 → DRY_RUN 종료
+        orig.status = LegStatus.DRY_RUN
+        orig.failure_reason = reason
+        if actor_user_id is not None:
+            orig.updated_by_user_id = actor_user_id
+
+        # 새 leg — 구간/요율 입력 복사, 미배차 PENDING
+        new = LegModel(
+            team_id=self.team_id,
+            delivery_order_id=orig.delivery_order_id,
+            container_id=orig.container_id,
+            step=orig.step,
+            move_type=orig.move_type,
+            service_type=orig.service_type,
+            move_code=orig.move_code,
+            from_location_type=orig.from_location_type,
+            to_location_type=orig.to_location_type,
+            from_stop_id=orig.from_stop_id,
+            to_stop_id=orig.to_stop_id,
+            rate_point_id=orig.rate_point_id,
+            dest_zip=orig.dest_zip, dest_city=orig.dest_city, dest_state=orig.dest_state,
+            rate_miles=orig.rate_miles, rate_hours=orig.rate_hours,
+            pickup_location_id=orig.pickup_location_id,
+            delivery_location_id=orig.delivery_location_id,
+            status=LegStatus.PENDING,
+            reissued_from_leg_id=orig.id,
+            created_by_user_id=actor_user_id,
+        )
+        self.db.add(new)
+        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(new)
+        await self._derive_container_after(new.container_id)
+        await self._derive_do_dispatch_after(new.delivery_order_id)
+        return LegResponseSchema.model_validate(new)
+
+    # ═══════════════════════════════════════════════════════════════
     # Update (벌크) - 전체 성공 or 전체 실패
     # ═══════════════════════════════════════════════════════════════
     
@@ -256,10 +421,21 @@ class LegService:
         if not row:
             raise NotFoundException("거래처")
 
+        do_id = row.delivery_order_id
+        container_id = row.container_id
         await self.repo.soft_deactivate_by_id(
             leg_id,
             actor_user_id=actor_user_id,
         )
+        # 재설계: leg 삭제 후 container.work_state + D/O dispatch-phase 재계산
+        try:
+            if container_id is not None:
+                from container.state_derive import derive_and_save_state
+                await derive_and_save_state(self.db, self.team_id, container_id)
+            from delivery_order.state_derive import derive_do_dispatch_state
+            await derive_do_dispatch_state(self.db, self.team_id, do_id)
+        except Exception:  # noqa: BLE001
+            pass
         return LegDeleteResponseSchema(
             id=leg_id,
             deleted=True,
@@ -350,11 +526,13 @@ class LegService:
                     detail=details,
                 )
 
+        # 재설계: ASSIGNED 추가 + 배차취소/재배차 허용 (기존 PENDING→IN_TRANSIT 유지)
         _ALLOWED_LEG: dict = {
-            LegStatus.PENDING:    {LegStatus.IN_TRANSIT},
+            LegStatus.PENDING:    {LegStatus.ASSIGNED, LegStatus.IN_TRANSIT},
+            LegStatus.ASSIGNED:   {LegStatus.IN_TRANSIT, LegStatus.PENDING},
             LegStatus.IN_TRANSIT: {LegStatus.COMPLETED, LegStatus.FAILED},
             LegStatus.COMPLETED:  set(),
-            LegStatus.FAILED:     set(),
+            LegStatus.FAILED:     {LegStatus.PENDING},
         }
 
         target_enum = target if isinstance(target, LegStatus) else LegStatus(target)
@@ -380,12 +558,13 @@ class LegService:
             raise BadRequestException("failure_reason required for FAILED")
 
         now = datetime.now(timezone.utc)
-        if target_enum == LegStatus.IN_TRANSIT:
+        if target_enum == LegStatus.ASSIGNED:
+            leg.assigned_at = now
+        elif target_enum == LegStatus.IN_TRANSIT:
             leg.started_at = now
         elif target_enum == LegStatus.COMPLETED:
             leg.completed_at = now
             leg.arrived_at = leg.arrived_at or now
-            await self._ensure_settlement(leg)
         elif target_enum == LegStatus.FAILED:
             leg.failure_reason = failure_reason
         leg.status = target_enum
@@ -396,19 +575,10 @@ class LegService:
         await self.db.commit()
         await self.db.refresh(leg)
 
-        # ── v3 자동 hook: commit 이후 별도 트랜잭션. 실패해도 메인 transition 안전 ──
+        # ── 자동 hook: commit 이후 별도 트랜잭션. 실패해도 메인 transition 안전 ──
+        # 재설계: 구 leg_charge auto_waiting 제거(요금은 leg_layer/정산이 담당).
         if target_enum == LegStatus.COMPLETED:
-            # 1) WAITING 자동 LegCharge
-            try:
-                from leg_charge.auto_waiting import auto_waiting_on_complete
-                await auto_waiting_on_complete(self.db, self.team_id, leg.id)
-                await self.db.commit()
-            except Exception:  # noqa: BLE001
-                try:
-                    await self.db.rollback()
-                except Exception:  # noqa: BLE001
-                    pass
-            # 2) Container.work_state derive
+            # Container.work_state derive
             if leg.container_id is not None:
                 try:
                     from container.state_derive import derive_and_save_state
@@ -440,26 +610,3 @@ class LegService:
             pass
 
         return LegResponseSchema.model_validate(leg)
-
-    async def _ensure_settlement(self, leg) -> None:
-        """Leg COMPLETED 시 Settlement 자동 생성 (이미 있으면 skip)."""
-        from sqlalchemy import select
-        from settlement.model import SettlementModel
-        from settlement.const.status import SettlementStatus
-
-        team_id = self.repo._require_team()
-        stmt = select(SettlementModel).where(
-            SettlementModel.team_id == team_id,
-            SettlementModel.leg_id == leg.id,
-        )
-        existing = (await self.db.execute(stmt)).scalar_one_or_none()
-        if existing:
-            return
-        s = SettlementModel(
-            team_id=team_id,
-            leg_id=leg.id,
-            settlement_status=SettlementStatus.PENDING,
-            is_settled=False,
-        )
-        self.db.add(s)
-        await self.db.flush()

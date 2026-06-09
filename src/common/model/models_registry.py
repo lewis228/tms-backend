@@ -29,22 +29,14 @@ from truck.model import TruckModel  # noqa: F401
 from equipment_pool.model import EquipmentPoolModel  # noqa: F401
 from chassis.model import ChassisModel  # noqa: F401
 
-# ── TMS D/O / Leg / Settlement (Phase C) ─────────────────────
-from rate_setting.model import RateSettingModel  # noqa: F401
+# ── TMS D/O / Leg (Phase C) ──────────────────────────────────
 from charge_code.model import ChargeCodeModel  # noqa: F401
-from rate_card.model import RateCardModel  # noqa: F401
 from delivery_order.model import DeliveryOrderModel  # noqa: F401
 from container.model import ContainerModel, ContainerEventModel  # noqa: F401
 from leg.model import LegModel  # noqa: F401
 from leg_stop.model import LegStopModel  # noqa: F401
 from chassis_event.model import ChassisEventModel  # noqa: F401
-from leg_charge.model import LegChargeModel  # noqa: F401
 from street_turn.model import StreetTurnModel  # noqa: F401
-from settlement.model import (  # noqa: F401
-    SettlementModel,
-    ExtraChargeModel,
-    SettlementAuditLogModel,
-)
 
 # ── TMS Phase D — Notification ──────────────────────────────
 from notification.model import NotificationModel  # noqa: F401
@@ -56,13 +48,24 @@ from push_token.model import PushTokenModel  # noqa: F401
 # ── API Keys ────────────────────────────────────────────────
 from api_key.model import ApiKeyModel  # noqa: F401
 
+# ── TMS 재설계 (Confluence 기준) — Rate 서브시스템 ───────────
+from rate_point.model import RatePointModel  # noqa: F401
+from rate_group.model import RateGroupModel  # noqa: F401
+from driver_rate_assignment.model import DriverRateAssignmentModel  # noqa: F401
+from rate_zone.model import RateZoneModel, RateZoneMemberModel  # noqa: F401
+from rate_sheet.model import RateSheetModel, RateEntryModel, RateEntryHistoryModel  # noqa: F401
+from rate_multiplier.model import RateMultiplierModel  # noqa: F401
+from load_type_template.model import LoadTypeTemplateModel, LoadTypeTemplateStepModel  # noqa: F401
+from accessorial.model import AccessorialModel  # noqa: F401
+from audit_log.model import AuditLogModel  # noqa: F401
+from leg_layer.model import LegAddonModel, LegChargeEventModel, LegStopOffModel  # noqa: F401
+from payroll.model import PayrollSettlementModel, PayrollLineModel, PayrollChargeModel  # noqa: F401
+from invoice.model import InvoiceModel, InvoiceLineModel  # noqa: F401
+from dual_transaction.model import DualTransactionModel  # noqa: F401
+
 # ── TMS Phase I-A (Container-First v3) ───────────────────────
 from container_stop.model import ContainerStopModel  # noqa: F401
 from leg_driver_segment.model import LegDriverSegmentModel  # noqa: F401
-from rate_quote.model import RateQuoteModel  # noqa: F401
-from rate_tariff.model import RateTariffModel  # noqa: F401
-from leg_rate.model import LegRateModel  # noqa: F401
-from distance_matrix.model import DistanceMatrixModel  # noqa: F401
 
 # ── Demo (Driver mobile) — 채팅 ──────────────────────────────
 from chat.model import ChatMessageModel  # noqa: F401

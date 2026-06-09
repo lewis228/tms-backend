@@ -26,6 +26,8 @@ class DriverResponseSchema(ResponseSchema):
     default_chassis_id: int | None = None
     license_expires_at: date | None = None
     medical_cert_expires_at: date | None = None
+    twic_expires_at: date | None = None
+    hire_date: date | None = None
 
 
 class DriverDeleteResponseSchema(ResponseSchema):

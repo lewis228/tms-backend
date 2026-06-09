@@ -1,8 +1,9 @@
 # src/chassis/model.py
 from __future__ import annotations
+from datetime import date
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    String, Text, ForeignKey,
+    String, Text, Date, ForeignKey,
     Index, UniqueConstraint, Enum as SAEnum,
 )
 
@@ -48,6 +49,10 @@ class ChassisModel(Base, TeamScopedMixin):
     current_location_id: Mapped[int | None] = mapped_column(
         ForeignKey("location.id", ondelete="SET NULL"), nullable=True,
     )
+
+    # ── 장비 만료 추적 (Phase 6 만료 알림) ───────────────────────
+    registration_expires_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    inspection_expires_at:   Mapped[date | None] = mapped_column(Date, nullable=True)
 
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 

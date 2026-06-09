@@ -4,7 +4,7 @@ from typing import List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from common.exceptions.base import NotFoundException, BadRequestException
+from common.exceptions.base import NotFoundException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from container.repository import ContainerRepository
 from container.schemas.request import (
@@ -311,6 +311,9 @@ class ContainerService:
                 to_stop_id=l.to_stop_id,
                 move_type_v3=l.move_type_v3,
                 service_type=l.service_type,
+                from_location_type=l.from_location_type,
+                to_location_type=l.to_location_type,
+                move_code=l.move_code,
                 status=l.status,
                 driver_id=l.driver_id,
                 driver_name=driver_names.get(l.driver_id) if l.driver_id else None,
@@ -318,6 +321,7 @@ class ContainerService:
                 arrived_at=l.arrived_at,
                 completed_at=l.completed_at,
                 failure_reason=l.failure_reason,
+                reissued_from_leg_id=l.reissued_from_leg_id,
                 note=l.note,
                 is_active=l.is_active,
                 segments=seg_map.get(l.id, []),

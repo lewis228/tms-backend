@@ -11,6 +11,7 @@ from container.const.status import (
 from leg.const.status import (
     ServiceType, ContainerState, StopRole, MoveTypeV3,
     LegStatus, LegRateSource, HandoverReason,
+    LegLocationType, LegMoveCode,
 )
 from charge_code.const.status import ChargeCategory, PartyKind
 
@@ -175,6 +176,9 @@ class LegFullSchema(ResponseSchema):
     to_stop_id:   int | None = None
     move_type_v3: MoveTypeV3 | None = None
     service_type: ServiceType | None = None
+    from_location_type: LegLocationType | None = None
+    to_location_type: LegLocationType | None = None
+    move_code: LegMoveCode | None = None
     status: LegStatus
     driver_id: int | None = None
     driver_name: str | None = None
@@ -182,6 +186,7 @@ class LegFullSchema(ResponseSchema):
     arrived_at:   datetime | None = None
     completed_at: datetime | None = None
     failure_reason: str | None = None
+    reissued_from_leg_id: int | None = None
     note: str | None = None
     is_active: bool
 

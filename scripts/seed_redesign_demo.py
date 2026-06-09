@@ -21,6 +21,8 @@ from database.mysql_connection import write_engine
 
 DEMO_EMAIL = "demo@omniq.dev"
 DEMO_PW = "Demo1234!"
+TEST_EMAIL = "test@test.com"
+TEST_PW = "1234"
 
 
 def banner(m): print(f"\n{'='*8} {m} {'='*8}")
@@ -34,41 +36,72 @@ async def main():
 
 
 async def cleanup(db: AsyncSession):
-    """기존 demo + E2E 임시 데이터 제거 + 고아 행(team_id 가 사라진 행) 정리.
+    """기존 demo/test + E2E 임시 데이터 제거 + 고아 행 정리.
 
-    ⚠️ FK_CHECKS 를 끄지 않는다 — 팀 row 삭제 시 team_id ON DELETE CASCADE 가
-    team-scoped 자식들을 정상 정리하게 둔다(끄면 고아가 남음).
+    팀 내부 RESTRICT FK(delivery_order→customer 등) 때문에 단순 `DELETE FROM teams`
+    CASCADE 는 순서 문제로 실패한다. 그래서 FK_CHECKS=0 으로 끄되, 대상 팀의
+    **모든** team-scoped 행을 명시적으로 지워 고아를 남기지 않는다.
     """
-    banner("정리: 기존 demo + E2E 임시 데이터 + 고아 행 제거")
+    banner("정리: 기존 demo/test + E2E 임시 데이터 + 고아 행 제거")
     import common.model.models_registry  # noqa: F401
     from common.model.team_scoped_mixin import get_team_scoped_table_names
     from sqlalchemy import bindparam
     from user.model import UserModel
     from team.model import TeamModel, UserTeamModel
 
-    # 1) 기존 demo user → 그 멤버십 팀 삭제(CASCADE) + user 삭제
-    demo = (await db.execute(select(UserModel).where(UserModel.email == DEMO_EMAIL))).scalar_one_or_none()
-    if demo:
-        mems = (await db.execute(select(UserTeamModel).where(UserTeamModel.user_id == demo.id))).scalars().all()
-        for m in mems:
-            await db.execute(text("DELETE FROM teams WHERE id=:t"), {"t": m.team_id})  # CASCADE
-        await db.execute(text("DELETE FROM user WHERE id=:u"), {"u": demo.id})
-        print("  기존 demo user/team 제거(CASCADE)")
-    # 2) E2E 임시 팀 + actor
-    e2e_teams = (await db.execute(select(TeamModel).where(TeamModel.name == "E2E Drayage Co"))).scalars().all()
-    for t in e2e_teams:
-        await db.execute(text("DELETE FROM teams WHERE id=:t"), {"t": t.id})  # CASCADE
+    tables = get_team_scoped_table_names()
+
+    # 1) 제거 대상 팀 id 수집 — demo/test 유저의 멤버십 팀 + E2E 임시 팀
+    target_team_ids: set[int] = set()
+    login_user_ids: set[int] = set()
+    for em in (DEMO_EMAIL, TEST_EMAIL):
+        u = (await db.execute(select(UserModel).where(UserModel.email == em))).scalar_one_or_none()
+        if not u:
+            continue
+        login_user_ids.add(u.id)
+        for m in (await db.execute(select(UserTeamModel).where(UserTeamModel.user_id == u.id))).scalars().all():
+            target_team_ids.add(m.team_id)
+    for t in (await db.execute(select(TeamModel).where(TeamModel.name == "E2E Drayage Co"))).scalars().all():
+        target_team_ids.add(t.id)
+
+    await db.execute(text("SET FOREIGN_KEY_CHECKS=0"))
+    # 2) 대상 팀의 모든 team-scoped 행 삭제 (고아 방지)
+    if target_team_ids:
+        for tbl in tables:
+            await db.execute(
+                text(f"DELETE FROM {tbl} WHERE team_id IN :v").bindparams(bindparam("v", expanding=True)),
+                {"v": list(target_team_ids)},
+            )
+        await db.execute(
+            text("DELETE FROM user_team WHERE team_id IN :v").bindparams(bindparam("v", expanding=True)),
+            {"v": list(target_team_ids)},
+        )
+        await db.execute(
+            text("DELETE FROM teams WHERE id IN :v").bindparams(bindparam("v", expanding=True)),
+            {"v": list(target_team_ids)},
+        )
+    # 3) 로그인 유저 + E2E actor 제거
+    if login_user_ids:
+        await db.execute(
+            text("DELETE FROM user_team WHERE user_id IN :v").bindparams(bindparam("v", expanding=True)),
+            {"v": list(login_user_ids)},
+        )
+        await db.execute(
+            text("DELETE FROM user WHERE id IN :v").bindparams(bindparam("v", expanding=True)),
+            {"v": list(login_user_ids)},
+        )
     await db.execute(text("DELETE FROM user WHERE email LIKE 'e2e-%@example.com'"))
-    # 3) 혹시 남은 고아(team_id 가 더 이상 없는 행) 일괄 정리
-    valid = [r[0] for r in (await db.execute(text("SELECT id FROM teams"))).fetchall()]
+    # 4) 혹시 남은 고아(team_id 가 더 이상 없는 행) 일괄 정리
+    valid = [r[0] for r in (await db.execute(text("SELECT id FROM teams"))).fetchall()] or [0]
     orphans = 0
-    for tbl in get_team_scoped_table_names():
+    for tbl in tables:
         res = await db.execute(
             text(f"DELETE FROM {tbl} WHERE team_id NOT IN :v").bindparams(bindparam("v", expanding=True)),
             {"v": valid},
         )
         orphans += res.rowcount or 0
-    print(f"  E2E 임시 팀 {len(e2e_teams)}개 + 고아 {orphans}행 제거")
+    await db.execute(text("SET FOREIGN_KEY_CHECKS=1"))
+    print(f"  제거 팀 {len(target_team_ids)}개, 로그인유저 {len(login_user_ids)}, 고아 {orphans}행")
     await db.commit()
 
 
@@ -121,9 +154,14 @@ async def seed(db: AsyncSession):
                                system_key="ADMIN", version=1)
     db.add(grp); await db.flush()
     db.add(UserTeamModel(user_id=user.id, team_id=team.id, permission_group_id=grp.id))
+    # 두 번째 로그인 계정 — test@test.com / 1234 (같은 팀, 어드민)
+    test_user = UserModel(email=TEST_EMAIL, password=bcrypt.hashpw(TEST_PW.encode(), bcrypt.gensalt()).decode(),
+                          auth_provider="EMAIL", role="ADMIN", name="Test User")
+    db.add(test_user); await db.flush()
+    db.add(UserTeamModel(user_id=test_user.id, team_id=team.id, permission_group_id=grp.id))
     await db.flush()
     tid, aid = team.id, user.id
-    print(f"  team={tid}  login={DEMO_EMAIL} / {DEMO_PW}  (admin group={grp.id})")
+    print(f"  team={tid}  로그인: {DEMO_EMAIL}/{DEMO_PW}  &  {TEST_EMAIL}/{TEST_PW}  (admin group={grp.id})")
 
     banner("마스터 + 요율 + Load Type")
     customer = CustomerModel(team_id=tid, name="ACME Importers", kind="CUSTOMER")
@@ -213,7 +251,7 @@ async def seed(db: AsyncSession):
 
     banner("✅ 데모 시드 완료")
     print(f"""
-로그인: {DEMO_EMAIL} / {DEMO_PW}
+로그인: {TEST_EMAIL} / {TEST_PW}   또는   {DEMO_EMAIL} / {DEMO_PW}
 팀: TMS 데모 (id={tid})
 화면: 요율(rates/*), 마스터, D/O #{do.id}(완주)·#{do2.id}(planning),
  Shipment 상세(탭), 정산 #{pay.id}, 인보이스 #{inv.id}, 대시보드

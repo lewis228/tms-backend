@@ -281,7 +281,7 @@ async def seed(db: AsyncSession):
 
     # ── 4. 요율 서브시스템 ────────────────────────────────────
     banner("요율 (rate_*)")
-    # 재설계(Zone×Zone): SoCal 드레이 존 5개 (zip→zone 매핑으로 정산 해석).
+    # 재설계(Zone×Zone): SoCal 드레이 존 7개 (zip→zone 매핑). 항만 기준 거리지수(idx)로 가격 생성.
     def _zone(name, code, color, desc):
         z = RateZoneModel(team_id=tid, name=name, code=code, color=color,
                           description=desc, created_by_user_id=aid)
@@ -289,21 +289,27 @@ async def seed(db: AsyncSession):
         return z
 
     z_port = _zone("Port / Harbor", "PORT", "#0ea5e9", "San Pedro / Long Beach 항만")
-    z_ie = _zone("Inland Empire", "IE", "#3b82f6", "Fontana / Ontario / San Bernardino")
     z_la = _zone("Los Angeles", "LA", "#8b5cf6", "LA Basin / Commerce")
     z_oc = _zone("Orange County", "OC", "#f59e0b", "Anaheim / Santa Ana")
+    z_ie = _zone("Inland Empire", "IE", "#3b82f6", "Fontana / Ontario / San Bernardino")
+    z_ven = _zone("Ventura", "VEN", "#ec4899", "Oxnard / Ventura")
+    z_hd = _zone("High Desert", "HD", "#a855f7", "Victorville / Hesperia")
     z_sd = _zone("San Diego", "SD", "#10b981", "San Diego 항만권")
     await db.flush()
     _members = {
         z_port: ["90731", "90802", "90744"],
-        z_ie: ["92335", "91761", "92408"],
         z_la: ["90001", "90021", "90040"],
         z_oc: ["92805", "92701"],
+        z_ie: ["92335", "91761", "92408"],
+        z_ven: ["93030", "93001"],
+        z_hd: ["92392", "92345"],
         z_sd: ["92101", "92154"],
     }
     for _z, _zips in _members.items():
         for _zc in _zips:
             db.add(RateZoneMemberModel(team_id=tid, zone_id=_z.id, zip_code=_zc, created_by_user_id=aid))
+    ZIDX = {z_port: 0, z_la: 25, z_oc: 35, z_ie: 60, z_ven: 65, z_hd: 95, z_sd: 120}
+    ZONES = [z_port, z_la, z_oc, z_ie, z_ven, z_hd, z_sd]
 
     # 그룹 12개 — 방식(ZONE/CITY/MILE/HOURLY)별 3개씩
     def _grp(name, method, desc, default=False):
@@ -346,6 +352,9 @@ async def seed(db: AsyncSession):
     S40, S20 = RateContainerSize.SIZE_40, RateContainerSize.SIZE_20
     JAN = date(2026, 1, 1)
 
+    def _round5(v):
+        return str(int(round(v / 5.0) * 5))
+
     async def zcell(grp, mv, sv, fz, tz, size, amt, eff=JAN):
         await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
             move_type=mv, service_type=sv, from_zone_id=fz.id, to_zone_id=tz.id,
@@ -360,40 +369,45 @@ async def seed(db: AsyncSession):
         await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
             per_unit=D(per_unit), effective_from=eff), actor_user_id=aid)
 
-    # Default ZONE — 다양한 (move,service,size); PORT→IE 는 285→310 버전 2개(이력)
+    # (move, service) 별 가격 계수
+    MS_FULL = [(L, LV, 1.00), (L, DR, 0.92), (E, DR, 0.45)]
+
+    async def fill_zone_matrix(grp, group_mult, combos):
+        """그룹의 모든 from≠to 페어를 40ft 로 채움(매트릭스 빽빽)."""
+        for mv, sv, ms in combos:
+            for fz in ZONES:
+                for tz in ZONES:
+                    if fz is tz:
+                        continue
+                    dist = abs(ZIDX[tz] - ZIDX[fz])
+                    await zcell(grp, mv, sv, fz, tz, S40, _round5((90 + dist * 2.6) * group_mult * ms))
+
+    await fill_zone_matrix(grp_zone, 1.00, MS_FULL)
+    await fill_zone_matrix(grp_zone_rf, 1.40, [(L, LV, 1.00), (L, DR, 0.92)])
+    await fill_zone_matrix(grp_zone_ow, 1.55, [(L, LV, 1.00)])
+    # PORT→IE LOAD/LIVE 40 = 285→310 버전 2개로 오버라이드(payroll/e2e 정합)
     await zcell(grp_zone, L, LV, z_port, z_ie, S40, "285")
-    await zcell(grp_zone, L, LV, z_port, z_ie, S40, "310", eff=date(2026, 6, 1))  # rate increase
-    await zcell(grp_zone, L, LV, z_port, z_la, S40, "180")
-    await zcell(grp_zone, L, LV, z_port, z_oc, S40, "250")
-    await zcell(grp_zone, L, LV, z_port, z_sd, S40, "320")
-    await zcell(grp_zone, L, LV, z_ie, z_port, S40, "300")
-    await zcell(grp_zone, L, DR, z_port, z_ie, S40, "290")
-    await zcell(grp_zone, L, DR, z_port, z_la, S40, "165")
-    await zcell(grp_zone, E, DR, z_ie, z_port, S40, "120")
-    await zcell(grp_zone, E, DR, z_la, z_port, S40, "95")
+    await zcell(grp_zone, L, LV, z_port, z_ie, S40, "310", eff=date(2026, 6, 1))
+    # 20ft 데모 셀 몇 개
     await zcell(grp_zone, L, LV, z_port, z_ie, S20, "265")
-    # Reefer ZONE
-    await zcell(grp_zone_rf, L, LV, z_port, z_ie, S40, "430")
-    await zcell(grp_zone_rf, L, LV, z_port, z_la, S40, "260")
-    await zcell(grp_zone_rf, L, LV, z_port, z_oc, S40, "370")
-    await zcell(grp_zone_rf, L, DR, z_port, z_ie, S40, "405")
-    # Overweight ZONE
-    await zcell(grp_zone_ow, L, LV, z_port, z_ie, S40, "460")
-    await zcell(grp_zone_ow, L, LV, z_port, z_oc, S40, "420")
-    await zcell(grp_zone_ow, L, DR, z_port, z_ie, S40, "440")
-    # City — SoCal (도시명은 zip 마스터 표기와 일치)
-    await ccell(grp_city, L, LV, "San Pedro", "Fontana", S40, "320")
-    await ccell(grp_city, L, LV, "San Pedro", "Anaheim", S40, "250")
-    await ccell(grp_city, L, LV, "Long Beach", "Ontario", S40, "305")
-    await ccell(grp_city, L, LV, "Long Beach", "Los Angeles", S40, "150")
-    await ccell(grp_city, E, DR, "Fontana", "San Pedro", S40, "110")
-    # City — Express
-    await ccell(grp_city_ex, L, LV, "San Pedro", "Fontana", S40, "385")
-    await ccell(grp_city_ex, L, LV, "Long Beach", "Santa Ana", S40, "330")
-    await ccell(grp_city_ex, L, DR, "San Pedro", "Fontana", S40, "360")
-    # City — Reefer
-    await ccell(grp_city_rf, L, LV, "San Pedro", "Fontana", S40, "470")
-    await ccell(grp_city_rf, L, LV, "San Pedro", "Anaheim", S40, "360")
+    await zcell(grp_zone, L, LV, z_port, z_la, S20, "180")
+
+    # City 매트릭스 — 대표 도시 6개(zip 마스터 표기와 일치)
+    CITIES = [("San Pedro", 0), ("Long Beach", 10), ("Los Angeles", 25),
+              ("Anaheim", 35), ("Santa Ana", 40), ("Fontana", 60)]
+
+    async def fill_city_matrix(grp, group_mult, combos):
+        for mv, sv, ms in combos:
+            for fc, fi in CITIES:
+                for tc, ti in CITIES:
+                    if fc == tc:
+                        continue
+                    await ccell(grp, mv, sv, fc, tc, S40, _round5((95 + abs(ti - fi) * 3.0) * group_mult * ms))
+
+    await fill_city_matrix(grp_city, 1.00, [(L, LV, 1.00), (E, DR, 0.45)])
+    await fill_city_matrix(grp_city_ex, 1.25, [(L, LV, 1.00)])
+    await fill_city_matrix(grp_city_rf, 1.40, [(L, LV, 1.00)])
+
     # MILE / HOURLY per_unit (좌표 없는 단일 셀)
     await ucell(grp_mile, "2.75")
     await ucell(grp_mile_pr, "3.25")
@@ -407,8 +421,8 @@ async def seed(db: AsyncSession):
         db.add(DriverRateAssignmentModel(team_id=tid, driver_id=_drv.id, rate_group_id=_grp.id,
                                          effective_from=JAN, created_by_user_id=aid))
     await db.flush()
-    print("  zone×5 + member×13, group×12 (ZONE/CITY/MILE/HOURLY 각 3), multiplier×4, "
-          "rate_entry 30+ (시트 자동생성), assignment×3")
+    print("  zone×7 + member×17, group×12 (ZONE/CITY/MILE/HOURLY 각 3), multiplier×4, "
+          "rate_entry 300+ (full from→to 매트릭스, 시트 자동생성), assignment×3")
 
     # ── 5. Load Type 템플릿 (시스템 시드) ─────────────────────
     banner("Load Type 템플릿")

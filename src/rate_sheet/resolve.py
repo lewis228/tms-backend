@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from rate_sheet.repository import RateSheetRepository
 from rate_sheet import lookup
-from rate_sheet.const.status import SheetKind, RateMoveType, RateContainerSize
+from rate_sheet.const.status import SheetKind, RateMoveType, RateServiceType, RateContainerSize
 from rate_sheet.schemas.response import RateResolveResultSchema
 from rate_group.repository import RateGroupRepository
 from rate_group.const.status import RateMethod
@@ -39,6 +39,7 @@ class RateResolver:
     async def resolve(
         self, *, driver_id: int, work_date: date,
         move_type: RateMoveType | None = None, row_point_id: int | None = None,
+        service_type: RateServiceType | None = None,
         dest_zip: str | None = None, dest_city: str | None = None, dest_state: str | None = None,
         container_size: RateContainerSize | None = None,
         miles: Decimal | None = None, hours: Decimal | None = None,
@@ -75,10 +76,15 @@ class RateResolver:
         if move_type is None or row_point_id is None:
             return _fail("ZONE/CITY 해석에는 move_type 과 row_point_id 가 필요합니다.", method=method.value, rate_group_id=gid)
         kind = SheetKind.POINT_ZONE if method == RateMethod.ZONE else SheetKind.POINT_CITY
-        sheet = await self.sheet_repo.find_slot(gid, kind, move_type, row_point_id)
+        # 컨플루언스 'Leg 전체 유형': service_type 별 요율 우선, 없으면 service_type 무관(NULL) 슬롯 폴백.
+        sheet = await self.sheet_repo.find_slot(gid, kind, move_type, row_point_id, service_type=service_type)
+        if sheet is None and service_type is not None:
+            sheet = await self.sheet_repo.find_slot(gid, kind, move_type, row_point_id, service_type=None)
         if sheet is None:
-            return _fail(f"{method.value} 시트가 없습니다 (move={move_type.value}, point={row_point_id}).",
-                         method=method.value, rate_group_id=gid)
+            return _fail(
+                f"{method.value} 시트가 없습니다 (move={move_type.value}, "
+                f"service={service_type.value if service_type else None}, point={row_point_id}).",
+                method=method.value, rate_group_id=gid)
 
         zone_id = None
         if method == RateMethod.ZONE:

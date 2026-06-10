@@ -13,11 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from leg.model import LegModel
 from leg.const.status import LegStatus
 from payroll.resolve import resolve_leg_rate
+from payroll.flag_charges import collect_leg_flag_charges
 
 
 async def compute_do_cost(db: AsyncSession, team_id: int, do_id: int) -> tuple[Decimal, dict[int | None, Decimal]]:
-    """D/O 의 COMPLETED leg base 합계 + 컨테이너별 원가 맵 반환.
+    """D/O 의 COMPLETED leg 원가 합계 + 컨테이너별 원가 맵 반환.
 
+    각 leg 원가 = 기본료(RateResolver base) + leg 단위 Flag(Add-on/Charge Event/Stop Off) 합산.
+    컨플루언스: 고객 청구 원가도 leg 의 3-Layer 를 다 합산(기사 정산과 같은 요금줄, cost-plus 의 cost 축).
     returns (total_cost, {container_id: cost}) — container_id None 은 컨테이너 미지정 leg.
     """
     legs = list((await db.execute(select(LegModel).where(
@@ -32,6 +35,9 @@ async def compute_do_cost(db: AsyncSession, team_id: int, do_id: int) -> tuple[D
     for leg in legs:
         res = await resolve_leg_rate(db, team_id, leg)
         base = res.base_amount if (res.found and res.base_amount is not None) else Decimal("0")
-        total += base
-        by_container[leg.container_id] = by_container.get(leg.container_id, Decimal("0")) + base
+        leg_cost = base
+        for ch in await collect_leg_flag_charges(db, team_id, leg, base_amount=base):
+            leg_cost += ch["amount"]
+        total += leg_cost
+        by_container[leg.container_id] = by_container.get(leg.container_id, Decimal("0")) + leg_cost
     return total, by_container

@@ -484,8 +484,8 @@ def page_rate():
  method ?
   ├─ MILE / HOURLY ─▶ per_unit × (거리 또는 시간) ─▶ base ✔
   │
-  └─ ZONE / CITY ─▶ point + move_type 시트 있나? ──없음──▶ UNRESOLVED
-                       │ 있음
+  └─ ZONE / CITY ─▶ (From point + Move Type + Service Type) 시트 있나? ──없음──▶ UNRESOLVED
+                       │ 있음 (Service Type 별 시트 우선, 없으면 무관 시트)
                        ▼
                     목적지 → zone(zip) / city 매핑되나? ──없음──▶ UNRESOLVED
                        │ 있음
@@ -509,6 +509,9 @@ def page_rate():
         N.p("ZONE/CITY 는 행(rate_point=터미널/야드) × 열(rate_zone=zip/city 묶음, 또는 city)로 된 표이고, "
             "컨테이너 사이즈별 셀을 가집니다. 요율표는 절대 덮어쓰지 않고 유효일자(effective_from/to)로 새 버전을 쌓습니다(append-only). "
             "사이즈 배율(rate_multiplier)은 20/40/45 에 대해 기본 0.85/1.0/1.0."),
+        warn("컨플루언스 'Leg 전체 유형': leg 의 기본요금은 (From, To, **Move Type**, **Service Type**) 조합으로 "
+             "갈립니다. 같은 (터미널→고객, Load) 셀이라도 Service Type 이 Live 냐 Drop 이냐에 따라 다른 요율표를 씁니다. "
+             "→ rate_sheet 슬롯에 move_type 과 service_type 이 모두 들어갑니다."),
         N.h2("RateResolver 가 leg 하나를 푸는 순서"),
         dia(tree),
         N.p("work_date 는 leg.completed_at(없으면 assigned_at) 기준입니다. 결과 base 는 정산 라인에 그대로 동결(snapshot)됩니다 — "
@@ -531,6 +534,10 @@ def page_rate():
 
 [CITY] 기사104 → 그룹D(CITY), 롱비치야드→"Los Angeles, CA", 45ft
         셀(LA, CA, 45ft) = $2,200, 배율 1.0 → base = $2,200.00
+
+[Service Type 분기] 같은 (LA터미널→Zone7, Load, 40ft) 인데
+        Service Type=Live 시트 = $1,000  /  Service Type=Drop 시트 = $800
+        → leg 의 service_type 으로 다른 금액 적용
 """),
         warn("UNRESOLVED(요율 못 찾음) 사유 예: 그 날짜에 기사 요율그룹 배정 없음 / point·move 시트 없음 / "
              "목적지 zip 이 어떤 zone 에도 안 묶임 / 해당 셀·날짜에 금액 미등록. 이 경우 base=0 으로 라인은 남되, "
@@ -562,28 +569,29 @@ def page_settlement():
         dia(life),
         warn("confirm 은 UNRESOLVED 라인이 하나라도 있으면 막힙니다 — '요율 등록/그룹 배정 후 확정하세요'. "
              "정산 금액이 0원짜리 미해석 라인으로 새어나가는 걸 방지합니다."),
-        N.h2("추가정산(accessorial) — 중간 stop, 야간 할증 등"),
-        N.p("기본 운임(leg base) 외에 대기·추가정차·야간 할증 같은 부가요금을 정산에 더할 수 있습니다. "
-            "이건 payroll_charge 로 들어가며, 코드·수량·단가(snapshot)·금액을 가집니다. "
-            "정산 합계는 base_total(라인 base 합) + accessorial_total(charge 합) = grand_total 입니다."),
-        gap("중요(현재 코드의 한계): 이 추가정산은 DRAFT 상태에서 사람이 '수동으로' 더합니다. "
-            "leg 에 기록되는 부가요금 레이어(leg_layer: 중간 stop·대기·할증)는 아직 정산으로 '자동 합산되지 않습니다'. "
-            "또 charge 는 leg_id 없이 정산 헤더에 붙어, 어느 leg 때문인지 코드상 연결되지 않습니다. → 15장 개선 제안 참고."),
-        N.h2("핵심 예시 — leg 단위로 다 합쳐 한 번에 지급"),
+        N.h2("추가요금 = Leg Add-on (자동 합산)"),
+        N.p("기본 운임(leg base) 외의 추가요금은 모두 leg 에 붙는 **Add-on**(leg_addon)입니다. "
+            "컨플루언스 재정의로 Flag/Charge Event 구분 없이 전부 Add-on 한 개념이고, **같은 종류를 여러 개** 붙일 수 있습니다 "
+            "(예: Stop Off ×3). 시스템이 마스터(accessorial)에서 기본 단가로 amount 를 자동 채우고, 사용자가 수정/삭제할 수 있습니다."),
+        N.p("정산 build 시 각 leg 의 add-on 들이 **payroll_charge 로 자동 합산**됩니다(저장 amount 우선, 미설정이면 마스터 단가로 해석). "
+            "정산 합계 = base_total(라인 base 합) + accessorial_total(add-on charge 합) = grand_total."),
+        tip("Add-on 단가 산출: FLAT=정액, PERCENT=base×%(연료), MILE=단가×거리, "
+            "Detention/Demurrage/Yard=(실체류−Free)×시간/일당. 모두 add-on 한 줄로 표현."),
+        N.h2("핵심 예시 — leg base + add-on 다 합쳐 한 번에 지급"),
         ex("""
 기사 D, 기간 2026-05-01 ~ 05-14
 
 Leg101 (완료, 410mi, MILE $2.5)        라인 base = $1,250   RESOLVED
-  + 중간 stop 2회      수동 charge       EXTRA_STOP  2×$20 = $40
-  + 야간 게이트 할증    수동 charge       NIGHT       1×$50 = $50
+  + Stop Off ×2  add-on (자동)          STP  2 × $20 = $40
+  + 야간 게이트   add-on (자동)          NGT  1 × $50 = $50
 Leg102 (완료, 8.5h, HOURLY $100)        라인 base = $600    RESOLVED
 Leg103 (완료, 그날 기사 요율그룹 없음)    라인 base = $0      UNRESOLVED ← confirm 차단
 
 base_total        = 1250 + 600 + 0 = $1,850
-accessorial_total = 40 + 50          = $90
+accessorial_total = 40 + 50          = $90   (leg add-on 자동 합산)
 grand_total       =                  = $1,940   (Leg103 요율 해결 전엔 확정 불가)
 """),
-        tip("정리: leg 마다 base 가 동결되고, 부가요금이 더해지고, 한 기간치를 모아 grand_total 로 기사에게 한 번에 지급됩니다."),
+        tip("정리: leg 마다 base 가 동결되고, 그 leg 의 add-on 들이 자동 합산되고, 한 기간치를 모아 grand_total 로 기사에게 한 번에 지급됩니다."),
     ]
 
 
@@ -592,13 +600,13 @@ grand_total       =                  = $1,940   (Leg103 요율 해결 전엔 확
 # ════════════════════════════════════════════════════════════
 def page_invoice():
     money = """
- D/O 의 COMPLETED leg 들
-        │  resolve_leg_rate  (정산과 같은 RateResolver)
-        ├──▶ 정산 : payroll_line.base 동결      = 기사 지급액
-        └──▶ 청구 : cost_total prefill          = 우리 원가
-                       │
+ D/O 의 COMPLETED leg 들  (각 leg = base + leg add-on 합)
+        │  resolve_leg_rate + leg add-on  (정산과 같은 엔진)
+        ├──▶ 정산 : payroll_line.base + leg add-on   = 기사 지급액
+        └──▶ 청구 : cost_total prefill (leg 합)        = 우리 원가
+                       │  + D/O 단위 Add-on (Demurrage/Detention/Hazmat)
                        ▼
-                charge_total (라인 합)           = 고객 청구액
+                charge_total (라인 합)  + 마진(수동)    = 고객 청구액
                        │
                        ▼
                 margin = charge_total − cost_total
@@ -616,8 +624,11 @@ def page_invoice():
         N.h2("같은 요율엔진, 두 갈래"),
         dia(money),
         N.p("인보이스를 만들 때 D/O 를 연결하고 prefill 을 켜면, compute_do_cost 가 그 D/O 의 완료 leg 들을 "
-            "같은 resolver 로 돌려 컨테이너별 원가를 라인으로 깔고 cost_total 을 동결합니다. "
+            "같은 resolver 로 돌려 컨테이너별 원가(**leg base + 그 leg 의 add-on 합**)를 라인으로 깔고, "
+            "이어 **D/O 단위 Add-on**(Demurrage/Detention/Hazmat 등)을 별도 청구 라인으로 깐 뒤 cost_total 을 동결합니다. "
             "처음엔 charge_total = cost_total 이라 마진 0에서 시작합니다."),
+        N.p("부착 위치(축)가 청구 단위를 정합니다 — **leg add-on = 그 leg 에**, **D/O add-on = 그 건 전체에**. "
+            "같은 add-on 이 기사 정산(기사 요율)과 고객 청구(고객 측)에 함께 흐르되 적용 요율만 다릅니다."),
         N.h2("마크업과 마진"),
         N.p("디스패처는 DRAFT 에서 라인 단가를 올리거나(연료 할증 등) 수동 라인을 추가합니다. "
             "charge_total 은 라인 금액의 합으로 다시 계산되고, margin 은 charge_total − cost_total 으로 즉시 산출됩니다(저장 필드 아님, 계산값). "
@@ -835,27 +846,21 @@ def page_statemachines():
 # ════════════════════════════════════════════════════════════
 def page_improvements():
     return [
-        lead("현재 코드를 직접 확인해서 찾은, '더 채우면 좋은' 지점들입니다. 전부 코드 근거가 있습니다."),
-        N.h2("1) leg 부가요금을 정산에 자동 합산"),
-        gap("지금: leg 에는 부가요금 레이어(leg_layer: 중간 stop·대기·할증)를 기록할 수 있지만, "
-            "정산(payroll)·청구(invoice) 어디에서도 이 레이어를 읽지 않습니다(코드 grep 결과 사용처 0). "
-            "그래서 사용자가 기대하는 '중간 stop 하면 자동으로 더 줌, 야간이라 자동으로 더 줌'이 아직 자동이 아닙니다 — "
-            "정산 charge 는 DRAFT 에서 전부 수동 입력."),
-        N.p("제안: payroll.build() 단계에서 각 leg 의 leg_layer(addon/charge_event/stop_off)와 accessorial 규칙을 읽어 "
-            "payroll_charge 를 자동 생성. 그러면 'leg 단위로 부가요금이 자동으로 쌓여 한 번에 정산'이 코드로 성립합니다."),
-        N.h2("2) 추가정산(charge)을 leg 에 연결"),
-        gap("지금: PayrollChargeModel 에 leg_id 가 없어, 추가요금이 '어느 leg 때문인지' 데이터로 연결되지 않습니다(정산 헤더에만 합산)."),
-        N.p("제안: payroll_charge 에 leg_id(nullable) 추가 → leg 별 정산 내역을 정확히 보여주고, (1)의 자동 합산과도 맞물립니다."),
-        N.h2("3) accessorial.auto_apply 실제 소비"),
-        gap("지금: accessorial 마스터에 auto_apply 플래그가 있지만 정산 build 가 이를 사용하지 않습니다."),
-        N.p("제안: auto_apply=true 인 규칙(예: 야간 할증, 기본 대기 공제)을 build 시점에 자동 적용."),
-        N.h2("4) WAITING_PLAN 보조"),
-        gap("지금: 컨테이너가 WAITING_PLAN(다음 stop/leg 미생성)에 빠지면 디스패처가 수동으로 채워야 합니다(자동 생성 룰 없음)."),
-        N.p("제안: WAITING_PLAN 진입 시 알림 발송 + 다음 leg 후보 자동 제안(템플릿 잔여 step 기반)."),
-        N.h2("5) 운영 인프라 마무리"),
+        lead("Confluence 정정 모델 반영 작업 현황 + 남은 정리. (Confluence 'Leg 전체 유형' 기준, 'Leg Type 3-Layer'는 폐기)"),
+        N.h2("✅ 완료된 코드 정합"),
+        N.bullet(("요율 Service Type 차원 ", {"bold": True}), "— rate_sheet 슬롯에 service_type 추가. (From, To, Move Type, Service Type)로 요율표가 갈림. (같은 셀 Live $1000 / Drop $800)"),
+        N.bullet(("Add-on 통합·중복 허용 ", {"bold": True}), "— Flag/Charge Event 구분 폐기, 모두 leg_addon(한 개념). 같은 code 여러 개 가능(Stop Off ×3). amount 1급 필드 + 시스템 자동 채움 + 사용자 CRUD."),
+        N.bullet(("정산/청구 자동 합산 ", {"bold": True}), "— payroll.build / invoice cost 가 leg add-on 을 자동 합산. D/O 단위 add-on(Demurrage 등) → invoice 자동 청구."),
+        N.h2("남은 정리"),
+        gap("레거시 죽은 컬럼: leg.leg_kind / move_type_v3 / from_stop_id / to_stop_id 는 코드가 채우지 않음(프론트가 '—'로 렌더). "
+            "Confluence 모델은 from_location_type/to_location_type + move_type 을 쓰므로 이 컬럼·프론트 렌더를 함께 제거 예정(백+프론트 조정 변경)."),
+        gap("leg_charge_event / leg_stop_off 테이블은 add-on 통합으로 사실상 deprecated — 라우터/모델 정리 예정. "
+            "Stop Off 물리 추적(POD)이 필요하면 leg_stop_off 는 추적 전용으로 두고 과금은 add-on 으로."),
+        N.h2("운영 인프라 마무리"),
+        N.bullet("Detention/Demurrage 자동 add-on 생성 — 대기시간 초과 감지 시 add-on 자동 부착(현재는 수동/계산 저장)."),
         N.bullet("푸시(FCM/APNS) 실제 발송 코드 — push_token 은 쌓이지만 보내는 곳이 없음."),
         N.bullet("X-API-Key 인증 배선 — api_key 는 발급되지만 검증 경로 미완."),
         N.bullet("analytics 캐시 — 매 요청 집계라 비쌈. Redis 캐시 권장."),
-        N.bullet("location_ping 보존/정리 잡 + 관리자 경로 조회 엔드포인트."),
-        tip("위 1~3 이 사용자가 말한 '정산 로직'의 핵심 빈틈입니다. 1번부터 채우면 '예시로 든 그 동작'이 코드로 완성됩니다."),
+        N.bullet("WAITING_PLAN 진입 알림 + 다음 leg 후보 자동 제안."),
+        tip("사용자가 말한 '정산 로직'의 핵심(요율 (From,To,Move,Service) + add-on 자동 합산)은 코드로 완성됨. 남은 건 레거시 컬럼 정리 + 자동 add-on 생성."),
     ]

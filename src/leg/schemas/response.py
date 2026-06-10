@@ -6,7 +6,7 @@ from typing import Literal, List, Optional
 from common.schemas.base import ResponseSchema
 from delivery_order.const.status import DeliveryStatus
 from leg.const.status import (
-    LegStatus, MoveType, ServiceType, LegKind, LegLocationType, LegMoveCode,
+    LegStatus, MoveType, ServiceType, LegLocationType, LegMoveCode,
 )
 
 
@@ -23,7 +23,6 @@ class LegResponseSchema(ResponseSchema):
     step: DeliveryStatus
     move_type: MoveType
     service_type: ServiceType
-    leg_kind: LegKind | None = None
     from_location_type: LegLocationType | None = None
     to_location_type: LegLocationType | None = None
     move_code: LegMoveCode | None = None

@@ -53,6 +53,7 @@ class RateSheetService:
     ) -> RateSheetResponseSchema:
         existing = await self.repo.find_slot(
             payload.rate_group_id, payload.kind, payload.move_type, payload.row_point_id,
+            service_type=payload.service_type,
         )
         if existing is not None:
             raise ConflictException("이미 같은 슬롯의 Rate Sheet 가 존재합니다.")

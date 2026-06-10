@@ -71,6 +71,7 @@ from payroll.router import router as payroll_router
 from invoice.router import router as invoice_router
 from dual_transaction.router import router as dual_transaction_router
 from delivery_order.router import router as delivery_order_router
+from delivery_order.addon_router import router as delivery_order_addon_router
 from container.router import router as container_router
 from leg.router import router as leg_router
 from leg_stop.router import router as leg_stop_router
@@ -160,6 +161,7 @@ app.include_router(payroll_router)
 app.include_router(invoice_router)
 app.include_router(dual_transaction_router)
 app.include_router(delivery_order_router)
+app.include_router(delivery_order_addon_router)
 app.include_router(container_router)
 app.include_router(leg_router)
 app.include_router(leg_stop_router)

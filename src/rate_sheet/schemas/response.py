@@ -6,7 +6,7 @@ from typing import Literal, List
 
 from common.schemas.base import ResponseSchema
 from rate_sheet.const.status import (
-    SheetKind, RateMoveType, RateContainerSize, RateEntrySource, RateEntryAction, SheetStatus,
+    SheetKind, RateMoveType, RateServiceType, RateContainerSize, RateEntrySource, RateEntryAction, SheetStatus,
 )
 
 
@@ -16,6 +16,7 @@ class RateSheetResponseSchema(ResponseSchema):
     rate_group_id: int
     kind: SheetKind
     move_type: RateMoveType | None = None
+    service_type: RateServiceType | None = None
     row_point_id: int | None = None
     note: str | None = None
     is_active: bool

@@ -71,8 +71,29 @@ class InvoiceService:
                 "cost_amount": cost,
             }, actor_user_id=actor_user_id)
 
+        # 컨플루언스: D/O 단위 Add-on(Demurrage/Detention/Hazmat 등) → 고객 청구 라인 자동 가산.
+        from delivery_order.addon_model import DeliveryOrderAddonModel
+        do_addons = list((await self.db.execute(select(DeliveryOrderAddonModel).where(
+            DeliveryOrderAddonModel.team_id == self.team_id,
+            DeliveryOrderAddonModel.delivery_order_id == do_id,
+            DeliveryOrderAddonModel.is_active.is_(True),
+        ).order_by(DeliveryOrderAddonModel.id.asc()))).scalars().all())
+        do_addon_cost = Decimal("0")
+        for a in do_addons:
+            amt = a.amount or Decimal("0")
+            do_addon_cost += amt
+            await self.repo.add_line(invoice_id, {
+                "container_id": None,
+                "description": f"{a.code} (D/O)",
+                "quantity": a.quantity or Decimal("1"),
+                "unit_amount": a.unit_amount,
+                "amount": amt,
+                "source": InvoiceLineSource.PREFILL,
+                "cost_amount": amt,
+            }, actor_user_id=actor_user_id)
+
         header = await self.repo.get(invoice_id)
-        header.cost_total = total
+        header.cost_total = total + do_addon_cost
         await self.repo.update_charge_total(header)
 
     async def recompute_cost(self, invoice_id: int, actor_user_id: int | None = None) -> InvoiceDetailSchema:

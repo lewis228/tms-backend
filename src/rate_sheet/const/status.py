@@ -27,6 +27,15 @@ class RateMoveType(StrEnum):
     NONE  = "NONE"   # Bobtail (배율 미적용)
 
 
+class RateServiceType(StrEnum):
+    """요율 산정용 서비스 방식 (도착지 처리). 컨플루언스 'Leg 전체 유형':
+    같은 From→To·Move 라도 Service Type 별로 요율표가 다르다.
+    """
+    LIVE = "LIVE"   # 도착지 대기/즉시 처리
+    DROP = "DROP"   # 드롭 후 이탈
+    NONE = "NONE"   # Bobtail/Shunt/Failed
+
+
 class RateContainerSize(StrEnum):
     """요율 배율 기준 컨테이너 사이즈 (40ft 기준)."""
     SIZE_20 = "SIZE_20"   # 40ft × 0.85 (기본)

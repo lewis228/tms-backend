@@ -50,21 +50,6 @@ class LegMoveCode(StrEnum):
     ERP = "ERP"   # Empty Reposition
 
 
-class LegKind(StrEnum):
-    """leg 동작 분류 (Manifest 의 한 줄 = 1 leg = 1 kind)."""
-    BOBTAIL              = "BOBTAIL"               # 트럭만 이동 (컨X)
-    PICKUP               = "PICKUP"                # 터미널/야드에서 컨 픽업
-    DROP                 = "DROP"                  # 컨을 야드/창고에 떨굼
-    LIVE_UNLOAD          = "LIVE_UNLOAD"           # 도착지에서 기사 대기 + 즉시 하역
-    RETURN               = "RETURN"                # 빈 컨 반납 (터미널/풀)
-    STREET_TURN          = "STREET_TURN"           # 빈 컨 재사용 (다른 export)
-    CHASSIS_FLIP         = "CHASSIS_FLIP"          # 한 stop 에서 컨 swap
-    DRY_RUN              = "DRY_RUN"               # 빠꾸 (현장 도착했으나 작업 불가)
-    REPOSITION           = "REPOSITION"            # 빈 컨/챠시 재배치
-    PARTIAL_PICKUP       = "PARTIAL_PICKUP"        # 분할 픽업 (한 BL 의 컨 일부만)
-    MULTI_STOP_DELIVERY  = "MULTI_STOP_DELIVERY"   # 여러 곳에 분할 배송
-
-
 class StopKind(StrEnum):
     """leg_stop 의 stop 종류."""
     PICKUP_FULL      = "PICKUP_FULL"       # 적재 컨 픽업
@@ -124,22 +109,6 @@ class ContainerState(StrEnum):
     HOLD         = "HOLD"
     COMPLETED    = "COMPLETED"
     CANCELLED    = "CANCELLED"
-
-
-class MoveTypeV3(StrEnum):
-    """v3 Leg.move_type 4축 형상.
-
-    - TRUCK_ONLY    : 트럭만. 차고→터미널 등.
-    - CHASSIS_ONLY  : 트럭+섀시만. 섀시 픽업/반납/이동.
-    - EMPTY_LOADED  : 빈 컨 적재 상태 이동.
-    - FULL_LOADED   : 적재 컨 이동.
-
-    기존 MoveType 매핑: LOADED→FULL_LOADED, EMPTY→EMPTY_LOADED, BOBTAIL→TRUCK_ONLY.
-    """
-    TRUCK_ONLY    = "TRUCK_ONLY"
-    CHASSIS_ONLY  = "CHASSIS_ONLY"
-    EMPTY_LOADED  = "EMPTY_LOADED"
-    FULL_LOADED   = "FULL_LOADED"
 
 
 class ChassisEventKind(StrEnum):

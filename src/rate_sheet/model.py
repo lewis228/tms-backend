@@ -12,7 +12,7 @@ from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
 from common.const.settings import settings
 from rate_sheet.const.status import (
-    SheetKind, RateMoveType, RateContainerSize, RateEntrySource, RateEntryAction,
+    SheetKind, RateMoveType, RateServiceType, RateContainerSize, RateEntrySource, RateEntryAction,
 )
 
 
@@ -30,6 +30,10 @@ class RateSheetModel(Base, TeamScopedMixin):
     kind: Mapped[SheetKind] = mapped_column(SAEnum(SheetKind, name="rate_sheet_kind"), nullable=False)
     move_type: Mapped[RateMoveType | None] = mapped_column(
         SAEnum(RateMoveType, name="rate_move_type"), nullable=True,  # MILE/HOURLY 는 None
+    )
+    # 컨플루언스 'Leg 전체 유형': 같은 From→To·Move 라도 Service Type(Live/Drop/None) 별 요율 분리.
+    service_type: Mapped[RateServiceType | None] = mapped_column(
+        SAEnum(RateServiceType, name="rate_service_type"), nullable=True,  # MILE/HOURLY·미지정 None
     )
     row_point_id: Mapped[int | None] = mapped_column(
         ForeignKey("rate_point.id", ondelete="SET NULL"), nullable=True,  # MILE/HOURLY 는 None
@@ -51,7 +55,7 @@ class RateSheetModel(Base, TeamScopedMixin):
     __table_args__ = (
         UniqueConstraint("team_id", "id", name="uq_rate_sheet_team_id_id"),
         UniqueConstraint(
-            "team_id", "rate_group_id", "kind", "move_type", "row_point_id",
+            "team_id", "rate_group_id", "kind", "move_type", "service_type", "row_point_id",
             name="uq_rate_sheet_slot",
         ),
         Index("ix_rate_sheet_team_active_id", "team_id", "is_active", "id"),

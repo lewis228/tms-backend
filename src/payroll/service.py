@@ -8,6 +8,7 @@ from common.exceptions.base import NotFoundException, ConflictException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from payroll.repository import PayrollRepository
 from payroll.resolve import resolve_leg_rate
+from payroll.flag_charges import collect_leg_flag_charges
 from payroll.const.status import PayrollStatus, PayrollLineSource
 from payroll.model import PayrollSettlementModel
 from payroll.schemas.request import (
@@ -82,6 +83,9 @@ class PayrollService:
                 "base_amount": base, "source": src, "rate_snapshot": _snapshot(res),
                 "message": res.message,
             }, actor_user_id=actor_user_id)
+            # 컨플루언스: leg 단위 Flag(Add-on/Charge Event/Stop Off) → 기사 정산 charge 자동 가산.
+            for ch in await collect_leg_flag_charges(self.db, self.team_id, leg, base_amount=base):
+                await self.repo.add_charge(header.id, ch, actor_user_id=actor_user_id)
         await self.repo.update_totals(header)
         return await self._to_detail(header.id)
 

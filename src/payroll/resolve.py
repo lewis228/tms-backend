@@ -11,16 +11,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rate_sheet.resolve import RateResolver
-from rate_sheet.const.status import RateMoveType, RateContainerSize
+from rate_sheet.const.status import RateMoveType, RateServiceType, RateContainerSize
 from rate_sheet.schemas.response import RateResolveResultSchema
 from leg.model import LegModel
-from leg.const.status import MoveType
+from leg.const.status import MoveType, ServiceType
 from container.model import ContainerModel
 
 _MOVE_MAP = {
     MoveType.LOADED: RateMoveType.LOAD,
     MoveType.EMPTY: RateMoveType.EMPTY,
     MoveType.BOBTAIL: RateMoveType.NONE,
+}
+_SVC_MAP = {
+    ServiceType.LIVE: RateServiceType.LIVE,
+    ServiceType.DROP: RateServiceType.DROP,
+    ServiceType.NONE: RateServiceType.NONE,
 }
 
 
@@ -52,6 +57,7 @@ async def resolve_leg_rate(db: AsyncSession, team_id: int, leg: LegModel) -> Rat
 
     return await RateResolver(db, team_id).resolve(
         driver_id=leg.driver_id, work_date=work_date, move_type=move,
+        service_type=_SVC_MAP.get(leg.service_type),
         row_point_id=leg.rate_point_id,
         dest_zip=leg.dest_zip, dest_city=leg.dest_city, dest_state=leg.dest_state,
         container_size=container_size, miles=leg.rate_miles, hours=leg.rate_hours,

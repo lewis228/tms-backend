@@ -12,7 +12,7 @@ from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
 from delivery_order.const.status import DeliveryStatus
 from leg.const.status import (
-    LegStatus, MoveType, ServiceType, LegKind, MoveTypeV3, LegLocationType, LegMoveCode,
+    LegStatus, MoveType, ServiceType, LegLocationType, LegMoveCode,
 )
 
 
@@ -29,17 +29,6 @@ class LegModel(Base, TeamScopedMixin):
         ForeignKey("container.id", ondelete="SET NULL"), nullable=True,
     )
 
-    # ── v3 Stop 시퀀스 FK (container_stop 참조) ─────────────
-    # Leg = "from_stop → to_stop" 사이의 이동.
-    # 차고→ORIGIN 같은 첫 leg 도 from_stop=차고 stop / to_stop=터미널 stop 으로 표현.
-    # 마이그레이션 직후 백필 전이라 우선 nullable, 백필 후 NOT NULL 으로 좁힐 예정.
-    from_stop_id: Mapped[int | None] = mapped_column(
-        ForeignKey("container_stop.id", ondelete="SET NULL"), nullable=True,
-    )
-    to_stop_id: Mapped[int | None] = mapped_column(
-        ForeignKey("container_stop.id", ondelete="SET NULL"), nullable=True,
-    )
-
     # 어떤 단계의 leg 인지 (D/O 상태 기준)
     step: Mapped[DeliveryStatus] = mapped_column(
         SAEnum(DeliveryStatus, name="delivery_status"), nullable=False,
@@ -48,21 +37,12 @@ class LegModel(Base, TeamScopedMixin):
     move_type: Mapped[MoveType] = mapped_column(
         SAEnum(MoveType, name="move_type"), nullable=False,
     )
-    # ── v3 4축 형상 (TRUCK_ONLY/CHASSIS_ONLY/EMPTY_LOADED/FULL_LOADED) ─────
-    # 기존 move_type 은 H-7 까지 호환 유지. v3 부터 신규 컬럼으로 표현.
-    move_type_v3: Mapped[MoveTypeV3 | None] = mapped_column(
-        SAEnum(MoveTypeV3, name="move_type_v3"), nullable=True,
-    )
     service_type: Mapped[ServiceType] = mapped_column(
         SAEnum(ServiceType, name="service_type"), nullable=False,
     )
-    # H-6: leg 동작 분류 (Manifest 의 한 줄 = 1 leg = 1 kind).
-    leg_kind: Mapped[LegKind | None] = mapped_column(
-        SAEnum(LegKind, name="leg_kind"), nullable=True,
-    )
 
     # ── 재설계(컨플루언스): From × To × MoveType × ServiceType + Layer1 move_code ──
-    # 기존 from_stop/to_stop(container_stop 기반) 과 병행. move_type/service_type 는 위 기존 컬럼 재사용.
+    # move_type/service_type 는 위 기존 컬럼 재사용.
     from_location_type: Mapped[LegLocationType | None] = mapped_column(
         SAEnum(LegLocationType, name="leg_from_location_type"), nullable=True,
     )
@@ -160,7 +140,6 @@ class LegModel(Base, TeamScopedMixin):
         Index("ix_leg_team_driver",    "team_id", "driver_id"),
         Index("ix_leg_team_truck",     "team_id", "truck_id"),
         Index("ix_leg_team_chassis",   "team_id", "chassis_id"),
-        Index("ix_leg_team_kind",      "team_id", "leg_kind"),
         Index("ix_leg_team_status",    "team_id", "status"),
         Index("ix_leg_team_pickup",    "team_id", "pickup_date"),
         Index("ix_leg_team_active_id", "team_id", "is_active", "id"),

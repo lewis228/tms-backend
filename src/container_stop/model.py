@@ -6,7 +6,6 @@
 
 - Container 1개 = ContainerStop N 개 (sequence_no 순).
 - 각 stop 은 Location 마스터 참조 + role(ORIGIN/DELIVERY/TRANSIT/TERMINUS).
-- Leg 는 from_stop_id / to_stop_id 로 인접 두 stop 사이 이동을 표현.
 """
 from __future__ import annotations
 from datetime import datetime

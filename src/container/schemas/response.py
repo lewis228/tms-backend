@@ -9,7 +9,7 @@ from container.const.status import (
     ContainerStatus, ContainerSize, ContainerEventKind,
 )
 from leg.const.status import (
-    ServiceType, ContainerState, StopRole, MoveTypeV3,
+    ServiceType, ContainerState, StopRole, MoveType,
     LegStatus, HandoverReason,
     LegLocationType, LegMoveCode,
 )
@@ -49,7 +49,6 @@ class ContainerResponseSchema(ResponseSchema):
     customer_id:      int | None = None
     customer_name:    str | None = None
     direction:        str | None = None  # IMPORT / EXPORT
-    move_type_v3:     MoveTypeV3 | None = None
     next_stop_id:     int | None = None
     current_driver_id:   int | None = None
     current_driver_name: str | None = None
@@ -132,9 +131,7 @@ class LegFullSchema(ResponseSchema):
     id: int
     delivery_order_id: int
     container_id: int | None = None
-    from_stop_id: int | None = None
-    to_stop_id:   int | None = None
-    move_type_v3: MoveTypeV3 | None = None
+    move_type: MoveType | None = None
     service_type: ServiceType | None = None
     from_location_type: LegLocationType | None = None
     to_location_type: LegLocationType | None = None

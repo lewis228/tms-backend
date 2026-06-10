@@ -2,13 +2,12 @@
 """컨테이너/leg enum 정책 unit 테스트 (DB 없음).
 
 - ContainerState 8단계 자동 derive 규칙
-- MoveTypeV3 매핑
 - ChargeCategory / HandoverReason / StopRole / LegStatus enum
 """
 from __future__ import annotations
 
 from leg.const.status import (
-    StopRole, ContainerState, MoveTypeV3, HandoverReason, LegStatus,
+    StopRole, ContainerState, HandoverReason, LegStatus,
 )
 from charge_code.const.status import ChargeCategory
 
@@ -132,22 +131,11 @@ def test_state_cancelled_overrides_others():
 
 
 # ────────────────────────────────────────────────────────────────────
-# MoveTypeV3 + 기존 매핑
+# MoveType (재설계: LOADED / EMPTY / BOBTAIL)
 # ────────────────────────────────────────────────────────────────────
-def test_move_type_v3_4_values():
-    assert {m.value for m in MoveTypeV3} == {
-        "TRUCK_ONLY", "CHASSIS_ONLY", "EMPTY_LOADED", "FULL_LOADED",
-    }
-
-
-def map_legacy_move_type(legacy: str) -> str:
-    return {"LOADED": "FULL_LOADED", "EMPTY": "EMPTY_LOADED", "BOBTAIL": "TRUCK_ONLY"}[legacy]
-
-
-def test_legacy_move_type_mapping():
-    assert map_legacy_move_type("LOADED") == "FULL_LOADED"
-    assert map_legacy_move_type("EMPTY") == "EMPTY_LOADED"
-    assert map_legacy_move_type("BOBTAIL") == "TRUCK_ONLY"
+def test_move_type_values():
+    from leg.const.status import MoveType
+    assert {m.value for m in MoveType} == {"LOADED", "EMPTY", "BOBTAIL"}
 
 
 # ────────────────────────────────────────────────────────────────────

@@ -7,18 +7,21 @@ from pydantic import Field, model_validator
 
 from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
-from rate_sheet.const.status import SheetKind, RateMoveType, RateContainerSize, RateEntrySource
+from rate_sheet.const.status import (
+    SheetKind, RateMoveType, RateServiceType, RateContainerSize, RateEntrySource,
+)
 
 
 class RateSheetCreateRequest(RequestSchema):
     """Rate Sheet(슬롯) 생성 DTO.
 
-    - POINT_ZONE/POINT_CITY/POINT_POINT: move_type + row_point_id 필요
-    - MILE/HOURLY: move_type/row_point_id 없음(per_unit 단일 셀)
+    - POINT_ZONE/POINT_CITY/POINT_POINT: move_type + row_point_id 필요 (service_type 선택)
+    - MILE/HOURLY: move_type/service_type/row_point_id 없음(per_unit 단일 셀)
     """
     rate_group_id: int
     kind: SheetKind
     move_type: RateMoveType | None = None
+    service_type: RateServiceType | None = None
     row_point_id: int | None = None
     note: str | None = Field(default=None, max_length=3000)
 
@@ -29,8 +32,8 @@ class RateSheetCreateRequest(RequestSchema):
             if self.move_type is None or self.row_point_id is None:
                 raise ValueError("POINT_* 시트는 move_type 과 row_point_id 가 필요합니다.")
         else:  # MILE / HOURLY
-            if self.move_type is not None or self.row_point_id is not None:
-                raise ValueError("MILE/HOURLY 시트는 move_type/row_point_id 를 가질 수 없습니다.")
+            if self.move_type is not None or self.row_point_id is not None or self.service_type is not None:
+                raise ValueError("MILE/HOURLY 시트는 move_type/service_type/row_point_id 를 가질 수 없습니다.")
         return self
 
 
@@ -98,6 +101,7 @@ class RateResolvePreviewRequest(RequestSchema):
     driver_id: int
     work_date: date
     move_type: RateMoveType | None = None
+    service_type: RateServiceType | None = None
     row_point_id: int | None = None
     dest_zip: str | None = None
     dest_city: str | None = None

@@ -60,7 +60,7 @@ src/
 ├── chassis_event/             ─ 샤시 이벤트 (append-only)
 ├── leg/                       ─ 트럭 한 대의 운송 구간 (state machine, apply_load_type/reissue)
 ├── leg_stop/                  ─ leg 의 stop 들
-├── leg_layer/                 ─ leg Layer2 addon / Layer3 charge_event / stop_off
+├── leg_layer/                 ─ leg Add-on (추가요금 한 줄, 중복 가능 — 옛 Layer2/3 통합)
 ├── leg_driver_segment/        ─ leg 안에서 driver 가 바뀌는 구간
 ├── load_type_template/        ─ Leg 청사진 템플릿 → leg 자동생성
 ├── street_turn/               ─ 컨테이너 직접 이전 (창고 우회) — 승인 워크플로우

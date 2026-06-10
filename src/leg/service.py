@@ -327,8 +327,6 @@ class LegService:
             move_code=orig.move_code,
             from_location_type=orig.from_location_type,
             to_location_type=orig.to_location_type,
-            from_stop_id=orig.from_stop_id,
-            to_stop_id=orig.to_stop_id,
             rate_point_id=orig.rate_point_id,
             dest_zip=orig.dest_zip, dest_city=orig.dest_city, dest_state=orig.dest_state,
             rate_miles=orig.rate_miles, rate_hours=orig.rate_hours,

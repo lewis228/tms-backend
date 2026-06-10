@@ -60,14 +60,19 @@ class RateSheetRepository(TeamScopedRepoMixin):
     async def find_slot(
         self, rate_group_id: int, kind: SheetKind,
         move_type: RateMoveType | None, row_point_id: int | None,
+        service_type=None,
     ) -> Optional[RateSheetModel]:
-        """슬롯 식별자로 기존 시트 조회 (중복 생성 방지)."""
+        """슬롯 식별자로 기존 시트 조회 (중복 생성 방지 + 해석).
+
+        컨플루언스 'Leg 전체 유형': service_type 별 요율 분리. None 이면 service_type 무관(NULL) 슬롯.
+        """
         conds = [
             RateSheetModel.team_id == self._require_team(),
             RateSheetModel.rate_group_id == rate_group_id,
             RateSheetModel.kind == kind,
             RateSheetModel.is_active.is_(True),
             RateSheetModel.move_type.is_(None) if move_type is None else RateSheetModel.move_type == move_type,
+            RateSheetModel.service_type.is_(None) if service_type is None else RateSheetModel.service_type == service_type,
             RateSheetModel.row_point_id.is_(None) if row_point_id is None else RateSheetModel.row_point_id == row_point_id,
         ]
         return (await self.db.execute(select(RateSheetModel).where(*conds))).scalar_one_or_none()

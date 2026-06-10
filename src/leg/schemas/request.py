@@ -8,7 +8,7 @@ from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
 from delivery_order.const.status import DeliveryStatus
 from leg.const.status import (
-    LegStatus, MoveType, ServiceType, LegKind, LegLocationType, LegMoveCode,
+    LegStatus, MoveType, ServiceType, LegLocationType, LegMoveCode,
 )
 
 
@@ -18,7 +18,6 @@ class LegCreateRequest(RequestSchema):
     step: DeliveryStatus
     move_type: MoveType
     service_type: ServiceType
-    leg_kind: LegKind | None = None
     # 재설계: From×To×MoveType×ServiceType + Layer1 move_code
     from_location_type: LegLocationType | None = None
     to_location_type: LegLocationType | None = None
@@ -43,7 +42,6 @@ class LegUpdateRequest(RequestSchema):
     step: DeliveryStatus | None = None
     move_type: MoveType | None = None
     service_type: ServiceType | None = None
-    leg_kind: LegKind | None = None
     from_location_type: LegLocationType | None = None
     to_location_type: LegLocationType | None = None
     move_code: LegMoveCode | None = None
@@ -102,7 +100,6 @@ class PaginateLegRequest(BasePaginationSchema):
     where__truck_id__equal: Optional[int] = None
     where__status__equal: Optional[LegStatus] = None
     where__step__equal: Optional[DeliveryStatus] = None
-    where__leg_kind__equal: Optional[LegKind] = None
 
 
 class LegBulkCreateRequest(RequestSchema):

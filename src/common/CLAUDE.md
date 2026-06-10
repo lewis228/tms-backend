@@ -537,7 +537,7 @@ from container_stop.model import ContainerStopModel
 from chassis_event.model import ChassisEventModel
 from leg.model import LegModel
 from leg_stop.model import LegStopModel
-from leg_layer.model import LegAddonModel, LegChargeEventModel, LegStopOffModel
+from leg_layer.model import LegAddonModel
 from leg_driver_segment.model import LegDriverSegmentModel
 from load_type_template.model import LoadTypeTemplateModel, LoadTypeTemplateStepModel
 from street_turn.model import StreetTurnModel

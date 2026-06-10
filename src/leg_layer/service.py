@@ -3,15 +3,17 @@ from __future__ import annotations
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from common.exceptions.base import NotFoundException, ConflictException
+from decimal import Decimal
+from sqlalchemy import select
+
+from common.exceptions.base import NotFoundException
 from leg_layer.repository import LegLayerRepository
+from leg_layer.charge import resolve_addon_amount
 from leg_layer.schemas.request import (
     LegAddonCreateRequest, LegAddonUpdateRequest,
-    LegChargeEventUpsertRequest, LegStopOffCreateRequest, LegStopOffUpdateRequest,
 )
 from leg_layer.schemas.response import (
-    LegAddonResponseSchema, LegChargeEventResponseSchema, LegStopOffResponseSchema,
-    LegLayerDeleteResponseSchema,
+    LegAddonResponseSchema, LegLayerDeleteResponseSchema,
 )
 
 
@@ -24,11 +26,27 @@ class LegLayerService:
     async def list_addons(self, leg_id: int) -> List[LegAddonResponseSchema]:
         return [LegAddonResponseSchema.model_validate(r) for r in await self.repo.list_addons(leg_id)]
 
+    async def _get_leg(self, leg_id: int):
+        from leg.model import LegModel
+        q = select(LegModel).where(
+            LegModel.team_id == self.repo._require_team(), LegModel.id == leg_id,
+        )
+        return (await self.db.execute(q)).scalar_one_or_none()
+
     async def add_addon(self, payload: LegAddonCreateRequest, actor_user_id: int | None = None) -> LegAddonResponseSchema:
-        existing = [a for a in await self.repo.list_addons(payload.leg_id) if a.code == payload.code]
-        if existing:
-            raise ConflictException(f"이미 추가된 Add-on: {payload.code.value}")
-        row = await self.repo.create_addon(payload.model_dump(), actor_user_id=actor_user_id)
+        # 컨플루언스 재정의: 같은 code 중복 허용(Stop Off ×3 등). 시스템이 amount 기본값 자동 채움.
+        data = payload.model_dump()
+        if data.get("amount") in (None, Decimal("0")) and data.get("amount_override") is None:
+            leg = await self._get_leg(payload.leg_id)
+            filled = await resolve_addon_amount(
+                self.db, self.repo._require_team(), payload.code.value,
+                driver_id=getattr(leg, "driver_id", None), rate_miles=getattr(leg, "rate_miles", None),
+            )
+            if filled is not None:
+                data["amount"], data["unit_amount"], data["quantity"] = filled
+        if data.get("amount") is None:
+            data["amount"] = Decimal("0")
+        row = await self.repo.create_addon(data, actor_user_id=actor_user_id)
         return LegAddonResponseSchema.model_validate(row)
 
     async def update_addon(self, addon_id: int, payload: LegAddonUpdateRequest, actor_user_id: int | None = None) -> LegAddonResponseSchema:
@@ -43,36 +61,3 @@ class LegLayerService:
             raise NotFoundException("Leg Add-on")
         await self.repo.delete_addon(addon_id)
         return LegLayerDeleteResponseSchema(id=addon_id)
-
-    # ── Charge Event ────────────────────────────────────────────
-    async def list_charge_events(self, leg_id: int) -> List[LegChargeEventResponseSchema]:
-        return [LegChargeEventResponseSchema.model_validate(r) for r in await self.repo.list_charge_events(leg_id)]
-
-    async def upsert_charge_event(self, payload: LegChargeEventUpsertRequest, actor_user_id: int | None = None) -> LegChargeEventResponseSchema:
-        row = await self.repo.upsert_charge_event(payload.model_dump(), actor_user_id=actor_user_id)
-        return LegChargeEventResponseSchema.model_validate(row)
-
-    async def delete_charge_event(self, event_id: int) -> LegLayerDeleteResponseSchema:
-        await self.repo.delete_charge_event(event_id)
-        return LegLayerDeleteResponseSchema(id=event_id)
-
-    # ── Stop Off ────────────────────────────────────────────────
-    async def list_stop_offs(self, leg_id: int) -> List[LegStopOffResponseSchema]:
-        return [LegStopOffResponseSchema.model_validate(r) for r in await self.repo.list_stop_offs(leg_id)]
-
-    async def add_stop_off(self, payload: LegStopOffCreateRequest, actor_user_id: int | None = None) -> LegStopOffResponseSchema:
-        row = await self.repo.create_stop_off(payload.model_dump(), actor_user_id=actor_user_id)
-        return LegStopOffResponseSchema.model_validate(row)
-
-    async def update_stop_off(self, stop_id: int, payload: LegStopOffUpdateRequest, actor_user_id: int | None = None) -> LegStopOffResponseSchema:
-        row = await self.repo.get_stop_off(stop_id)
-        if not row:
-            raise NotFoundException("Leg Stop Off")
-        row = await self.repo.update_stop_off(row, payload.model_dump(exclude_unset=True), actor_user_id=actor_user_id)
-        return LegStopOffResponseSchema.model_validate(row)
-
-    async def delete_stop_off(self, stop_id: int) -> LegLayerDeleteResponseSchema:
-        if not await self.repo.get_stop_off(stop_id):
-            raise NotFoundException("Leg Stop Off")
-        await self.repo.delete_stop_off(stop_id)
-        return LegLayerDeleteResponseSchema(id=stop_id)

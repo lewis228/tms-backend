@@ -119,6 +119,70 @@ async def test_lifecycle_and_edit_lock(db_session):
 
 
 @pytest.mark.asyncio
+async def test_cost_prefill_includes_leg_flags(db_session):
+    """컨플루언스: 고객 청구 원가도 leg 단위 Flag(Add-on)를 합산한다."""
+    from datetime import datetime, timezone
+    from accessorial.model import AccessorialModel
+    from accessorial.const.status import AccessorialCategory, AccessorialUnit
+    from leg_layer.model import LegAddonModel
+    from leg_layer.const.status import LegAddonCode
+    from leg.const.status import LegStatus
+    from tests.integration.factories import make_driver, make_leg
+
+    team = await make_team(db_session)
+    customer = await make_customer(db_session, team=team)
+    user = await make_user(db_session)
+    do = await make_delivery_order(db_session, team=team, customer=customer)
+    container = await _container(db_session, team, do, seq=1, number="MSCU9999999")
+    driver = await make_driver(db_session, team=team)
+    leg = await make_leg(
+        db_session, team=team, do=do, driver_id=driver.id,
+        status=LegStatus.COMPLETED, container_id=container.id,
+        completed_at=datetime(2026, 5, 9, 10, tzinfo=timezone.utc),
+    )
+    db_session.add(AccessorialModel(
+        team_id=team.id, code="NGT", name="Night Gate",
+        category=AccessorialCategory.NIGHT_GATE, unit=AccessorialUnit.FLAT, amount=Decimal("50"),
+    ))
+    db_session.add(LegAddonModel(team_id=team.id, leg_id=leg.id, code=LegAddonCode.NGT))
+    await db_session.commit()
+
+    svc = InvoiceService(db_session, team.id)
+    inv = await svc.create(
+        InvoiceCreateRequest(customer_id=customer.id, delivery_order_id=do.id),
+        actor_user_id=user.id,
+    )
+    # 요율 미설정이라 base=0, flag $50 → 컨테이너 원가 = $50
+    assert inv.cost_total == Decimal("50.00")
+
+
+@pytest.mark.asyncio
+async def test_do_addon_billed_on_invoice(db_session):
+    """컨플루언스: D/O 단위 Add-on(Demurrage 등) → 고객 청구 라인 자동 가산."""
+    from delivery_order.addon_model import DeliveryOrderAddonModel
+
+    team = await make_team(db_session)
+    customer = await make_customer(db_session, team=team)
+    user = await make_user(db_session)
+    do = await make_delivery_order(db_session, team=team, customer=customer)
+    await _container(db_session, team, do, seq=1, number="MSCU1010101")
+    db_session.add(DeliveryOrderAddonModel(
+        team_id=team.id, delivery_order_id=do.id, code="DMR", amount=Decimal("300"),
+    ))
+    await db_session.commit()
+
+    svc = InvoiceService(db_session, team.id)
+    inv = await svc.create(
+        InvoiceCreateRequest(customer_id=customer.id, delivery_order_id=do.id),
+        actor_user_id=user.id,
+    )
+    dmr = [l for l in inv.lines if "DMR" in (l.description or "")]
+    assert len(dmr) == 1
+    assert dmr[0].amount == Decimal("300.00")
+    assert inv.cost_total == Decimal("300.00")   # 컨테이너 원가 0 + D/O addon 300
+
+
+@pytest.mark.asyncio
 async def test_void_from_draft(db_session):
     team = await make_team(db_session)
     customer = await make_customer(db_session, team=team)

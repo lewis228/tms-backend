@@ -44,8 +44,6 @@ class RateZoneRepository(TeamScopedRepoMixin):
                 team_id=team_id,
                 zone_id=zone.id,
                 zip_code=m.get("zip_code"),
-                city=m.get("city"),
-                state=m.get("state"),
                 created_by_user_id=actor_user_id,
             ))
         await self.db.flush()
@@ -148,8 +146,6 @@ class RateZoneRepository(TeamScopedRepoMixin):
                 team_id=team_id,
                 zone_id=zone_id,
                 zip_code=m.get("zip_code"),
-                city=m.get("city"),
-                state=m.get("state"),
                 created_by_user_id=actor_user_id,
             ))
         await self.db.flush()

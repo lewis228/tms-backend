@@ -7,9 +7,7 @@ from common.schemas.base import ResponseSchema
 
 class RateZoneMemberResponseSchema(ResponseSchema):
     id: int
-    zip_code: str | None = None
-    city: str | None = None
-    state: str | None = None
+    zip_code: str
 
 
 class RateZoneSummarySchema(ResponseSchema):

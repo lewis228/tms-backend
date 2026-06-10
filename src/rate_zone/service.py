@@ -22,7 +22,7 @@ class RateZoneService:
     """
     RateZone(요율표 열: Zone) 비즈니스 로직.
 
-    - Zone 헤더 + zip/city 멤버. 멤버는 zip→zone 조회의 진실(폴리곤 연산 아님).
+    - Zone 헤더 + zip 멤버. 멤버는 zip→zone 조회의 진실(폴리곤 연산 아님).
     - 삭제는 항상 소프트(is_active=False) — 과거 Rate Sheet/Invoice 이력 보존.
     """
     def __init__(self, db: AsyncSession, team_id: int):

@@ -49,18 +49,17 @@ class RateZoneModel(Base, TeamScopedMixin):
 
 
 class RateZoneMemberModel(Base, TeamScopedMixin):
-    """Zone 의 zip/city 멤버 (라인) — zip→zone 조회 인덱스의 진실.
+    """Zone 의 zip 멤버 (라인) — zip→zone 조회 인덱스의 진실.
 
-    조회는 폴리곤 연산이 아니라 이 테이블의 (zip_code 또는 city) 매칭으로 한다.
-    지도 폴리곤 백필/Excel import 로 대량 채운다.
+    조회는 폴리곤 연산이 아니라 이 테이블의 zip_code 매칭으로 한다.
+    (존 = zip 묶음. 도시별 요율은 CITY 방식의 rate_entry.col_city 가 별도 담당.)
+    Excel import 로 대량 채운다.
     """
     __tablename__ = "rate_zone_member"
     __with_team_rel__ = False  # .team 은 헤더(zone) 통해 접근
 
-    zone_id:  Mapped[int]        = mapped_column(Integer, nullable=False)
-    zip_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    city:     Mapped[str | None] = mapped_column(String(120), nullable=True)
-    state:    Mapped[str | None] = mapped_column(String(8), nullable=True)
+    zone_id:  Mapped[int] = mapped_column(Integer, nullable=False)
+    zip_code: Mapped[str] = mapped_column(String(16), nullable=False)  # 존 멤버 유일 키(zip 묶음)
 
     zone: Mapped["RateZoneModel"] = relationship(
         "RateZoneModel",
@@ -83,5 +82,4 @@ class RateZoneMemberModel(Base, TeamScopedMixin):
         Index("ix_rate_zone_member_team_id_id", "team_id", "id"),
         Index("ix_rate_zone_member_team_zone",  "team_id", "zone_id"),
         Index("ix_rate_zone_member_team_zip",   "team_id", "zip_code"),
-        Index("ix_rate_zone_member_team_city",  "team_id", "city", "state"),
     )

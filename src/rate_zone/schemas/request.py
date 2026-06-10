@@ -8,10 +8,8 @@ from common.pagination.schemas.pagination_request import BasePaginationSchema
 
 
 class RateZoneMemberItem(RequestSchema):
-    """Zone 멤버(zip/city) 입력 항목. zip_code 또는 city 중 최소 하나."""
-    zip_code: str | None = Field(default=None, max_length=16)
-    city: str | None = Field(default=None, max_length=120)
-    state: str | None = Field(default=None, max_length=8)
+    """Zone 멤버 입력 항목. 존 = zip 묶음이므로 zip_code 필수."""
+    zip_code: str = Field(min_length=1, max_length=16)
 
 
 class RateZoneCreateRequest(RequestSchema):

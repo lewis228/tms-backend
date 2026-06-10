@@ -282,8 +282,8 @@ async def seed(db: AsyncSession):
     db.add(zone)
     await db.flush()
     db.add_all([
-        RateZoneMemberModel(team_id=tid, zone_id=zone.id, zip_code="92335", city="Fontana", state="CA"),
-        RateZoneMemberModel(team_id=tid, zone_id=zone.id, zip_code="91761", city="Ontario", state="CA"),
+        RateZoneMemberModel(team_id=tid, zone_id=zone.id, zip_code="92335"),
+        RateZoneMemberModel(team_id=tid, zone_id=zone.id, zip_code="91761"),
     ])
 
     grp_zone = RateGroupModel(team_id=tid, name="Default ZONE Rates", method=RateMethod.ZONE, is_default=True,

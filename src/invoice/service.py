@@ -71,12 +71,13 @@ class InvoiceService:
                 "cost_amount": cost,
             }, actor_user_id=actor_user_id)
 
-        # 컨플루언스: D/O 단위 Add-on(Demurrage/Detention/Hazmat 등) → 고객 청구 라인 자동 가산.
+        # 컨플루언스: D/O 단위 Add-on(Demurrage/Detention/Hazmat 등) 중 is_billable_to_customer 인 것만 → 고객 청구 라인 자동 가산.
         from delivery_order.model import DeliveryOrderAddonModel
         do_addons = list((await self.db.execute(select(DeliveryOrderAddonModel).where(
             DeliveryOrderAddonModel.team_id == self.team_id,
             DeliveryOrderAddonModel.delivery_order_id == do_id,
             DeliveryOrderAddonModel.is_active.is_(True),
+            DeliveryOrderAddonModel.is_billable_to_customer.is_(True),
         ).order_by(DeliveryOrderAddonModel.id.asc()))).scalars().all())
         do_addon_cost = Decimal("0")
         for a in do_addons:

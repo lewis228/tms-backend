@@ -47,6 +47,9 @@ class LegLayerService:
             raise NotFoundException("Add-on type")
         data = payload.model_dump()
         data["code"] = addon.code  # 스냅샷
+        # 청구/정산 분기 플래그도 부착 시점에 스냅샷(마스터 변경이 과거 정산/청구에 영향 X)
+        data["is_payable_to_driver"] = addon.is_payable_to_driver
+        data["is_billable_to_customer"] = addon.is_billable_to_customer
         if data.get("amount") in (None, Decimal("0")) and data.get("amount_override") is None:
             leg = await self._get_leg(payload.leg_id)
             filled = await resolve_addon_amount(

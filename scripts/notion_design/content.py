@@ -207,7 +207,7 @@ def page_master():
         N.bullet(("트럭(truck) ", {"bold": True}), "— 동력차. 번호판 팀 내 유일. 소유(회사/기사/carrier), 등록·보험·검사 만료일."),
         N.bullet(("샤시(chassis) ", {"bold": True}), "— 컨테이너 받침대. 사이즈(20/40), 소유(회사/기사/풀), 현재 위치. 상태변화는 append-only chassis_event 로 적재."),
         N.bullet(("장비풀(equipment_pool) ", {"bold": True}), "— 샤시를 모아두는 터미널/3자(TRAC 등) 풀."),
-        N.bullet(("청구코드(charge_code) ", {"bold": True}), "— 청구·정산 라인에 붙는 코드 마스터(기본운임·대기·할증 등). 고객청구 여부/기사지급 여부, 단위(FLAT/HOUR/…), 카테고리, 음수허용(signed)."),
+        N.bullet(("부가요금 타입(addon) ", {"bold": True}), "— 기본운임 외 추가요금의 '종류' 카탈로그(야간 게이트·대기·Stop Off·연료 할증 등). 디스패처가 자유롭게 추가/수정/삭제(시스템 시드도 제공). 각 타입은 단위(FLAT/HOUR/DAY/MILE/PERCENT)·기본 단가, 그리고 두 독립 스위치 — **기사 지급 대상(is_payable_to_driver)** / **고객 청구 대상(is_billable_to_customer)** 을 가진다. 레그·D/O 에 이 타입을 붙이면 add-on '인스턴스' 한 줄이 생긴다(09·10장)."),
         N.h2("재료가 트랜잭션에 어떻게 묶이나 (삭제 정책)"),
         dia(fk),
         N.p("핵심 규칙: 운영에 꼭 필요한 참조(고객↔D/O)는 RESTRICT 로 보호하고, 부가정보(터미널·선박·장소)는 "
@@ -570,29 +570,44 @@ def page_settlement():
         dia(life),
         warn("confirm 은 UNRESOLVED 라인이 하나라도 있으면 막힙니다 — '요율 등록/그룹 배정 후 확정하세요'. "
              "정산 금액이 0원짜리 미해석 라인으로 새어나가는 걸 방지합니다."),
-        N.h2("추가요금 = Leg Add-on (자동 합산)"),
-        N.p("기본 운임(leg base) 외의 추가요금은 모두 leg 에 붙는 **Add-on**(leg_addon)입니다. "
-            "컨플루언스 재정의로 Flag/Charge Event 구분 없이 전부 Add-on 한 개념이고, **같은 종류를 여러 개** 붙일 수 있습니다 "
-            "(예: Stop Off ×3). 시스템이 마스터(accessorial)에서 기본 단가로 amount 를 자동 채우고, 사용자가 수정/삭제할 수 있습니다."),
-        N.p("정산 build 시 각 leg 의 add-on 들이 **payroll_charge 로 자동 합산**됩니다(저장 amount 우선, 미설정이면 마스터 단가로 해석). "
-            "정산 합계 = base_total(라인 base 합) + accessorial_total(add-on charge 합) = grand_total."),
+        N.h2("추가요금 = Add-on (타입 마스터 + 인스턴스)"),
+        N.p("기본 운임(leg base) 외의 추가요금은 모두 **Add-on** 입니다. 두 층으로 나뉩니다 — "
+            "(1) **addon 마스터** = 추가요금의 '종류'(야간 게이트·대기·Stop Off·연료 할증 …)를 디스패처가 CRUD 하는 카탈로그(02장). "
+            "(2) **add-on 인스턴스** = 그 타입을 실제 레그(leg_addon)나 D/O(do_addon)에 붙인 한 줄. **같은 종류를 여러 개** 붙일 수 있습니다(예: Stop Off ×3). "
+            "붙이는 순간 시스템이 마스터 단가로 amount 를 자동 채우고, 사용자가 수정/삭제할 수 있습니다."),
         tip("Add-on 단가 산출: FLAT=정액, PERCENT=base×%(연료), MILE=단가×거리, "
             "Detention/Demurrage/Yard=(실체류−Free)×시간/일당. 모두 add-on 한 줄로 표현."),
-        N.h2("핵심 예시 — leg base + add-on 다 합쳐 한 번에 지급"),
+        N.h2("핵심 — payable / billable 두 독립 스위치"),
+        N.p("한 add-on 타입은 **두 개의 독립된 스위치**를 가집니다. **is_payable_to_driver**(이 요금을 기사 정산에 더하는가)와 "
+            "**is_billable_to_customer**(이 요금을 고객 청구에 더하는가). 둘은 별개라 4가지 조합이 가능합니다 — 붙일 때 이 두 값이 "
+            "인스턴스에 **스냅샷**되므로 나중에 마스터를 바꿔도 과거 정산/청구는 안 흔들립니다."),
+        dia("""
+ add-on 타입            정산(payable)   청구(billable)   의미
+ ─────────────────────  ─────────────   ──────────────   ──────────────────────
+ Detention (대기료)         ✅              ✅           기사 지급 + 고객 청구 (둘 다)
+ Pier Pass / 통관대납        ❌              ✅           고객에게만 청구 (기사 지급 없음)
+ 사내 보상 / 인센티브         ✅              ❌           기사에게만 지급 (고객 청구 없음)
+ 메모/기록용                 ❌              ❌           어디에도 안 들어감
+"""),
+        N.p("정산 build 시 각 leg 의 add-on 중 **is_payable_to_driver 인 것만** payroll_charge 로 자동 합산됩니다(저장 amount 우선, "
+            "미설정이면 마스터 단가로 해석). 정산 합계 = base_total(라인 base 합) + **addon_total**(payable add-on 합) = grand_total. "
+            "(청구쪽은 10장에서 billable 만 합산 — 같은 add-on 이라도 두 스위치로 흐름이 갈립니다.)"),
+        N.h2("핵심 예시 — payable 만 골라 한 번에 지급"),
         ex("""
 기사 D, 기간 2026-05-01 ~ 05-14
 
 Leg101 (완료, 410mi, MILE $2.5)        라인 base = $1,250   RESOLVED
-  + Stop Off ×2  add-on (자동)          STP  2 × $20 = $40
-  + 야간 게이트   add-on (자동)          NGT  1 × $50 = $50
+  + Stop Off ×2  add-on (자동)          STP  2 × $20 = $40    payable ✅
+  + 야간 게이트   add-on (자동)          NGT  1 × $50 = $50    payable ✅
+  + Pier Pass    add-on (자동)          PPS  1 × $35 = $35    payable ❌ (청구 전용)
 Leg102 (완료, 8.5h, HOURLY $100)        라인 base = $600    RESOLVED
 Leg103 (완료, 그날 기사 요율그룹 없음)    라인 base = $0      UNRESOLVED ← confirm 차단
 
-base_total        = 1250 + 600 + 0 = $1,850
-accessorial_total = 40 + 50          = $90   (leg add-on 자동 합산)
-grand_total       =                  = $1,940   (Leg103 요율 해결 전엔 확정 불가)
+base_total  = 1250 + 600 + 0 = $1,850
+addon_total = 40 + 50          = $90    (payable 만; Pier Pass $35 는 제외)
+grand_total =                  = $1,940   (Leg103 요율 해결 전엔 확정 불가)
 """),
-        tip("정리: leg 마다 base 가 동결되고, 그 leg 의 add-on 들이 자동 합산되고, 한 기간치를 모아 grand_total 로 기사에게 한 번에 지급됩니다."),
+        tip("정리: leg 마다 base 가 동결되고, 그 leg 의 add-on 중 payable 만 합산되고, 한 기간치를 모아 grand_total 로 기사에게 한 번에 지급됩니다."),
     ]
 
 
@@ -625,11 +640,13 @@ def page_invoice():
         N.h2("같은 요율엔진, 두 갈래"),
         dia(money),
         N.p("인보이스를 만들 때 D/O 를 연결하고 prefill 을 켜면, compute_do_cost 가 그 D/O 의 완료 leg 들을 "
-            "같은 resolver 로 돌려 컨테이너별 원가(**leg base + 그 leg 의 add-on 합**)를 라인으로 깔고, "
-            "이어 **D/O 단위 Add-on**(Demurrage/Detention/Hazmat 등)을 별도 청구 라인으로 깐 뒤 cost_total 을 동결합니다. "
+            "같은 resolver 로 돌려 컨테이너별 원가(**leg base + 그 leg 의 add-on 중 청구 대상 합**)를 라인으로 깔고, "
+            "이어 **D/O 단위 Add-on**(Demurrage/Detention/Hazmat 등) 중 청구 대상을 별도 청구 라인으로 깐 뒤 cost_total 을 동결합니다. "
             "처음엔 charge_total = cost_total 이라 마진 0에서 시작합니다."),
         N.p("부착 위치(축)가 청구 단위를 정합니다 — **leg add-on = 그 leg 에**, **D/O add-on = 그 건 전체에**. "
-            "같은 add-on 이 기사 정산(기사 요율)과 고객 청구(고객 측)에 함께 흐르되 적용 요율만 다릅니다."),
+            "그리고 **무엇이 청구에 들어갈지는 add-on 의 is_billable_to_customer 스위치**가 정합니다(09장 4경우표 참고). "
+            "정산은 is_payable_to_driver 만, 청구는 is_billable_to_customer 만 합산 — 같은 add-on 이라도 두 스위치로 흐름이 갈립니다. "
+            "예: Pier Pass(billable ✅ / payable ❌)는 고객 청구엔 들어가지만 기사 정산엔 안 들어갑니다."),
         N.h2("마크업과 마진"),
         N.p("디스패처는 DRAFT 에서 라인 단가를 올리거나(연료 할증 등) 수동 라인을 추가합니다. "
             "charge_total 은 라인 금액의 합으로 다시 계산되고, margin 은 charge_total − cost_total 으로 즉시 산출됩니다(저장 필드 아님, 계산값). "
@@ -674,6 +691,24 @@ def page_realtime():
         dia(seq),
         N.p("WS 연결은 ?token=JWT&team_id= 로 인증하고, 30초 ping/60초 idle timeout 으로 관리합니다. "
             "연결 큐가 넘치면 오래된 메시지를 버리고 dropped 카운터를 올립니다(끊지 않음)."),
+        N.p("왜 id-only(전체 데이터 말고 id만) 인가? 같은 D/O 라도 보는 사람마다 권한·화면이 달라서, "
+            "서버는 '이게 바뀌었다'만 알리고 각 클라이언트가 자기 캐시를 GET 으로 다시 채우는 게 단순·안전하기 때문입니다."),
+        N.h2("예시 — 디스패처가 D/O 를 디스패치한 순간"),
+        ex("""
+team_id=1 에 WS 연결 3개(디스패처 화면 2 + 매니저 1)가 붙어 있다.
+
+1) 디스패처가 D/O #100 을 PLANNING → DISPATCHING 으로 전이
+2) DeliveryOrderService 가 publish(team=1, "delivery_order.status_changed", {id:100})
+3) Redis 채널 tms:team:1:events 로 메시지 1건
+4) 워커들의 ConnectionManager 가 team_id=1 의 WS 3개로 fanout
+      payload = { "type":"delivery_order.status_changed", "team_id":1, "payload":{"id":100} }
+5) 클라이언트 3개가 각자 GET /delivery-orders/100 로 최신 1건만 다시 받아 화면 패치
+   → 목록 새로고침 없이 그 행만 PLANNING→DISPATCHING 으로 바뀜
+"""),
+        N.h2("끊겼다 다시 붙으면 — /sync 따라잡기"),
+        N.p("WS 가 잠깐 끊긴 동안의 변경은 놓칠 수 있습니다. 재연결하면 클라이언트가 마지막 수신 시각으로 "
+            "GET /<도메인>/sync?since=<ts> 를 호출하고, 서버는 그 사이 바뀐 id 목록(+삭제된 id)을 같은 모양으로 돌려줍니다. "
+            "클라이언트는 그 id 들만 다시 GET 해 캐시를 맞춥니다 — 실시간 푸시와 동일한 '바뀐 id → 재조회' 패턴."),
         N.h2("알림(notification) — 이벤트 → 담당자 받은함"),
         N.p("realtime.publish(db=...) 가 호출되면 fan_out 이 이벤트 종류를 제목/본문으로 바꿔(예: 'D/O 상태가 변경되었습니다', "
             "'PLANNING → DISPATCHING') 팀의 admin/dispatcher 들에게 인박스 행을 만듭니다 — 단, 기사(DRIVER)와 행위자 본인은 제외. "
@@ -716,6 +751,23 @@ def page_mobile():
         N.p("today 는 오늘 범위의 본인 PENDING/IN_TRANSIT leg 을 픽업시간순으로 줍니다. "
             "checkpoint 는 결국 leg 상태머신을 호출하되 leg.driver_id == 본인인지 먼저 확인합니다. "
             "수익 화면은 payroll_line 을 조인해 PAID=정산완료/그외=대기로 보여줍니다(정산 도메인 기준)."),
+        N.h2("예시 — 기사 하루"),
+        ex("""
+기사 = user_id 5 (driver_id 12), 오늘 2026-06-10
+
+GET /api/v1/driver/tasks/today
+  → [ Leg #101 (P1 터미널 → P2 거래처A, PENDING, 픽업 09:00),
+      Leg #102 (P2 거래처A → P3 야드, PENDING, 픽업 13:00) ]
+
+09:05  POST /driver/legs/101/checkpoint { action:"DEPART" }
+        → leg.driver_id==12 확인 → Leg101 ASSIGNED→IN_TRANSIT
+        → 컨테이너 work_state = IN_TRANSIT, WS 로 디스패처 화면 갱신
+10:40  POST /driver/legs/101/checkpoint { action:"ARRIVE" }
+        → Leg101 IN_TRANSIT→COMPLETED, 다음 Leg102 PENDING → work_state = AT_STOP
+주행 중  POST /driver/location/batch [{lat,lng,t}, ...]  → location_ping 적재(오프라인 버퍼 후 일괄)
+
+수익 보기  Leg101 정산 라인 = base $1,250 (+ payable add-on) → 아직 미정산이면 '대기'
+"""),
         N.h2("위치·푸시 토큰 (둘 다 append-only/registry)"),
         N.p("location_ping 은 위경도(소수 7자리 ~1cm)·속도·방향·시각을 묶음으로 적재합니다(오프라인 버퍼 대응). "
             "push_token 은 (기사, 플랫폼, 토큰) 유일로 upsert. 둘 다 기사 삭제 시 CASCADE."),
@@ -851,7 +903,8 @@ def page_improvements():
         N.h2("✅ 완료된 코드 정합"),
         N.bullet(("요율 Service Type 차원 ", {"bold": True}), "— rate_sheet 슬롯에 service_type 추가. (From, To, Move Type, Service Type)로 요율표가 갈림. (같은 셀 Live $1000 / Drop $800)"),
         N.bullet(("Add-on 통합·중복 허용 ", {"bold": True}), "— Flag/Charge Event 구분 폐기, 모두 leg_addon(한 개념). 같은 code 여러 개 가능(Stop Off ×3). amount 1급 필드 + 시스템 자동 채움 + 사용자 CRUD."),
-        N.bullet(("정산/청구 자동 합산 ", {"bold": True}), "— payroll.build / invoice cost 가 leg add-on 을 자동 합산. D/O 단위 add-on(Demurrage 등) → invoice 자동 청구."),
+        N.bullet(("Add-on 마스터 통합(rs9) ", {"bold": True}), "— 옛 accessorial 을 addon 으로 개명·단일화(타입 카탈로그 마스터), 고아였던 charge_code 도메인 삭제, 하드코딩 LegAddonCode enum 제거. leg/D-O add-on 은 addon_id FK + code 스냅샷 인스턴스. D/O add-on 모델·라우터·서비스·스키마는 delivery_order 메인 파일로 흡수."),
+        N.bullet(("정산/청구 플래그 배선(rs10) ", {"bold": True}), "— addon 의 두 독립 스위치(is_payable_to_driver / is_billable_to_customer)를 부착 시점에 인스턴스로 스냅샷. payroll.build 는 payable 만, invoice cost 는 billable 만 자동 합산. D/O 단위 add-on(Demurrage 등) → billable 만 invoice 자동 청구."),
         N.bullet(("레거시 컬럼·테이블 제거 ", {"bold": True}), "— leg.leg_kind / move_type_v3 / from_stop_id / to_stop_id 컬럼과 leg_charge_event / leg_stop_off / leg_stop 테이블을 마이그레이션으로 완전 삭제."),
         N.bullet(("Point 모델 전면 ", {"bold": True}), "— container_stop=Point(타입 Terminal/Yard/Customer + 타입별 마스터 terminal_id/location_id/customer_id, 정확히 하나). StopRole(ORIGIN/…/TERMINUS) 폐기, 완료판정=마지막 Point 도착. **레그 = from_point→to_point 간선**, from/to_location_type 은 Point 타입 스냅샷. leg_stop 제거. Stop add-on(STP)도 typed 위치 보유(메인 시퀀스와 별개 '추가로 들른 곳'). 마이그레이션 rs7~rs8."),
         N.bullet(("Add-on / Point 프론트 UI ", {"bold": True}), "— leg/D-O add-on CRUD + 요율 Service Type 표시 + 캐스케이드 콤보(타입→마스터목록) Point 관리 + 레그 에디터 from/to Point 선택 + 템플릿 프리필(레그 N행 채워 폼→포인트 지정→bulk 저장) 까지 프론트 배선 완료."),

@@ -36,7 +36,7 @@ class AddonModel(Base, TeamScopedMixin):
 
     auto_apply: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
     is_system:  Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
-    # 청구/정산 분기 (charge_code 에서 흡수): 고객 청구 대상 / 기사 지급 대상
+    # 청구/정산 분기 (독립 스위치): 고객 청구 대상 / 기사 지급 대상
     is_billable_to_customer: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1", nullable=False)
     is_payable_to_driver:    Mapped[bool] = mapped_column(Boolean, default=True, server_default="1", nullable=False)
 

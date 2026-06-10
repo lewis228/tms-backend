@@ -273,19 +273,19 @@ async def delivery_order_activity(
 # D/O 단위 Add-on (고객 청구용)
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/{do_id}/addons", response_model=List[DoAddonResponseSchema])
+@router.get("/{delivery_order_id}/addons", response_model=List[DoAddonResponseSchema])
 async def list_do_addons(
-    do_id: int,
+    delivery_order_id: int,
     _1: None = Depends(access_token),
     team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_read_db),
 ):
-    return await DeliveryOrderService(db, team_id).list_addons(do_id)
+    return await DeliveryOrderService(db, team_id).list_addons(delivery_order_id)
 
 
-@router.post("/{do_id}/addons", response_model=DoAddonResponseSchema)
+@router.post("/{delivery_order_id}/addons", response_model=DoAddonResponseSchema)
 async def add_do_addon(
-    do_id: int,
+    delivery_order_id: int,
     body: DoAddonCreateRequest,
     _1: None = Depends(access_token),
     _2: None = Depends(permission_guard(DO_WRITE)),
@@ -293,7 +293,7 @@ async def add_do_addon(
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
-    body.delivery_order_id = do_id
+    body.delivery_order_id = delivery_order_id
     return await DeliveryOrderService(db, team_id).add_addon(body, actor_user_id=int(me.id))
 
 

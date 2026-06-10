@@ -100,6 +100,8 @@ class DoAddonResponseSchema(ResponseSchema):
     quantity: Decimal = Decimal("1")
     unit_amount: Decimal | None = None
     amount: Decimal = Decimal("0")
+    is_payable_to_driver: bool = True
+    is_billable_to_customer: bool = True
     note: str | None = None
     is_active: bool
 

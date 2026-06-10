@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.tokens.access_token import access_token
 from database.dependencies import get_read_db, get_write_db
-from rbac.const.const import ACCESSORIAL_WRITE
+from rbac.const.const import ADDON_WRITE
 from rbac.dependencies.guards import permission_guard
 from team.dependencies.get_team_scope import get_team_scope
 from user.dependencies.current_user import get_current_user
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/v1/addons", tags=["addons"])
 async def create_addon(
     body: AddonCreateRequest,
     _1: None = Depends(access_token),
-    _2: None = Depends(permission_guard(ACCESSORIAL_WRITE)),
+    _2: None = Depends(permission_guard(ADDON_WRITE)),
     team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
@@ -40,7 +40,7 @@ async def create_addon(
 @router.post("/seed-defaults", response_model=AddonSeedResultSchema)
 async def seed_default_addons(
     _1: None = Depends(access_token),
-    _2: None = Depends(permission_guard(ACCESSORIAL_WRITE)),
+    _2: None = Depends(permission_guard(ADDON_WRITE)),
     team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
@@ -85,7 +85,7 @@ async def update_addon(
     acc_id: int,
     body: AddonUpdateRequest,
     _1: None = Depends(access_token),
-    _2: None = Depends(permission_guard(ACCESSORIAL_WRITE)),
+    _2: None = Depends(permission_guard(ADDON_WRITE)),
     team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
@@ -97,7 +97,7 @@ async def update_addon(
 async def delete_addon(
     acc_id: int,
     _1: None = Depends(access_token),
-    _2: None = Depends(permission_guard(ACCESSORIAL_WRITE)),
+    _2: None = Depends(permission_guard(ADDON_WRITE)),
     team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),

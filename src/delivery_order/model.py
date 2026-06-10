@@ -87,6 +87,9 @@ class DeliveryOrderAddonModel(Base, TeamScopedMixin):
     quantity:    Mapped[Decimal] = mapped_column(Numeric(12, 2), default=1, server_default="1", nullable=False)
     unit_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     amount:      Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, server_default="0", nullable=False)
+    # 청구/정산 분기 플래그 (addon 마스터에서 부착 시점 스냅샷). D/O add-on 은 고객 청구용이라 보통 billable.
+    is_payable_to_driver:    Mapped[bool] = mapped_column(Boolean, default=True, server_default="1", nullable=False)
+    is_billable_to_customer: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1", nullable=False)
     extra: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
 

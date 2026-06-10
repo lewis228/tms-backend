@@ -72,6 +72,8 @@ class DeliveryOrderService:
             raise NotFoundException("Add-on type")
         data = payload.model_dump()
         data["code"] = addon.code  # 스냅샷
+        data["is_payable_to_driver"] = addon.is_payable_to_driver
+        data["is_billable_to_customer"] = addon.is_billable_to_customer
         if data.get("amount") in (None, Decimal("0")):
             filled = await resolve_addon_amount(self.db, self.team_id, addon.code)  # D/O = driver 없음 → 팀 기본
             if filled is not None:

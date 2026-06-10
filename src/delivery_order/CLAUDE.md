@@ -40,7 +40,7 @@ delivery_order/
     └── response.py
 ```
 
-라인 도메인 `container/` 는 별도 폴더 (1:N 가 컨테이너 / 라인이 너무 크게 자라서 분리됨). leg / leg_stop / leg_layer 도 모두 별도 폴더.
+라인 도메인 `container/` 는 별도 폴더 (1:N 가 컨테이너 / 라인이 너무 크게 자라서 분리됨). leg / leg_layer 도 모두 별도 폴더.
 
 ---
 

@@ -36,7 +36,8 @@ async def compute_do_cost(db: AsyncSession, team_id: int, do_id: int) -> tuple[D
         res = await resolve_leg_rate(db, team_id, leg)
         base = res.base_amount if (res.found and res.base_amount is not None) else Decimal("0")
         leg_cost = base
-        for ch in await collect_leg_flag_charges(db, team_id, leg, base_amount=base):
+        # 고객 청구 원가는 is_billable_to_customer 인 add-on 만 가산.
+        for ch in await collect_leg_flag_charges(db, team_id, leg, base_amount=base, channel="invoice"):
             leg_cost += ch["amount"]
         total += leg_cost
         by_container[leg.container_id] = by_container.get(leg.container_id, Decimal("0")) + leg_cost

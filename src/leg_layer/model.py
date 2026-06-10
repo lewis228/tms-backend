@@ -10,7 +10,7 @@ from __future__ import annotations
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    String, Integer, JSON, Numeric, ForeignKey,
+    String, Integer, JSON, Numeric, Boolean, ForeignKey,
     Index, UniqueConstraint, ForeignKeyConstraint, Enum as SAEnum,
 )
 
@@ -38,6 +38,10 @@ class LegAddonModel(Base, TeamScopedMixin):
     unit_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     amount:      Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, server_default="0", nullable=False)
     amount_override: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)  # 레거시
+    # ── 청구/정산 분기 플래그 (addon 마스터에서 부착 시점 스냅샷) ──
+    # 독립 스위치: 정산만/청구만/둘다/둘다아님. 정산은 payable, 청구는 billable 인 것만 합산.
+    is_payable_to_driver:    Mapped[bool] = mapped_column(Boolean, default=True, server_default="1", nullable=False)
+    is_billable_to_customer: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1", nullable=False)
     # ── typed 위치 (STP 등에서만 채움, 나머지 code 는 null) ──
     point_type: Mapped[PointType | None] = mapped_column(
         SAEnum(PointType, name="leg_addon_point_type"), nullable=True,

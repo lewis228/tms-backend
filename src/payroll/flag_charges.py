@@ -17,16 +17,26 @@ _D0 = Decimal("0")
 
 
 async def collect_leg_flag_charges(
-    db: AsyncSession, team_id: int, leg, *, base_amount: Decimal
+    db: AsyncSession, team_id: int, leg, *, base_amount: Decimal,
+    channel: str = "payroll",
 ) -> list[dict]:
-    """leg 의 모든 add-on → charge dict 목록 (정산/청구 공용).
+    """leg 의 add-on → charge dict 목록 (정산/청구 공용).
 
     dict = {code, addon_id, snapshot_unit_amount, quantity, amount, note}
     저장 amount(>0) 우선. 미설정이면 addon 마스터 단가로 해석(PERCENT 는 base 사용).
+
+    channel="payroll" → is_payable_to_driver 인 add-on 만(기사 정산).
+    channel="invoice" → is_billable_to_customer 인 add-on 만(고객 청구).
+    플래그는 부착 시점 스냅샷(leg_addon 행)이라 마스터 변경이 과거 기록에 영향 없음.
     """
     layer = LegLayerRepository(db, team_id)
     out: list[dict] = []
     for a in await layer.list_addons(leg.id):
+        if channel == "invoice":
+            if not a.is_billable_to_customer:
+                continue
+        elif not a.is_payable_to_driver:
+            continue
         code = a.code  # leg_addon.code 는 addon.code 스냅샷(String)
         stored = a.amount if (a.amount is not None and a.amount != _D0) else (a.amount_override or _D0)
         if stored != _D0:

@@ -165,8 +165,8 @@ cd src && PYTHONPATH=. celery -A celery_app beat --loglevel=info
 | --- | --- |
 | Master Data | `customer`, `terminal`, `vessel`, `location`, `driver`, `truck`, `equipment_pool`, `chassis` |
 | D/O Workflow | `delivery_order`, `container`, `container_stop`, `chassis_event`, `street_turn`, `dual_transaction` |
-| Leg / Dispatch | `leg`, `leg_stop`, `leg_layer`, `leg_driver_segment`, `load_type_template` |
-| Rate (재설계) | `charge_code`, `rate_point`, `rate_zone`, `rate_group`, `rate_sheet`, `rate_multiplier`, `driver_rate_assignment`, `accessorial`, `rate_import` |
+| Leg / Dispatch | `leg`, `leg_layer`, `leg_driver_segment`, `load_type_template` |
+| Rate (재설계) | `rate_point`, `rate_zone`, `rate_group`, `rate_sheet`, `rate_multiplier`, `driver_rate_assignment`, `addon`, `rate_import` |
 | 정산 · 청구 (재설계) | `payroll`, `invoice`, `audit_log` |
 | Mobile / Realtime | `location_ping`, `push_token`, `notification`, `realtime`, `driver_mobile` (BFF) |
 | AI / Analytics | `ai_intake`, `analytics` |

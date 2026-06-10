@@ -536,7 +536,6 @@ from container.model import ContainerModel, ContainerEventModel
 from container_stop.model import ContainerStopModel
 from chassis_event.model import ChassisEventModel
 from leg.model import LegModel
-from leg_stop.model import LegStopModel
 from leg_layer.model import LegAddonModel
 from leg_driver_segment.model import LegDriverSegmentModel
 from load_type_template.model import LoadTypeTemplateModel, LoadTypeTemplateStepModel
@@ -544,14 +543,13 @@ from street_turn.model import StreetTurnModel
 from dual_transaction.model import DualTransactionModel
 
 # Rate (재설계) — 요율 서브시스템
-from charge_code.model import ChargeCodeModel
 from rate_point.model import RatePointModel
 from rate_zone.model import RateZoneModel, RateZoneMemberModel
 from rate_group.model import RateGroupModel
 from rate_sheet.model import RateSheetModel, RateEntryModel, RateEntryHistoryModel
 from rate_multiplier.model import RateMultiplierModel
 from driver_rate_assignment.model import DriverRateAssignmentModel
-from accessorial.model import AccessorialModel
+from addon.model import AddonModel
 
 # Settlement / Invoice (재설계)
 from payroll.model import PayrollSettlementModel, PayrollLineModel, PayrollChargeModel

@@ -156,6 +156,45 @@ async def test_cost_prefill_includes_leg_flags(db_session):
 
 
 @pytest.mark.asyncio
+async def test_non_billable_addon_excluded_from_invoice(db_session):
+    """is_billable_to_customer=False add-on 은 고객 청구 원가에서 제외된다(정산 전용)."""
+    from datetime import datetime, timezone
+    from leg_layer.model import LegAddonModel
+    from leg.const.status import LegStatus
+    from tests.integration.factories import make_driver, make_leg
+
+    team = await make_team(db_session)
+    customer = await make_customer(db_session, team=team)
+    user = await make_user(db_session)
+    do = await make_delivery_order(db_session, team=team, customer=customer)
+    container = await _container(db_session, team, do, seq=1, number="MSCU8888888")
+    driver = await make_driver(db_session, team=team)
+    leg = await make_leg(
+        db_session, team=team, do=do, driver_id=driver.id,
+        status=LegStatus.COMPLETED, container_id=container.id,
+        completed_at=datetime(2026, 5, 9, 10, tzinfo=timezone.utc),
+    )
+    # billable add-on $50 (청구 포함) + non-billable add-on $40 (정산 전용, 청구 제외)
+    db_session.add(LegAddonModel(
+        team_id=team.id, leg_id=leg.id, code="NGT", amount=Decimal("50"),
+        is_payable_to_driver=True, is_billable_to_customer=True,
+    ))
+    db_session.add(LegAddonModel(
+        team_id=team.id, leg_id=leg.id, code="BNS", amount=Decimal("40"),
+        is_payable_to_driver=True, is_billable_to_customer=False,
+    ))
+    await db_session.commit()
+
+    svc = InvoiceService(db_session, team.id)
+    inv = await svc.create(
+        InvoiceCreateRequest(customer_id=customer.id, delivery_order_id=do.id),
+        actor_user_id=user.id,
+    )
+    # billable $50 만, non-billable $40 제외
+    assert inv.cost_total == Decimal("50.00")
+
+
+@pytest.mark.asyncio
 async def test_do_addon_billed_on_invoice(db_session):
     """컨플루언스: D/O 단위 Add-on(Demurrage 등) → 고객 청구 라인 자동 가산."""
     from delivery_order.model import DeliveryOrderAddonModel

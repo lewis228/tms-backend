@@ -15,6 +15,8 @@ class LegAddonResponseSchema(ResponseSchema):
     unit_amount: Decimal | None = None
     amount: Decimal = Decimal("0")
     amount_override: Decimal | None = None
+    is_payable_to_driver: bool = True
+    is_billable_to_customer: bool = True
     point_type: PointType | None = None
     terminal_id: int | None = None
     location_id: int | None = None

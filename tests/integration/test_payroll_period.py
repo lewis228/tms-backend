@@ -210,3 +210,37 @@ async def test_repeatable_addons_sum(db_session):
     stp = [c for c in detail.charges if c.code == "STP"]
     assert len(stp) == 3                       # 3개 각각 charge
     assert detail.addon_total == Decimal("60.00")   # 3 × $20
+
+
+@pytest.mark.asyncio
+async def test_non_payable_addon_excluded_from_payroll(db_session):
+    """is_payable_to_driver=False add-on 은 기사 정산에서 제외된다(청구 전용)."""
+    from leg_layer.model import LegAddonModel
+
+    team = await make_team(db_session)
+    customer = await make_customer(db_session, team=team)
+    do = await make_delivery_order(db_session, team=team, customer=customer)
+    user = await make_user(db_session)
+    driver = await make_driver(db_session, team=team)
+    leg = await _completed_leg(db_session, team, do, driver, day=9)
+
+    # payable add-on $50 (정산 포함) + non-payable add-on $30 (청구 전용, 정산 제외)
+    db_session.add(LegAddonModel(
+        team_id=team.id, leg_id=leg.id, code="NGT", amount=Decimal("50"),
+        is_payable_to_driver=True, is_billable_to_customer=True,
+    ))
+    db_session.add(LegAddonModel(
+        team_id=team.id, leg_id=leg.id, code="PPS", amount=Decimal("30"),
+        is_payable_to_driver=False, is_billable_to_customer=True,
+    ))
+    await db_session.commit()
+
+    svc = PayrollService(db_session, team.id)
+    detail = await svc.build(
+        PayrollBuildRequest(driver_id=driver.id, period_start=_PERIOD_START, period_end=_PERIOD_END),
+        actor_user_id=user.id,
+    )
+    codes = {c.code for c in detail.charges}
+    assert "NGT" in codes
+    assert "PPS" not in codes                       # non-payable 제외
+    assert detail.addon_total == Decimal("50.00")   # $50 만

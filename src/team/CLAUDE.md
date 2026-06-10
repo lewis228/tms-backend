@@ -43,7 +43,7 @@ class CustomerModel(Base, TeamScopedMixin):
 - `TeamScopedMixin` 이 자동 주입:
   - `team_id: Mapped[int]` (`FK → teams.id ondelete=CASCADE`, `index=True`, `nullable=False`)
   - `.team` relationship (`lazy="selectin"`)
-- 라인 테이블 (예: `ContainerModel`, `LegStopModel`) 은 `__with_team_rel__ = False` 로 `.team` 관계 제거 — 헤더 통해 접근
+- 라인 테이블 (예: `ContainerModel`, `LegAddonModel`) 은 `__with_team_rel__ = False` 로 `.team` 관계 제거 — 헤더 통해 접근
 
 ### 1-2. 팀 scoped 미상속 예외
 
@@ -80,7 +80,7 @@ memo: Mapped[Optional[str]]  = mapped_column(Text, nullable=True)
 
 ### 1-4. 같은 도메인 내부 라인 — 복합 FK 제약
 
-같은 비즈니스 묶음 안의 라인 테이블 (예: `delivery_order` ↔ `container`, `leg` ↔ `leg_stop`) 은 **반드시 복합 FK** 사용 — 크로스 팀 누출 방지:
+같은 비즈니스 묶음 안의 라인 테이블 (예: `delivery_order` ↔ `container`, `leg` ↔ `leg_addon`) 은 **반드시 복합 FK** 사용 — 크로스 팀 누출 방지:
 
 ```python
 __table_args__ = (
@@ -120,7 +120,7 @@ vessel_id: Mapped[int | None] = mapped_column(
 | --- | --- | --- |
 | `RESTRICT` | 참조 보호 — 사용 중인 master 는 삭제 불가 | customer 가 D/O 에 사용 중이면 삭제 거부 |
 | `SET NULL` | 삭제되어도 OK, 참조만 끊김 | terminal / vessel 같은 부가 정보 |
-| `CASCADE` | 부모 삭제 시 자식 정리 (같은 도메인 안 라인) | container / leg_stop |
+| `CASCADE` | 부모 삭제 시 자식 정리 (같은 도메인 안 라인) | container / leg_addon |
 
 ### 1-6. UniqueConstraint(team_id, id) 필수
 

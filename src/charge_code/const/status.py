@@ -14,9 +14,9 @@ class ChargeKind(StrEnum):
 
 
 class ChargeCategory(StrEnum):
-    """v3 LegCharge 변동 라인 분류 (UI 그룹핑·필터·signed 기본값 결정).
+    """변동 청구 라인 분류 (UI 그룹핑·필터·signed 기본값 결정).
 
-    - BASE        : RateQuote/RateTariff 가 본래 다루지만, 수동 라인이면 여기.
+    - BASE        : 기본 운임은 요율표가 다루지만, 수동 라인이면 여기.
     - WAITING     : 대기 수당 (분당/정액).
     - EXTRA_STOP  : 추가 정차/섀시 대여 지체 등.
     - DRY_RUN     : 빠꾸/터미널 closed 헛걸음 보상.
@@ -46,14 +46,14 @@ class ChargeUnit(StrEnum):
 
 
 class ChargeSource(StrEnum):
-    """leg_charge 가 어떻게 생성되었는지."""
-    AUTO   = "AUTO"     # rate_card 매칭으로 자동 생성
+    """청구 라인이 어떻게 생성되었는지."""
+    AUTO   = "AUTO"     # 요율/규칙 매칭으로 자동 생성
     MANUAL = "MANUAL"   # 운영자 수동 추가
     EVENT  = "EVENT"    # 이벤트 (예: chassis_event 시간차 → CHASSIS_PER_DIEM)
 
 
 class PartyKind(StrEnum):
-    """leg_charge 의 payee_kind / payer_kind 다형성.
+    """청구 라인의 payee_kind / payer_kind 다형성.
 
     - CUSTOMER: customer 테이블 (kind=CUSTOMER 등)
     - CARRIER: customer 테이블 (kind=CARRIER) — 외주 협력사

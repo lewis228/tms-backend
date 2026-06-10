@@ -10,10 +10,9 @@ from container.const.status import (
 )
 from leg.const.status import (
     ServiceType, ContainerState, StopRole, MoveTypeV3,
-    LegStatus, LegRateSource, HandoverReason,
+    LegStatus, HandoverReason,
     LegLocationType, LegMoveCode,
 )
-from charge_code.const.status import ChargeCategory, PartyKind
 
 
 class ContainerResponseSchema(ResponseSchema):
@@ -129,45 +128,6 @@ class DriverSegmentResponseSchema(ResponseSchema):
     is_active: bool
 
 
-class LegRateResponseSchema(ResponseSchema):
-    id: int
-    leg_id: int
-    rate_quote_id:  int | None = None
-    rate_tariff_id: int | None = None
-
-    snapshot_distance_value: Decimal | None = None
-    snapshot_duration_min:   Decimal | None = None
-    snapshot_per_value:      Decimal | None = None
-    snapshot_per_min:        Decimal | None = None
-    snapshot_flat_base:      Decimal | None = None
-    snapshot_quote_fixed:    Decimal | None = None
-
-    base_amount: Decimal
-    source: LegRateSource
-    manual_override: bool
-    payee_driver_id: int | None = None
-    computed_at: datetime | None = None
-    note: str | None = None
-    is_active: bool
-
-
-class LegChargeLineSchema(ResponseSchema):
-    id: int
-    leg_id: int
-    charge_code_id: int
-    charge_code:   str | None = None
-    charge_name:   str | None = None
-    category:      ChargeCategory | None = None
-    snapshot_unit_amount: Decimal | None = None
-    quantity:      Decimal | None = None
-    subtotal:      Decimal       # = amount field
-    payee_kind:    PartyKind | None = None
-    payee_driver_id:   int | None = None
-    payee_driver_name: str | None = None
-    description:   str | None = None
-    is_active: bool
-
-
 class LegFullSchema(ResponseSchema):
     id: int
     delivery_order_id: int
@@ -191,9 +151,6 @@ class LegFullSchema(ResponseSchema):
     is_active: bool
 
     segments: List[DriverSegmentResponseSchema] = []
-    rate:     LegRateResponseSchema | None = None
-    charges:  List[LegChargeLineSchema] = []
-    leg_total: Decimal = Decimal("0")  # base + Σ subtotal
 
 
 class ContainerFullResponseSchema(ResponseSchema):

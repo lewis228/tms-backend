@@ -26,7 +26,7 @@ _EVENT_TITLES: dict[str, str] = {
     "do.status_changed":    "D/O 상태가 변경되었습니다",
     "leg.created":          "새 Leg 이 생성되었습니다",
     "leg.status_changed":   "Leg 상태가 변경되었습니다",
-    # 재설계: 구 settlement 도메인 제거 → settlement.* 알림 제거(정산은 payroll 도메인).
+    # 정산 알림은 payroll 도메인이 담당(settlement.* 이벤트 없음).
     # v3: 컨테이너가 WAITING_PLAN 으로 진입할 때만 디스패처에게 inbox 알림 (next-stop 미생성).
     "container.waiting_plan": "⚠️ 컨테이너 다음 stop 미생성",
 }

@@ -71,7 +71,6 @@ class DeliveryOrderRepository(TeamScopedRepoMixin):
 - `AuthRepository` — Redis 전용
 - `FileService` — 폴리모픽 파일 (team_id 는 있지만 domain+object_id 로 소유 결정)
 - `RbacRepository` — permissions 마스터는 글로벌, 그룹은 팀 scoped 인데 redis 캐시 통합 위해 별도 패턴
-- `DistanceMatrixRepository` — 글로벌 거리 매트릭스 (캐시)
 
 이외 **모든** 비즈니스 도메인 레포는 상속 필수.
 

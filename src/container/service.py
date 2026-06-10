@@ -190,7 +190,6 @@ class ContainerService:
         from container.model import ContainerEventModel
         from driver.model import DriverModel
         from user.model import UserModel
-        from decimal import Decimal as _D
         from sqlalchemy import func
 
         row = await self.repo.get(container_id)
@@ -282,10 +281,8 @@ class ContainerService:
                     DriverSegmentResponseSchema.model_validate(s).model_copy(update={"driver_name": dn})
                 )
 
-        # 재설계: 구 leg_rate/leg_charge 제거. leg 별 요율/원가는 정산 시점에
-        # payroll(RateResolver) 가, 고객 청구는 invoice 가 담당. 상세 응답엔 미포함.
-        rate_map: dict[int, object] = {}
-        charge_map: dict[int, list] = {}
+        # leg 별 요율/원가는 정산 시점에 payroll(RateResolver) 가, 고객 청구는
+        # invoice 가 담당한다. 컨테이너 상세 응답엔 금액을 싣지 않는다.
 
         # leg driver name (current segment driver_id 기반)
         driver_names: dict[int, str] = {}
@@ -300,9 +297,6 @@ class ContainerService:
 
         legs_full: list[LegFullSchema] = []
         for l in legs_rows:
-            base = (rate_map.get(l.id).base_amount if l.id in rate_map else _D("0"))
-            charges = charge_map.get(l.id, [])
-            tot = base + sum((c.subtotal for c in charges), start=_D("0"))
             legs_full.append(LegFullSchema(
                 id=l.id,
                 delivery_order_id=l.delivery_order_id,
@@ -325,9 +319,6 @@ class ContainerService:
                 note=l.note,
                 is_active=l.is_active,
                 segments=seg_map.get(l.id, []),
-                rate=rate_map.get(l.id),
-                charges=charges,
-                leg_total=tot,
             ))
 
         # Events

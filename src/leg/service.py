@@ -50,7 +50,7 @@ class LegService:
             actor_user_id=actor_user_id,
         )
         # 자동 hook (best-effort) — 실패 시 rollback 으로 세션 invalid 회피.
-        # 재설계: 구 LegRate 자동계산 제거(payroll/RateResolver 가 정산 시점에 해석).
+        # leg 별 요율/원가는 정산 시점에 payroll(RateResolver) 가 해석한다.
         try:
             if row.container_id is not None:
                 from container.state_derive import derive_and_save_state
@@ -507,33 +507,15 @@ class LegService:
 
         규칙:
         - PENDING → IN_TRANSIT: started_at 자동 기록
-        - IN_TRANSIT → COMPLETED: completed_at + arrived_at(없으면) 자동, Settlement 자동 생성
+        - IN_TRANSIT → COMPLETED: completed_at + arrived_at(없으면) 자동 기록 → Container.work_state 파생
         - IN_TRANSIT → FAILED: failure_reason 필수
-        - 다른 전이는 거부.
+        - 전이 그래프는 leg/state_machine.py 가 단일 진실.
         """
         from datetime import datetime, timezone
         from sqlalchemy import select
-        from common.exceptions.base import AppException
         from leg.model import LegModel
         from leg.const.status import LegStatus
-
-        class InvalidLegTransition(AppException):
-            def __init__(self, message: str, *, details: dict | None = None):
-                super().__init__(
-                    code="ERR_INVALID_LEG_TRANSITION",
-                    message=message,
-                    status_code=422,
-                    detail=details,
-                )
-
-        # 재설계: ASSIGNED 추가 + 배차취소/재배차 허용 (기존 PENDING→IN_TRANSIT 유지)
-        _ALLOWED_LEG: dict = {
-            LegStatus.PENDING:    {LegStatus.ASSIGNED, LegStatus.IN_TRANSIT},
-            LegStatus.ASSIGNED:   {LegStatus.IN_TRANSIT, LegStatus.PENDING},
-            LegStatus.IN_TRANSIT: {LegStatus.COMPLETED, LegStatus.FAILED},
-            LegStatus.COMPLETED:  set(),
-            LegStatus.FAILED:     {LegStatus.PENDING},
-        }
+        from leg.state_machine import assert_can_transition
 
         target_enum = target if isinstance(target, LegStatus) else LegStatus(target)
         team_id = self.repo._require_team()
@@ -547,13 +529,7 @@ class LegService:
             raise NotFoundException("Leg")
 
         previous = leg.status
-        allowed = _ALLOWED_LEG.get(previous, set())
-        if target_enum not in allowed:
-            raise InvalidLegTransition(
-                f"Cannot transition leg {previous.value} → {target_enum.value}",
-                details={"from": previous.value, "to": target_enum.value,
-                         "allowed": [s.value for s in allowed]},
-            )
+        assert_can_transition(previous, target_enum)
         if target_enum == LegStatus.FAILED and not failure_reason:
             raise BadRequestException("failure_reason required for FAILED")
 
@@ -576,7 +552,6 @@ class LegService:
         await self.db.refresh(leg)
 
         # ── 자동 hook: commit 이후 별도 트랜잭션. 실패해도 메인 transition 안전 ──
-        # 재설계: 구 leg_charge auto_waiting 제거(요금은 leg_layer/정산이 담당).
         if target_enum == LegStatus.COMPLETED:
             # Container.work_state derive
             if leg.container_id is not None:

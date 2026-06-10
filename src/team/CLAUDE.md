@@ -15,7 +15,7 @@
 ├── repository.py         # TeamScopedRepoMixin 상속
 ├── service.py            # __init__(db, team_id)
 ├── router.py             # _1: None = Depends(access_token) + ...
-├── state_machine.py      # (옵션) 상태 전이가 있는 도메인만 — delivery_order, leg, settlement
+├── state_machine.py      # (옵션) 상태 전이가 있는 도메인만 — delivery_order, leg, invoice
 ├── schemas/
 │   ├── __init__.py
 │   ├── request.py        # RequestSchema 상속

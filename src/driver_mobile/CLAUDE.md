@@ -160,7 +160,7 @@ async def checkpoint(
 `CheckpointRequest`:
 ```python
 class CheckpointRequest(RequestSchema):
-    target: LegStatus              # IN_TRANSIT / ARRIVED / FAILED
+    target: LegStatus              # IN_TRANSIT / COMPLETED / FAILED
     failure_reason: Optional[str] = None
 ```
 

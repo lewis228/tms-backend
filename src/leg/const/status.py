@@ -88,7 +88,7 @@ class StopRole(StrEnum):
     - TERMINUS   : 마지막 종료점 (보통 빈 컨 반납 디포 — 필수 X).
 
     액션(픽업/드롭/empty/full)은 이 role + 인접 leg.move_type 조합으로 derive.
-    시간 소비형(WAIT/FUEL/SCALE) 은 더 이상 stop 으로 만들지 않고 LegCharge 로 흡수.
+    시간 소비형(WAIT/FUEL/SCALE) 은 stop 이 아니라 leg_layer/정산 라인으로 흡수.
     """
     ORIGIN   = "ORIGIN"
     DELIVERY = "DELIVERY"
@@ -140,23 +140,6 @@ class MoveTypeV3(StrEnum):
     CHASSIS_ONLY  = "CHASSIS_ONLY"
     EMPTY_LOADED  = "EMPTY_LOADED"
     FULL_LOADED   = "FULL_LOADED"
-
-
-class LegRateSource(StrEnum):
-    """v3 LegRate.base_amount 가 어떻게 산출됐는지 추적."""
-    QUOTE_FIXED   = "QUOTE_FIXED"     # rate_quote 정찰가 매칭
-    TARIFF_CALC   = "TARIFF_CALC"     # rate_tariff 거리×단가 계산
-    TARIFF_FLAT   = "TARIFF_FLAT"     # 거리 미등록 → flat_base 만
-    MANUAL        = "MANUAL"          # 디스패처 수동 입력
-    NONE          = "NONE"            # 매칭/계산 모두 실패 (₩0 + ⚠️)
-
-
-class DistanceProvider(StrEnum):
-    """v3 거리 측정 제공자 어댑터."""
-    OSRM   = "OSRM"
-    GOOGLE = "GOOGLE"
-    MANUAL = "MANUAL"
-    CACHED = "CACHED"
 
 
 class ChassisEventKind(StrEnum):

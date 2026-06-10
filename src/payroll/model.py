@@ -1,8 +1,8 @@
 # src/payroll/model.py
-"""드라이버 정산(Payroll) — 재설계. 신규 RateResolver 기반.
+"""드라이버 정산(Payroll) — RateResolver 기반.
 
 settlement(헤더: driver+기간) + payroll_line(leg snapshot, 요율 동결) + payroll_charge(accessorial).
-기존 settlement 도메인(구 leg_rate 기반, per-leg)과 별개. 추후 구 settlement 대체.
+요율은 정산 시점에 RateResolver 가 해석해 라인에 동결(snapshot)한다.
 """
 from __future__ import annotations
 from datetime import date

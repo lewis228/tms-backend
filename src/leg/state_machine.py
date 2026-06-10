@@ -1,15 +1,17 @@
 # src/leg/state_machine.py
-"""Leg 상태머신 (컨플루언스 재설계) — 전이 그래프의 단일 진실.
+"""Leg 상태머신 — 전이 그래프의 단일 진실.
 
 PENDING → ASSIGNED → IN_TRANSIT → COMPLETED / FAILED
   - PENDING→ASSIGNED : 드라이버 배차
   - ASSIGNED→PENDING : 배차 취소
-  - PENDING→IN_TRANSIT: (레거시/즉시출발 허용 — 드라이버앱 체크포인트 호환)
+  - PENDING→IN_TRANSIT: 즉시 출발(드라이버앱 체크포인트)
   - IN_TRANSIT→FAILED: failure_reason 필수
   - FAILED→PENDING : 재배차
 
-기존 leg/service.transition() 의 인라인 그래프와 동일하게 유지한다.
-배차 액션·D/O 파생엔진 등 신규 코드는 이 모듈을 참조.
+DRY_RUN(빠꾸) 은 transition() 으로 가는 전이가 아니다 — reissue_dry_run() 이
+원본 leg 를 DRY_RUN 으로 직접 종료하며 새 leg 를 발급한다. 따라서 종료 상태로만 표기.
+
+leg/service.transition() 과 배차 액션·D/O 파생엔진 모두 이 모듈을 참조한다.
 """
 from __future__ import annotations
 
@@ -17,11 +19,10 @@ from common.exceptions.base import AppException
 from leg.const.status import LegStatus
 
 
-# DRY_RUN(빠꾸) = 현장 도착했으나 작업 불가 → 종료 상태. reissue 로 새 leg 발급.
 _ALLOWED: dict[LegStatus, set[LegStatus]] = {
     LegStatus.PENDING:    {LegStatus.ASSIGNED, LegStatus.IN_TRANSIT},
-    LegStatus.ASSIGNED:   {LegStatus.IN_TRANSIT, LegStatus.PENDING, LegStatus.DRY_RUN},
-    LegStatus.IN_TRANSIT: {LegStatus.COMPLETED, LegStatus.FAILED, LegStatus.DRY_RUN},
+    LegStatus.ASSIGNED:   {LegStatus.IN_TRANSIT, LegStatus.PENDING},
+    LegStatus.IN_TRANSIT: {LegStatus.COMPLETED, LegStatus.FAILED},
     LegStatus.COMPLETED:  set(),
     LegStatus.FAILED:     {LegStatus.PENDING},
     LegStatus.DRY_RUN:    set(),

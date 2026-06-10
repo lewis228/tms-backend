@@ -34,4 +34,3 @@ EVT_LEG_SEGMENT_UPDATED = "leg_segment.updated"
 EVT_LEG_SEGMENT_DELETED = "leg_segment.deleted"
 
 EVT_CONTAINER_STATE_CHANGED = "container.state_changed"
-# 재설계: 구 leg_rate/leg_charge/rate_quote/rate_tariff/distance_matrix 제거 → 해당 이벤트 상수 삭제.

@@ -9,8 +9,7 @@ ste/backend_sample 패턴:
   - 도메인 router 명시 등록
 
 전 도메인 router 를 명시 등록 (마스터 / D-O·Container·Leg / 요율 서브시스템 /
-payroll·invoice / 모바일·실시간·AI·시스템). 재설계로 구 v3 요율·정산 클러스터
-(rate_card/quote/tariff/leg_rate/distance_matrix/leg_charge/settlement) 는 제거됨.
+payroll·invoice / 모바일·실시간·AI·시스템).
 """
 import asyncio
 import logging  # noqa: F401

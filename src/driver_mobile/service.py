@@ -28,7 +28,7 @@ class DriverMobileService:
         self.team_id = team_id
 
     async def _earnings_by_leg(self, leg_ids: list[int]) -> dict[int, dict]:
-        """leg_id → {amount, settled, pending} (재설계: 구 settlement → payroll_line).
+        """leg_id → {amount, settled, pending} — payroll_line 기반.
 
         leg 의 payroll base(비-VOID 정산 라인) + 부모 정산 status 로 수익/상태 표시.
         """
@@ -227,7 +227,7 @@ class DriverMobileService:
 
         completed_count = len(completed_legs)
 
-        # 예상 수익 — 해당 leg 의 payroll base 합 (재설계: 구 settlement → payroll_line)
+        # 예상 수익 — 해당 leg 의 payroll base 합
         leg_ids = [l.id for l in completed_legs]
         earnings = await self._earnings_by_leg(leg_ids)
         revenue = sum((e["amount"] for e in earnings.values()), Decimal(0))
@@ -374,7 +374,7 @@ class DriverMobileService:
 
         items = []
         leg_ids = [r[0].id for r in rows]
-        # leg 별 수익 — payroll base (재설계: 구 settlement → payroll_line)
+        # leg 별 수익 — payroll base
         earnings = await self._earnings_by_leg(leg_ids)
 
         for leg, do, customer in rows:
@@ -433,7 +433,7 @@ class DriverMobileService:
                 "weekly_trend": [],
             }
 
-        # 정산 모음 — payroll base (재설계: 구 settlement → payroll_line)
+        # 정산 모음 — payroll base
         earnings = await self._earnings_by_leg(leg_ids)
 
         total_amount = sum((e["amount"] for e in earnings.values()), Decimal(0))
@@ -441,7 +441,7 @@ class DriverMobileService:
         # 상태별 카운트 (payroll 정산 status 기반)
         completed_count = sum(1 for e in earnings.values() if e["settled"])
         pending_count   = sum(1 for e in earnings.values() if e["pending"] and not e["settled"])
-        on_hold_count   = 0  # 구 settlement has_flag 대체 — 신규엔 hold 개념 없음
+        on_hold_count   = 0  # payroll 엔 hold 개념 없음
 
         # 주간 추이 — leg.completed_at 기준 4~5 주 split
         weekly_buckets: dict[int, Decimal] = {}
@@ -487,7 +487,7 @@ class DriverMobileService:
         limit: int = 20,
         status_filter: str | None = None,
     ) -> dict:
-        """정산 목록 — 재설계: 구 settlement 제거. driver 의 COMPLETED leg 를 payroll 라인 수익과 함께 페이지네이션."""
+        """정산 목록 — driver 의 COMPLETED leg 를 payroll 라인 수익과 함께 페이지네이션."""
         driver_id = await self.resolve_driver_id(user_id)
 
         # 본 driver 의 완료 leg (leg 단위로 정산 표시 — per-leg settlement 폐지, payroll_line 으로 대체)
@@ -593,7 +593,7 @@ class DriverMobileService:
                 select(LocationModel).where(LocationModel.id == leg.delivery_location_id)
             )).scalar_one_or_none()
 
-        # 운임 — payroll 라인 base (재설계: 구 settlement 제거)
+        # 운임 — payroll 라인 base
         revenue: Decimal | None = None
         earnings = await self._earnings_by_leg([leg.id])
         e = earnings.get(leg.id)

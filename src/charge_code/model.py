@@ -13,7 +13,7 @@ from charge_code.const.status import ChargeKind, ChargeUnit, ChargeCategory, Par
 
 
 class ChargeCodeModel(Base, TeamScopedMixin):
-    """청구 코드 마스터 (Team-Scoped). leg_charge / rate_card 가 참조."""
+    """청구 코드 마스터 (Team-Scoped). 청구/정산 라인이 참조."""
     __tablename__ = "charge_code"
 
     code: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -37,7 +37,7 @@ class ChargeCodeModel(Base, TeamScopedMixin):
     gl_account: Mapped[str | None] = mapped_column(String(64), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # ── v3 보강 (LegCharge 변동 라인 마스터 정밀화) ─────────────
+    # ── 변동 청구 라인 마스터 정밀화 ─────────────
     # UI 라벨 (예: "10분", "건", "정차", "%")
     unit_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # 변동 라인 분류 (UI 그룹핑/필터)
@@ -48,7 +48,7 @@ class ChargeCodeModel(Base, TeamScopedMixin):
     signed: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False,
     )
-    # LegCharge 생성 시 payee 기본값
+    # 청구 라인 생성 시 payee 기본값
     payee_default: Mapped[PartyKind | None] = mapped_column(
         SAEnum(PartyKind, name="party_kind"), nullable=True,
     )

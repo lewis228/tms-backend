@@ -147,7 +147,7 @@ class LegModel(Base, TeamScopedMixin):
     rejection_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # ── 정산 ────────────────────────────────────────────────────
-    # 재설계: 구 settlement 도메인 제거. 정산은 payroll(payroll_line.leg_id 역참조)이 담당.
+    # 정산은 payroll(payroll_line.leg_id 역참조)이 담당한다.
     storage_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     is_settled:   Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
 

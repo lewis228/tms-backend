@@ -369,44 +369,52 @@ async def seed(db: AsyncSession):
         await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
             per_unit=D(per_unit), effective_from=eff), actor_user_id=aid)
 
-    # (move, service) 별 가격 계수
-    MS_FULL = [(L, LV, 1.00), (L, DR, 0.92), (E, DR, 0.45)]
+    # 모든 (move, service) 9조합 × 모든 사이즈 → 어떤 선택이든 매트릭스가 꽉 차게.
+    N_M, N_S = RateMoveType.NONE, RateServiceType.NONE
+    S45 = RateContainerSize.SIZE_45
+    ALL_COMBOS = [
+        (L, LV, 1.00), (L, DR, 0.92), (L, N_S, 0.85),
+        (E, LV, 0.55), (E, DR, 0.45), (E, N_S, 0.40),
+        (N_M, LV, 0.35), (N_M, DR, 0.30), (N_M, N_S, 0.25),
+    ]
+    SIZES_F = [(S20, 0.85), (S40, 1.00), (S45, 1.15)]  # 사이즈별 배율
 
-    async def fill_zone_matrix(grp, group_mult, combos):
-        """그룹의 모든 from≠to 페어를 40ft 로 채움(매트릭스 빽빽)."""
-        for mv, sv, ms in combos:
-            for fz in ZONES:
-                for tz in ZONES:
-                    if fz is tz:
-                        continue
-                    dist = abs(ZIDX[tz] - ZIDX[fz])
-                    await zcell(grp, mv, sv, fz, tz, S40, _round5((90 + dist * 2.6) * group_mult * ms))
+    async def fill_zone_matrix(grp, group_mult):
+        """그룹의 모든 (move,service)×사이즈×from≠to 를 채움(완전 충진)."""
+        for mv, sv, ms in ALL_COMBOS:
+            for sz, sf in SIZES_F:
+                for fz in ZONES:
+                    for tz in ZONES:
+                        if fz is tz:
+                            continue
+                        dist = abs(ZIDX[tz] - ZIDX[fz])
+                        await zcell(grp, mv, sv, fz, tz, sz,
+                                    _round5((90 + dist * 2.6) * group_mult * ms * sf))
 
-    await fill_zone_matrix(grp_zone, 1.00, MS_FULL)
-    await fill_zone_matrix(grp_zone_rf, 1.40, [(L, LV, 1.00), (L, DR, 0.92)])
-    await fill_zone_matrix(grp_zone_ow, 1.55, [(L, LV, 1.00)])
+    await fill_zone_matrix(grp_zone, 1.00)
+    await fill_zone_matrix(grp_zone_rf, 1.40)
+    await fill_zone_matrix(grp_zone_ow, 1.55)
     # PORT→IE LOAD/LIVE 40 = 285→310 버전 2개로 오버라이드(payroll/e2e 정합)
     await zcell(grp_zone, L, LV, z_port, z_ie, S40, "285")
     await zcell(grp_zone, L, LV, z_port, z_ie, S40, "310", eff=date(2026, 6, 1))
-    # 20ft 데모 셀 몇 개
-    await zcell(grp_zone, L, LV, z_port, z_ie, S20, "265")
-    await zcell(grp_zone, L, LV, z_port, z_la, S20, "180")
 
     # City 매트릭스 — 대표 도시 6개(zip 마스터 표기와 일치)
     CITIES = [("San Pedro", 0), ("Long Beach", 10), ("Los Angeles", 25),
               ("Anaheim", 35), ("Santa Ana", 40), ("Fontana", 60)]
 
-    async def fill_city_matrix(grp, group_mult, combos):
-        for mv, sv, ms in combos:
-            for fc, fi in CITIES:
-                for tc, ti in CITIES:
-                    if fc == tc:
-                        continue
-                    await ccell(grp, mv, sv, fc, tc, S40, _round5((95 + abs(ti - fi) * 3.0) * group_mult * ms))
+    async def fill_city_matrix(grp, group_mult):
+        for mv, sv, ms in ALL_COMBOS:
+            for sz, sf in SIZES_F:
+                for fc, fi in CITIES:
+                    for tc, ti in CITIES:
+                        if fc == tc:
+                            continue
+                        await ccell(grp, mv, sv, fc, tc, sz,
+                                    _round5((95 + abs(ti - fi) * 3.0) * group_mult * ms * sf))
 
-    await fill_city_matrix(grp_city, 1.00, [(L, LV, 1.00), (E, DR, 0.45)])
-    await fill_city_matrix(grp_city_ex, 1.25, [(L, LV, 1.00)])
-    await fill_city_matrix(grp_city_rf, 1.40, [(L, LV, 1.00)])
+    await fill_city_matrix(grp_city, 1.00)
+    await fill_city_matrix(grp_city_ex, 1.25)
+    await fill_city_matrix(grp_city_rf, 1.40)
 
     # MILE / HOURLY per_unit (좌표 없는 단일 셀)
     await ucell(grp_mile, "2.75")
@@ -422,7 +430,7 @@ async def seed(db: AsyncSession):
                                          effective_from=JAN, created_by_user_id=aid))
     await db.flush()
     print("  zone×7 + member×17, group×12 (ZONE/CITY/MILE/HOURLY 각 3), multiplier×4, "
-          "rate_entry 300+ (full from→to 매트릭스, 시트 자동생성), assignment×3")
+          "rate_entry 5800+ (9 move×service × 3사이즈 × 전 from→to, 완전 충진), assignment×3")
 
     # ── 5. Load Type 템플릿 (시스템 시드) ─────────────────────
     banner("Load Type 템플릿")

@@ -1,51 +1,122 @@
 # ============================================================================
-# EC2 배포 전용 docker-compose.
+# 운영 배포 — 단일 서버(Oracle Cloud, 1GB RAM + 2GB swap) docker-compose.
+#
+# 프론트(tms-frontend) + 백엔드(this) + MySQL/Redis/MinIO 를 한 대에 올린다.
+# 공개 포트는 web(nginx)의 80 하나. 나머지는 내부 네트워크 전용.
+#
+# 전제: tms-backend 와 tms-frontend 를 형제 디렉토리로 clone.
+#   ~/apps/tms-backend   ← 여기서 실행
+#   ~/apps/tms-frontend  ← web 서비스의 빌드 컨텍스트(../tms-frontend)
 #
 # 사용:
-#   docker-compose -f docker-compose.prod.yaml up -d --build
+#   cp .env.prod.example .env.prod   # 시크릿 채우기
+#   ./deploy.sh                      # 순차 빌드 + 기동 + 마이그레이션
 #
-# 특징:
-#   - .env 파일 없음. 환경변수는 EC2 환경(IAM Role + Parameter Store)에서 주입.
-#   - RDS / ElastiCache / S3 사용 → 로컬 MySQL / Redis / MinIO 없음.
+# 변수 PUBLIC_URL 미설정 시 공인 IP 기본값 사용(프론트 빌드 args).
 # ============================================================================
 
 services:
+  mysql:
+    image: mysql:8.4
+    container_name: tms-mysql
+    restart: unless-stopped
+    env_file: [.env.prod]
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-tms}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+    command: >
+      --innodb-buffer-pool-size=128M
+      --innodb-log-file-size=64M
+      --max-connections=60
+      --performance-schema=OFF
+      --skip-name-resolve
+      --wait_timeout=28800
+      --interactive_timeout=28800
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:7.2
+    container_name: tms-redis
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "96mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    container_name: tms-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./minio-data:/data
+    # 파일 업로드/다운로드(presigned)용. 외부 노출은 선택(호스트 9000 오픈 필요).
+    ports:
+      - "9000:9000"
+
+  minio-init:
+    image: minio/mc
+    container_name: tms-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set m http://minio:9000 ${MINIO_ACCESS_KEY:-minioadmin} ${MINIO_SECRET_KEY:-minioadmin};
+      mc mb --ignore-existing m/${MINIO_BUCKET:-tms-app};
+      mc anonymous set download m/${MINIO_BUCKET:-tms-app}/public;
+      echo 'minio init done';
+      "
+
   app:
     build: .
+    image: tms-api:prod
     container_name: tms-api
     restart: unless-stopped
+    env_file: [.env.prod]
+    environment:
+      DB_HOST: mysql
+      REDIS_HOST: redis
+      MINIO_ENDPOINT: http://minio:9000
+      PYTHONPATH: /app/src
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    # 공개 포트 없음 — web(nginx) 만 외부 노출
+
+  web:
+    build:
+      context: ../tms-frontend
+      args:
+        VITE_API_URL: ${PUBLIC_URL:-http://168.107.40.234}
+        VITE_PUBLIC_URL: ${PUBLIC_URL:-http://168.107.40.234}
+        VITE_MOCK_SESSION: "false"
+    image: tms-web:prod
+    container_name: tms-web
+    restart: unless-stopped
     ports:
-      - "8080:8080"
-    environment:
-      APP_ENV: prod
-      AWS_REGION: ap-northeast-2
-
-  celery-worker:
-    build: .
-    container_name: tms-celery-worker
-    restart: unless-stopped
-    entrypoint: ["/usr/bin/tini", "--"]
-    working_dir: /app
-    command: >
-      sh -c "
-      export PYTHONPATH=/app &&
-      celery -A app.workers.celery_app worker --loglevel=info -Q celery
-      "
-    environment:
-      APP_ENV: prod
-      AWS_REGION: ap-northeast-2
-
-  celery-beat:
-    build: .
-    container_name: tms-celery-beat
-    restart: unless-stopped
-    entrypoint: ["/usr/bin/tini", "--"]
-    working_dir: /app
-    command: >
-      sh -c "
-      export PYTHONPATH=/app &&
-      celery -A app.workers.celery_app beat --loglevel=info
-      "
-    environment:
-      APP_ENV: prod
-      AWS_REGION: ap-northeast-2
+      - "80:80"
+    depends_on:
+      app:
+        condition: service_started

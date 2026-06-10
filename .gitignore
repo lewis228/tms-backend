@@ -12,7 +12,9 @@ build/
 .eggs/
 *.egg
 .env
+.env.prod
 !.env.example
+!.env.prod.example
 mysql-data/
 minio-data/
 uploads/

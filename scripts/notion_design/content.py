@@ -245,11 +245,14 @@ def page_do_intake():
         dia(intake),
         N.p("AI 경로는 사진을 Claude/Gemini Vision 으로 보내 BL번호·컨테이너·정차점을 뽑아 폼을 미리 채워주는 "
             "'입력 보조'입니다. 최종 저장은 사람이 확인 후 일반 D/O 생성과 같은 경로로 들어갑니다."),
-        N.h2("정차점(Stop)의 4가지 역할"),
-        N.bullet(("ORIGIN ", {"bold": True}), "— 첫 출발점(보통 터미널/항만)"),
-        N.bullet(("DELIVERY ", {"bold": True}), "— 화물을 내리거나 싣는 화주 도어/창고 (여러 개 가능)"),
-        N.bullet(("TRANSIT ", {"bold": True}), "— 중간 경유(적재 변화 없음)"),
-        N.bullet(("TERMINUS ", {"bold": True}), "— 마지막 종료점(보통 빈 컨 반납 디포)"),
+        N.h2("Point(정차 지점) — 타입 3종 + 타입별 마스터"),
+        N.p("컨테이너는 Point(=정차 지점) 들의 시퀀스를 가진다. 각 Point 는 **타입**(Terminal/Yard/Customer)을 고르면 "
+            "그 타입의 마스터 목록에서 구체 대상을 고른다(캐스케이드). 레그는 이 Point 들을 from→to 로 잇는다."),
+        N.bullet(("TERMINAL ", {"bold": True}), "— terminal 마스터에서 선택(터미널 목록). 좌표 보유."),
+        N.bullet(("YARD ", {"bold": True}), "— location(kind=YARD) 에서 선택(야드 목록)."),
+        N.bullet(("CUSTOMER ", {"bold": True}), "— customer(거래처) 마스터에서 선택. 여러 개 가능(LCL)."),
+        N.p("DB 저장: point_type + (terminal_id | location_id | customer_id) 정확히 하나. "
+            "마지막 시퀀스 Point 도착 = 컨테이너 완료 판정(옛 ORIGIN/DELIVERY/TRANSIT/TERMINUS 역할 폐기)."),
         N.h2("예시"),
         ex("""
 디스패처가 IMPORT D/O 를 만든다 (고객 X, 컨테이너 1개 40ft)
@@ -260,19 +263,19 @@ POST /delivery-orders
   containers: [{
     container_number: "MSKU1234567", size: "40HC",
     stops: [
-      { role: "ORIGIN",   location: "LA 터미널" },
-      { role: "DELIVERY", location: "NYC 창고" },
-      { role: "TERMINUS", location: "반납 디포" }
+      { point_type: "TERMINAL", terminal_id: 3 },   # LA 터미널
+      { point_type: "CUSTOMER", customer_id: 5 },   # NYC 거래처
+      { point_type: "YARD",     location_id: 9 }     # 반납 야드
     ]
   }]
 }
 
 결과
   D/O   #100  status = PLANNING
-  컨테이너 #50  work_state = PLANNED  (stop 들이 생겼으므로)
-  ContainerStop 3개 (planned 만 있고 actual_arrival 은 비어있음)
+  컨테이너 #50  work_state = PLANNED  (Point 들이 생겼으므로)
+  Point 3개 (planned 만 있고 actual_arrival 은 비어있음)
 """),
-        tip("아직 leg(운송 구간)는 없습니다. 다음 단계에서 템플릿으로 자동 생성됩니다."),
+        tip("아직 leg(운송 구간)는 없습니다. 다음 단계에서 이 Point 들을 from→to 로 이어 leg 를 만듭니다."),
     ]
 
 
@@ -281,7 +284,7 @@ POST /delivery-orders
 # ════════════════════════════════════════════════════════════
 def page_container():
     ws = """
- DRAFT ──(stop 1+)──▶ PLANNED ──(leg 출발)──▶ IN_TRANSIT ──(전부 완료 & TERMINUS 도착)──▶ COMPLETED
+ DRAFT ──(Point 1+)──▶ PLANNED ──(leg 출발)──▶ IN_TRANSIT ──(전부 완료 & 마지막 Point 도착)──▶ COMPLETED
                          │                       ▲    │
                          │           (다시 출발)  │    └──(stop 도착 & 다음 leg PENDING)──▶ AT_STOP
                          │                       └────────────────────────────────────────┘
@@ -310,7 +313,7 @@ def page_container():
 stop 3개 + leg 2개(둘 다 PENDING)      → PLANNED
 기사 출발, leg1 IN_TRANSIT             → IN_TRANSIT
 leg1 완료(NYC 창고 도착), leg2 PENDING  → AT_STOP
-leg2 완료(반납 디포=TERMINUS 도착)      → COMPLETED
+leg2 완료(마지막 Point=반납 야드 도착)  → COMPLETED
 """),
     ]
 
@@ -320,42 +323,40 @@ leg2 완료(반납 디포=TERMINUS 도착)      → COMPLETED
 # ════════════════════════════════════════════════════════════
 def page_leg_gen():
     gen = """
- 템플릿 "IMPORT 풀컨 배송"
-    │
-    ├─ step1: 터미널 → 화주   LOAD / LIVE / PPU ─▶ ┌────────────────────────┐
-    │                                            │ Leg1  PENDING (LOADED)  │
-    │                                            └────────────────────────┘
-    └─ step2: 화주 → 터미널   EMPTY / PRE       ─▶ ┌────────────────────────┐
-                                                 │ Leg2  PENDING (EMPTY)   │
-                                                 └────────────────────────┘
-                                                            │
-                                                            ▼
-                                  컨테이너 work_state = PLANNED
-                                  D/O status = DISPATCHING (미배차 leg 있음)
+ Point 시퀀스 :  P1[Terminal] ── P2[Customer] ── P3[Yard]
+                     │              │              │
+   '레그 추가'  ─────┴── Leg1 ──────┴── Leg2 ──────┘
+                  (P1→P2)         (P2→P3)
+   포인트 3개  ───연결───▶  레그 2개 (포인트 사이의 간선)
+   레그 from/to_location_type = 고른 포인트의 타입 스냅샷
 """
     return [
-        lead("Leg 은 '트럭 한 대가, 컨테이너 하나를, 한 구간 옮기는 일'입니다. 운송의 최소 실행 단위이자 "
-             "정산의 단위이기도 합니다. leg 은 보통 손으로 하나씩 만들지 않고 템플릿으로 한 번에 찍어냅니다."),
-        N.h2("load_type_template = leg 청사진"),
-        N.p("템플릿은 방향(IMPORT/EXPORT)별로 'step' 들을 가집니다. 각 step 은 어디서→어디로(터미널/야드/화주), "
-            "적재 방식(LOAD/EMPTY), 서비스(LIVE/DROP), move_code(PPU/PRE 등)를 정의합니다. "
-            "컨테이너에 템플릿을 적용(apply_load_type)하면 step 순서대로 leg 들이 PENDING(미배차)으로 생성됩니다."),
+        lead("Leg 은 '트럭 한 대가, 컨테이너 하나를, 한 Point 에서 다음 Point 로 옮기는 일'입니다. "
+             "운송의 최소 실행 단위이자 정산 단위. **레그 = from-Point → to-Point 간선**(포인트 3개면 레그 2개)."),
+        N.h2("레그 추가 = from/to Point 선택"),
+        N.p("사용자가 '레그 추가' 시 컨테이너의 Point 목록에서 from/to 를 고른다. 그러면 위치도 정해지고 타입도 "
+            "정해진다(레그의 from/to_location_type 은 그 Point 의 point_type 스냅샷 — 가격엔 안 쓰임, 표시/분류용). "
+            "레그에는 추가로 move_type(LOADED/EMPTY/BOBTAIL)·service_type(LIVE/DROP)·move_code(PPU/PRE…)를 지정."),
         dia(gen),
-        N.p("생성된 leg 은 운송에 필요한 정보를 함께 스냅샷합니다: move_type(LOADED/EMPTY/BOBTAIL), service_type, "
-            "from/to_location_type, move_code, 그리고 나중에 요율 해석에 쓰일 입력(rate_point_id=터미널/야드, "
-            "dest_zip/city/state=목적지, rate_miles/rate_hours=거리/시간)."),
+        N.h2("load_type_template = 레그 폼 프리필(저장 아님)"),
+        N.p("템플릿(IMP_DIRECT_D 등)은 방향별 step(타입/이동코드)을 가진다. 템플릿을 고르면 레그 N행이 타입이 채워진 채 "
+            "**폼에 미리 뜨고**(저장 X — 거래처/포인트 미지정), 사용자가 각 행의 from/to Point 를 지정한 뒤 한 번에 "
+            "bulk 저장(/legs/bulk/create)한다. 템플릿 없이 1건씩 추가도 가능. 템플릿 자체도 사용자 CRUD."),
         N.h2("예시"),
         ex("""
-컨테이너 #50 에 'IMPORT 풀컨 배송' 템플릿 적용
+컨테이너 #50 (Point: P1 Terminal, P2 Customer, P3 Yard)
+'IMP_DIRECT_D' 템플릿 선택 → 레그 2행 프리필(타입 채워짐, 포인트 빈칸)
 
-apply_load_type(container_id=50, template_id=10)
+ 행1  LOADED / LIVE / PPU   from:[__]  to:[__]
+ 행2  EMPTY  / —    / PRE   from:[__]  to:[__]
 
-→ Leg1  PENDING  move=LOADED  서비스=LIVE  (터미널→화주)
-→ Leg2  PENDING  move=EMPTY              (화주→터미널)
-→ 컨테이너 work_state = PLANNED
-→ D/O status = DISPATCHING (미배차 leg 2개)
+사용자가 포인트 지정:  행1 P1→P2,  행2 P2→P3   → [저장]
+
+POST /legs/bulk/create  → Leg1(P1→P2), Leg2(P2→P3) PENDING 생성
+→ 컨테이너 work_state = PLANNED, D/O status = DISPATCHING
 """),
-        tip("replace_existing 으로 기존 leg 을 갈아끼울 수 있지만, 이미 IN_TRANSIT/COMPLETED 인 leg 은 보호되어 건드리지 않습니다."),
+        tip("요율 해석 입력(rate_point_id=터미널/야드, dest_zip/city/state, rate_miles/hours)은 from/to Point 와 별개로 "
+            "leg 에 스냅샷되어 정산 시 RateResolver 가 쓴다. from/to_location_type·move_code 는 가격에 직접 안 쓰인다."),
     ]
 
 
@@ -851,8 +852,9 @@ def page_improvements():
         N.bullet(("요율 Service Type 차원 ", {"bold": True}), "— rate_sheet 슬롯에 service_type 추가. (From, To, Move Type, Service Type)로 요율표가 갈림. (같은 셀 Live $1000 / Drop $800)"),
         N.bullet(("Add-on 통합·중복 허용 ", {"bold": True}), "— Flag/Charge Event 구분 폐기, 모두 leg_addon(한 개념). 같은 code 여러 개 가능(Stop Off ×3). amount 1급 필드 + 시스템 자동 채움 + 사용자 CRUD."),
         N.bullet(("정산/청구 자동 합산 ", {"bold": True}), "— payroll.build / invoice cost 가 leg add-on 을 자동 합산. D/O 단위 add-on(Demurrage 등) → invoice 자동 청구."),
-        N.bullet(("레거시 컬럼·테이블 제거 ", {"bold": True}), "— leg.leg_kind / move_type_v3 / from_stop_id / to_stop_id 컬럼과 leg_charge_event / leg_stop_off 테이블을 마이그레이션으로 완전 삭제. Leg 는 from_location_type / to_location_type + move_type + service_type + move_code(Confluence 'Leg 전체 유형')로만 표현하고, 프론트 화면도 함께 정리했습니다. (컨테이너 정차 시퀀스 container_stop.role(ORIGIN/DELIVERY/TRANSIT/TERMINUS)은 운영 레이어로 그대로 유지 — leg 와의 FK 연결만 제거.)"),
-        N.bullet(("Add-on 프론트 UI ", {"bold": True}), "— leg add-on / D-O add-on 추가·수정·삭제 화면(amount 공란이면 마스터 단가 자동 채움) + 요율 시트 목록·상세에 Service Type 표시까지 프론트 배선 완료."),
+        N.bullet(("레거시 컬럼·테이블 제거 ", {"bold": True}), "— leg.leg_kind / move_type_v3 / from_stop_id / to_stop_id 컬럼과 leg_charge_event / leg_stop_off / leg_stop 테이블을 마이그레이션으로 완전 삭제."),
+        N.bullet(("Point 모델 전면 ", {"bold": True}), "— container_stop=Point(타입 Terminal/Yard/Customer + 타입별 마스터 terminal_id/location_id/customer_id, 정확히 하나). StopRole(ORIGIN/…/TERMINUS) 폐기, 완료판정=마지막 Point 도착. **레그 = from_point→to_point 간선**, from/to_location_type 은 Point 타입 스냅샷. leg_stop 제거. Stop add-on(STP)도 typed 위치 보유(메인 시퀀스와 별개 '추가로 들른 곳'). 마이그레이션 rs7~rs8."),
+        N.bullet(("Add-on / Point 프론트 UI ", {"bold": True}), "— leg/D-O add-on CRUD + 요율 Service Type 표시 + 캐스케이드 콤보(타입→마스터목록) Point 관리 + 레그 에디터 from/to Point 선택 + 템플릿 프리필(레그 N행 채워 폼→포인트 지정→bulk 저장) 까지 프론트 배선 완료."),
         N.h2("남은 운영 인프라 마무리"),
         N.bullet("Detention/Demurrage 자동 add-on 생성 — 대기시간 초과 감지 시 add-on 자동 부착(현재는 수동/계산 저장)."),
         N.bullet("푸시(FCM/APNS) 실제 발송 코드 — push_token 은 쌓이지만 보내는 곳이 없음."),

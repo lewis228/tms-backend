@@ -18,12 +18,15 @@ from delivery_order.schemas.request import (
     DeliveryOrderTransitionRequest, DeliveryOrderHoldRequest, DeliveryOrderCancelRequest,
     DeliveryOrderCreateRequest, DeliveryOrderUpdateRequest, PaginateDeliveryOrderRequest,
     DeliveryOrderBulkCreateRequest, DeliveryOrderBulkUpdateRequest, DeliveryOrderBulkDeleteRequest,
+    DoAddonCreateRequest, DoAddonUpdateRequest,
 )
 from audit_log.schemas.response import AuditLogResponseSchema
 from delivery_order.schemas.response import (
     DeliveryOrderResponseSchema, DeliveryOrderDetailResponseSchema, DeliveryOrderDeleteResponseSchema,
     DeliveryOrderBulkCreateResponseSchema, DeliveryOrderBulkUpdateResponseSchema, DeliveryOrderBulkDeleteResponseSchema,
+    DoAddonResponseSchema, DoAddonDeleteResponseSchema,
 )
+from typing import List
 
 router = APIRouter(prefix="/api/v1/delivery-orders", tags=["delivery-orders"])
 
@@ -264,3 +267,55 @@ async def delivery_order_activity(
     """D/O 활동 타임라인 (audit_log)."""
     from audit_log.service import AuditLogService
     return await AuditLogService(db, team_id).list_for_entity("delivery_order", delivery_order_id)
+
+
+# ═══════════════════════════════════════════════════════════════
+# D/O 단위 Add-on (고객 청구용)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/{do_id}/addons", response_model=List[DoAddonResponseSchema])
+async def list_do_addons(
+    do_id: int,
+    _1: None = Depends(access_token),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    return await DeliveryOrderService(db, team_id).list_addons(do_id)
+
+
+@router.post("/{do_id}/addons", response_model=DoAddonResponseSchema)
+async def add_do_addon(
+    do_id: int,
+    body: DoAddonCreateRequest,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(DO_WRITE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    body.delivery_order_id = do_id
+    return await DeliveryOrderService(db, team_id).add_addon(body, actor_user_id=int(me.id))
+
+
+@router.patch("/addons/{addon_id}", response_model=DoAddonResponseSchema)
+async def update_do_addon(
+    addon_id: int,
+    body: DoAddonUpdateRequest,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(DO_WRITE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    return await DeliveryOrderService(db, team_id).update_addon(addon_id, body, actor_user_id=int(me.id))
+
+
+@router.delete("/addons/{addon_id}", response_model=DoAddonDeleteResponseSchema)
+async def delete_do_addon(
+    addon_id: int,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(DO_WRITE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+):
+    return await DeliveryOrderService(db, team_id).delete_addon(addon_id)

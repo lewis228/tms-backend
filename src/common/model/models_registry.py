@@ -30,8 +30,7 @@ from equipment_pool.model import EquipmentPoolModel  # noqa: F401
 from chassis.model import ChassisModel  # noqa: F401
 
 # ── TMS D/O / Leg (Phase C) ──────────────────────────────────
-from delivery_order.model import DeliveryOrderModel  # noqa: F401
-from delivery_order.addon_model import DeliveryOrderAddonModel  # noqa: F401
+from delivery_order.model import DeliveryOrderModel, DeliveryOrderAddonModel  # noqa: F401
 from container.model import ContainerModel, ContainerEventModel  # noqa: F401
 from leg.model import LegModel  # noqa: F401
 from chassis_event.model import ChassisEventModel  # noqa: F401

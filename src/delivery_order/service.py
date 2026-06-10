@@ -2,28 +2,32 @@
 from __future__ import annotations
 from typing import List
 from datetime import datetime
+from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 from common.exceptions.base import NotFoundException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from delivery_order.const.status import DeliveryStatus
-from delivery_order.model import DeliveryOrderModel
+from delivery_order.model import DeliveryOrderModel, DeliveryOrderAddonModel
 from delivery_order.repository import DeliveryOrderRepository
 from delivery_order.state_machine import (
     TransitionContext, assert_can_transition,
 )
 from leg.model import LegModel
+from leg_layer.charge import resolve_addon_amount
 from container.repository import ContainerRepository
 from delivery_order.schemas.request import (
     DeliveryOrderCreateRequest, DeliveryOrderUpdateRequest, PaginateDeliveryOrderRequest,
     DeliveryOrderBulkCreateRequest, DeliveryOrderBulkUpdateRequest, DeliveryOrderBulkDeleteRequest,
+    DoAddonCreateRequest, DoAddonUpdateRequest,
 )
 from delivery_order.schemas.response import (
     DeliveryOrderResponseSchema, DeliveryOrderDetailResponseSchema, DeliveryOrderDeleteResponseSchema,
     DeliveryOrderBulkCreateResponseSchema, DeliveryOrderBulkUpdateResponseSchema, DeliveryOrderBulkDeleteResponseSchema,
     BulkResultItem, BulkDeleteResultItem, BulkSummary,
+    DoAddonResponseSchema, DoAddonDeleteResponseSchema,
 )
 from container.schemas.response import ContainerResponseSchema
 
@@ -46,6 +50,72 @@ class DeliveryOrderService:
         self.team_id = team_id
         self.repo = DeliveryOrderRepository(db, team_id)
         self.container_repo = ContainerRepository(db, team_id)
+
+    # ═══════════════════════════════════════════════════════════════
+    # D/O 단위 Add-on (고객 청구용) — addon 마스터 인스턴스, D/O 당 N행
+    # ═══════════════════════════════════════════════════════════════
+
+    async def list_addons(self, do_id: int) -> List[DoAddonResponseSchema]:
+        q = select(DeliveryOrderAddonModel).where(
+            DeliveryOrderAddonModel.team_id == self.team_id,
+            DeliveryOrderAddonModel.delivery_order_id == do_id,
+            DeliveryOrderAddonModel.is_active.is_(True),
+        ).order_by(DeliveryOrderAddonModel.id.asc())
+        return [DoAddonResponseSchema.model_validate(r) for r in (await self.db.execute(q)).scalars().all()]
+
+    async def add_addon(self, payload: DoAddonCreateRequest, actor_user_id: int | None = None) -> DoAddonResponseSchema:
+        from addon.model import AddonModel
+        addon = (await self.db.execute(select(AddonModel).where(
+            AddonModel.team_id == self.team_id, AddonModel.id == payload.addon_id,
+        ))).scalar_one_or_none()
+        if addon is None:
+            raise NotFoundException("Add-on type")
+        data = payload.model_dump()
+        data["code"] = addon.code  # 스냅샷
+        if data.get("amount") in (None, Decimal("0")):
+            filled = await resolve_addon_amount(self.db, self.team_id, addon.code)  # D/O = driver 없음 → 팀 기본
+            if filled is not None:
+                data["amount"], data["unit_amount"], data["quantity"] = filled
+        if data.get("amount") is None:
+            data["amount"] = Decimal("0")
+        data["team_id"] = self.team_id
+        if actor_user_id is not None:
+            data["created_by_user_id"] = actor_user_id
+        row = DeliveryOrderAddonModel(**data)
+        self.db.add(row)
+        await self.db.flush()
+        await self.db.refresh(row)
+        return DoAddonResponseSchema.model_validate(row)
+
+    async def _get_addon(self, addon_id: int) -> DeliveryOrderAddonModel | None:
+        q = select(DeliveryOrderAddonModel).where(
+            DeliveryOrderAddonModel.team_id == self.team_id,
+            DeliveryOrderAddonModel.id == addon_id,
+            DeliveryOrderAddonModel.is_active.is_(True),
+        )
+        return (await self.db.execute(q)).scalar_one_or_none()
+
+    async def update_addon(self, addon_id: int, payload: DoAddonUpdateRequest, actor_user_id: int | None = None) -> DoAddonResponseSchema:
+        row = await self._get_addon(addon_id)
+        if not row:
+            raise NotFoundException("D/O Add-on")
+        for k, v in payload.model_dump(exclude_unset=True).items():
+            setattr(row, k, v)
+        if actor_user_id is not None:
+            row.updated_by_user_id = actor_user_id
+        await self.db.flush()
+        await self.db.refresh(row)
+        return DoAddonResponseSchema.model_validate(row)
+
+    async def delete_addon(self, addon_id: int) -> DoAddonDeleteResponseSchema:
+        if not await self._get_addon(addon_id):
+            raise NotFoundException("D/O Add-on")
+        await self.db.execute(delete(DeliveryOrderAddonModel).where(
+            DeliveryOrderAddonModel.team_id == self.team_id,
+            DeliveryOrderAddonModel.id == addon_id,
+        ))
+        await self.db.flush()
+        return DoAddonDeleteResponseSchema(id=addon_id)
 
     # ═══════════════════════════════════════════════════════════════
     # Create (단건)

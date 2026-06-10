@@ -1,10 +1,11 @@
 # src/delivery_order/model.py
 from __future__ import annotations
 from datetime import datetime
+from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    String, Boolean, Text, ForeignKey, DateTime,
-    Index, UniqueConstraint, Enum as SAEnum,
+    String, Boolean, Text, ForeignKey, DateTime, Integer, Numeric, JSON,
+    Index, UniqueConstraint, ForeignKeyConstraint, Enum as SAEnum,
 )
 
 from common.model.base_model import Base
@@ -69,4 +70,31 @@ class DeliveryOrderModel(Base, TeamScopedMixin):
         Index("ix_do_team_customer",       "team_id", "customer_id"),
         Index("ix_do_team_active_id",      "team_id", "is_active", "id"),
         Index("ix_do_team_updated_at",     "team_id", "updated_at"),
+    )
+
+
+class DeliveryOrderAddonModel(Base, TeamScopedMixin):
+    """D/O 단위 추가요금 인스턴스 (중복 가능). addon_id=타입, code=addon.code 스냅샷, amount=확정.
+
+    leg_addon 과 별개 — 부착 위치(leg vs D/O)가 곧 청구 단위. 고객 청구(invoice)에 자동 가산.
+    """
+    __tablename__ = "delivery_order_addon"
+    __with_team_rel__ = False
+
+    delivery_order_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    addon_id: Mapped[int | None] = mapped_column(ForeignKey("addon.id", ondelete="SET NULL"), nullable=True)
+    code: Mapped[str] = mapped_column(String(48), nullable=False)  # addon.code 스냅샷
+    quantity:    Mapped[Decimal] = mapped_column(Numeric(12, 2), default=1, server_default="1", nullable=False)
+    unit_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    amount:      Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, server_default="0", nullable=False)
+    extra: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("team_id", "id", name="uq_do_addon_team_id_id"),
+        ForeignKeyConstraint(["team_id", "delivery_order_id"],
+                             ["delivery_order.team_id", "delivery_order.id"],
+                             ondelete="CASCADE", name="fk_do_addon_do_team_id_id"),
+        Index("ix_do_addon_team_id_id", "team_id", "id"),
+        Index("ix_do_addon_team_do", "team_id", "delivery_order_id"),
     )

@@ -72,7 +72,7 @@ class InvoiceService:
             }, actor_user_id=actor_user_id)
 
         # 컨플루언스: D/O 단위 Add-on(Demurrage/Detention/Hazmat 등) → 고객 청구 라인 자동 가산.
-        from delivery_order.addon_model import DeliveryOrderAddonModel
+        from delivery_order.model import DeliveryOrderAddonModel
         do_addons = list((await self.db.execute(select(DeliveryOrderAddonModel).where(
             DeliveryOrderAddonModel.team_id == self.team_id,
             DeliveryOrderAddonModel.delivery_order_id == do_id,

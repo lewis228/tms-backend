@@ -89,3 +89,21 @@ class DeliveryOrderBulkUpdateResponseSchema(ResponseSchema):
 class DeliveryOrderBulkDeleteResponseSchema(ResponseSchema):
     results: List[BulkDeleteResultItem]
     summary: BulkSummary
+
+
+# ── D/O 단위 Add-on ───────────────────────────────────────────
+class DoAddonResponseSchema(ResponseSchema):
+    id: int
+    delivery_order_id: int
+    addon_id: int | None = None
+    code: str
+    quantity: Decimal = Decimal("1")
+    unit_amount: Decimal | None = None
+    amount: Decimal = Decimal("0")
+    note: str | None = None
+    is_active: bool
+
+
+class DoAddonDeleteResponseSchema(ResponseSchema):
+    id: int
+    deleted: bool = True

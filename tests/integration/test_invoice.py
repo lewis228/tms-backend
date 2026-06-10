@@ -158,7 +158,7 @@ async def test_cost_prefill_includes_leg_flags(db_session):
 @pytest.mark.asyncio
 async def test_do_addon_billed_on_invoice(db_session):
     """컨플루언스: D/O 단위 Add-on(Demurrage 등) → 고객 청구 라인 자동 가산."""
-    from delivery_order.addon_model import DeliveryOrderAddonModel
+    from delivery_order.model import DeliveryOrderAddonModel
 
     team = await make_team(db_session)
     customer = await make_customer(db_session, team=team)

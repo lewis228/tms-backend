@@ -1,6 +1,7 @@
 # src/delivery_order/schemas/request.py
 from __future__ import annotations
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional, Literal, List
 from pydantic import Field, field_validator
 from common.schemas.base import RequestSchema
@@ -82,3 +83,20 @@ class DeliveryOrderBulkDeleteRequest(RequestSchema):
     @classmethod
     def unique_ids(cls, v: List[int]) -> List[int]:
         return list(dict.fromkeys(v))
+
+
+# ── D/O 단위 Add-on (고객 청구용) ─────────────────────────────
+class DoAddonCreateRequest(RequestSchema):
+    delivery_order_id: int
+    addon_id: int   # addon 마스터 타입
+    quantity: Decimal = Decimal("1")
+    unit_amount: Decimal | None = None
+    amount: Decimal | None = None        # None 이면 시스템이 마스터 단가로 자동 채움
+    note: str | None = Field(default=None, max_length=300)
+
+
+class DoAddonUpdateRequest(RequestSchema):
+    quantity: Decimal | None = None
+    unit_amount: Decimal | None = None
+    amount: Decimal | None = None
+    note: str | None = Field(default=None, max_length=300)

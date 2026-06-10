@@ -50,6 +50,7 @@ class LocationBulkUpdateItem(RequestSchema):
     latitude: Decimal | None = None
     longitude: Decimal | None = None
     customer_id: int | None = None
+    zip_id: int | None = None
     note: str | None = Field(default=None, max_length=3000)
 
 

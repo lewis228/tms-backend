@@ -233,6 +233,9 @@ class LegService:
         # - phone 필드를 안 보내면 → dict에서 제외 → DB 값 유지
         data = payload.model_dump(exclude_unset=True)
         await self._snapshot_point_types(data)
+        # to_point_id 가 바뀌면 dest 도 자동 갱신(명시 dest override 우선).
+        # helper 는 data 에 to_point_id 가 있을 때만 동작 → 다른 필드만 수정 시 무영향.
+        await self._autofill_dest_from_point(data)
         row = await self.repo.update(
             leg_id,
             data,

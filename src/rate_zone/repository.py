@@ -11,12 +11,12 @@ from common.pagination.service import CommonService
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from rate_zone.model import RateZoneModel, RateZoneMemberModel
 from rate_zone.schemas.request import PaginateRateZoneRequest
-from rate_zone.schemas.response import RateZoneSummarySchema
+from rate_zone.schemas.response import RateZoneSummarySchema, RateZoneResponseSchema  # noqa: F401
 
 
 class RateZoneRepository(TeamScopedRepoMixin):
     """
-    RateZone(요율표 열: Zone) + RateZoneMember(zip/city) 리포지토리.
+    RateZone(요율표 열: Zone) + RateZoneMember(zip) 리포지토리.
     - team 스코프 강제(_require_team)
     - 헤더(zone) + 라인(member) 복합 FK
     - 조회는 zip→zone 인덱스(member) 기반

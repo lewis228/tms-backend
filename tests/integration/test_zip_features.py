@@ -116,3 +116,44 @@ async def test_leg_dest_explicit_override(db_session):
     ))
     assert leg.dest_zip == "99999"      # override 유지
     assert leg.dest_city == "Override City"
+
+
+@pytest.mark.asyncio
+async def test_leg_update_to_point_autofills_dest(db_session):
+    """update 로 to_point 변경 시 dest 자동 갱신."""
+    from container.model import ContainerModel
+    from container.const.status import ContainerSize
+    from container_stop.model import ContainerStopModel
+    from leg.const.status import PointType, MoveType, ServiceType
+    from leg.service import LegService
+    from leg.schemas.request import LegCreateRequest, LegUpdateRequest
+    from delivery_order.const.status import DeliveryStatus
+    from location.const.kind import LocationKind
+
+    team = await make_team(db_session)
+    customer = await make_customer(db_session, team=team)
+    do = await make_delivery_order(db_session, team=team, customer=customer)
+    zc = _zip(db_session, zip="90745", city="Carson", state="CA")
+    await db_session.flush()
+    loc = await make_location(db_session, team=team, kind=LocationKind.YARD)
+    loc.zip_id = zc.id
+    cont = ContainerModel(team_id=team.id, delivery_order_id=do.id, sequence_no=1,
+                          container_number="MSCU7776665", size=ContainerSize.SIZE_40HC)
+    db_session.add(cont)
+    await db_session.flush()
+    stop = ContainerStopModel(team_id=team.id, container_id=cont.id, sequence_no=1,
+                              point_type=PointType.YARD, location_id=loc.id)
+    db_session.add(stop)
+    await db_session.flush()
+
+    svc = LegService(db_session, team.id)
+    # to_point 없이 생성 → dest 비어있음
+    leg = await svc.create(LegCreateRequest(
+        delivery_order_id=do.id, container_id=cont.id, step=DeliveryStatus.DISPATCHED,
+        move_type=MoveType.EMPTY, service_type=ServiceType.DROP,
+    ))
+    assert leg.dest_zip is None
+    # update 로 to_point 지정 → 자동채움
+    updated = await svc.update(leg.id, LegUpdateRequest(to_point_id=stop.id))
+    assert updated.dest_zip == "90745"
+    assert updated.dest_city == "Carson"

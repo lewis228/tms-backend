@@ -177,7 +177,8 @@ async def seed(db: AsyncSession):
     # ── zip 마스터 적재 (전역) — 외부 GeoNames, 시드는 CA만(reset 빠르게) ──
     banner("zip 마스터 (외부 적재)")
     from import_zips import load_zip_codes
-    await load_zip_codes(db, states=["CA"])
+    # 주요 항만·드레이지 주들 (LA/LB·NY/NJ·Savannah·Houston·Seattle·Chicago·Miami 등)
+    await load_zip_codes(db, states=["CA", "NV", "AZ", "TX", "NJ", "NY", "GA", "FL", "WA", "IL"])
     await db.flush()
     _zrows = (await db.execute(text("SELECT zip, id FROM zip_code"))).all()
     zmap = {z: i for z, i in _zrows}  # zip → zip_code.id

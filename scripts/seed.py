@@ -79,11 +79,10 @@ async def seed(db: AsyncSession):
     from rate_zone.model import RateZoneModel, RateZoneMemberModel
     from rate_group.model import RateGroupModel
     from rate_group.const.status import RateMethod
+    from rate_group.entry_service import RateGroupEntryService
+    from rate_group.schemas.request import FlatRateEntryRequest
     from rate_multiplier.model import RateMultiplierModel
-    from rate_sheet.model import RateSheetModel
-    from rate_sheet.const.status import SheetKind, RateMoveType, RateServiceType, RateContainerSize, RateEntrySource
-    from rate_sheet.repository import RateSheetRepository
-    from rate_sheet import versioning
+    from rate_sheet.const.status import RateMoveType, RateServiceType, RateContainerSize
     from driver_rate_assignment.model import DriverRateAssignmentModel
     from load_type_template.service import LoadTypeTemplateService
     from delivery_order.model import DeliveryOrderModel, DeliveryOrderAddonModel
@@ -282,59 +281,134 @@ async def seed(db: AsyncSession):
 
     # ── 4. 요율 서브시스템 ────────────────────────────────────
     banner("요율 (rate_*)")
-    # 재설계(Zone×Zone): 출발존(항만) → 도착존(내륙). zip→zone 매핑으로 정산 해석.
-    zone_port = RateZoneModel(team_id=tid, name="Port / Harbor", code="PORT", color="#0ea5e9",
-                              description="San Pedro / Long Beach 항만", created_by_user_id=aid)
-    zone_ie = RateZoneModel(team_id=tid, name="Inland Empire", code="IE", color="#3b82f6",
-                            description="Fontana / Ontario / Riverside", created_by_user_id=aid)
-    db.add_all([zone_port, zone_ie])
-    await db.flush()
-    db.add_all([
-        RateZoneMemberModel(team_id=tid, zone_id=zone_port.id, zip_code="90731"),  # San Pedro
-        RateZoneMemberModel(team_id=tid, zone_id=zone_port.id, zip_code="90802"),  # Long Beach
-        RateZoneMemberModel(team_id=tid, zone_id=zone_ie.id, zip_code="92335"),    # Fontana
-        RateZoneMemberModel(team_id=tid, zone_id=zone_ie.id, zip_code="91761"),    # Ontario
-    ])
+    # 재설계(Zone×Zone): SoCal 드레이 존 5개 (zip→zone 매핑으로 정산 해석).
+    def _zone(name, code, color, desc):
+        z = RateZoneModel(team_id=tid, name=name, code=code, color=color,
+                          description=desc, created_by_user_id=aid)
+        db.add(z)
+        return z
 
-    grp_zone = RateGroupModel(team_id=tid, name="Default ZONE Rates", method=RateMethod.ZONE, is_default=True,
-                              description="기본 존간(from→to) 요율", created_by_user_id=aid)
-    grp_mile = RateGroupModel(team_id=tid, name="Mileage Rates", method=RateMethod.MILE,
-                              description="마일당 요율", created_by_user_id=aid)
-    db.add_all([grp_zone, grp_mile])
+    z_port = _zone("Port / Harbor", "PORT", "#0ea5e9", "San Pedro / Long Beach 항만")
+    z_ie = _zone("Inland Empire", "IE", "#3b82f6", "Fontana / Ontario / San Bernardino")
+    z_la = _zone("Los Angeles", "LA", "#8b5cf6", "LA Basin / Commerce")
+    z_oc = _zone("Orange County", "OC", "#f59e0b", "Anaheim / Santa Ana")
+    z_sd = _zone("San Diego", "SD", "#10b981", "San Diego 항만권")
+    await db.flush()
+    _members = {
+        z_port: ["90731", "90802", "90744"],
+        z_ie: ["92335", "91761", "92408"],
+        z_la: ["90001", "90021", "90040"],
+        z_oc: ["92805", "92701"],
+        z_sd: ["92101", "92154"],
+    }
+    for _z, _zips in _members.items():
+        for _zc in _zips:
+            db.add(RateZoneMemberModel(team_id=tid, zone_id=_z.id, zip_code=_zc, created_by_user_id=aid))
+
+    # 그룹 12개 — 방식(ZONE/CITY/MILE/HOURLY)별 3개씩
+    def _grp(name, method, desc, default=False):
+        g = RateGroupModel(team_id=tid, name=name, method=method, is_default=default,
+                           description=desc, created_by_user_id=aid)
+        db.add(g)
+        return g
+
+    grp_zone = _grp("Default ZONE Rates", RateMethod.ZONE, "기본 존간(from→to) 요율", default=True)
+    grp_zone_rf = _grp("Reefer ZONE Rates", RateMethod.ZONE, "리퍼(냉동) 존간 할증")
+    grp_zone_ow = _grp("Overweight ZONE Rates", RateMethod.ZONE, "오버웨이트 존간 할증")
+    grp_city = _grp("City Rates — SoCal", RateMethod.CITY, "도시간 기본 요율")
+    grp_city_ex = _grp("City Rates — Express", RateMethod.CITY, "도시간 익스프레스")
+    grp_city_rf = _grp("City Rates — Reefer", RateMethod.CITY, "도시간 리퍼")
+    grp_mile = _grp("Standard Mileage", RateMethod.MILE, "표준 마일 단가")
+    grp_mile_pr = _grp("Premium Mileage", RateMethod.MILE, "프리미엄 마일 단가")
+    grp_mile_lo = _grp("Local Mileage", RateMethod.MILE, "로컬 마일 단가")
+    grp_hour = _grp("Standard Hourly", RateMethod.HOURLY, "표준 시간 단가")
+    grp_hour_dt = _grp("Detention Hourly", RateMethod.HOURLY, "디텐션 시간 단가")
+    grp_hour_tm = _grp("Team Driver Hourly", RateMethod.HOURLY, "팀 드라이버 시간 단가")
     await db.flush()
 
+    # 멀티플라이어: 팀 전역(폴백) + Default ZONE 전용
     db.add_all([
+        RateMultiplierModel(team_id=tid, rate_group_id=None, container_size=RateContainerSize.SIZE_20,
+                            factor=D("0.85"), note="20ft 전역 할인", created_by_user_id=aid),
+        RateMultiplierModel(team_id=tid, rate_group_id=None, container_size=RateContainerSize.SIZE_45,
+                            factor=D("1.15"), note="45ft 전역 할증", created_by_user_id=aid),
         RateMultiplierModel(team_id=tid, rate_group_id=grp_zone.id, container_size=RateContainerSize.SIZE_20,
-                            factor=D("0.85"), note="20ft 할인", created_by_user_id=aid),
+                            factor=D("0.80"), note="Default ZONE 20ft", created_by_user_id=aid),
         RateMultiplierModel(team_id=tid, rate_group_id=grp_zone.id, container_size=RateContainerSize.SIZE_45,
-                            factor=D("1.15"), note="45ft 할증", created_by_user_id=aid),
+                            factor=D("1.20"), note="Default ZONE 45ft", created_by_user_id=aid),
     ])
+    await db.flush()
 
-    # (LOAD, LIVE) 슬롯 — port→IE from→to 셀
-    sheet = RateSheetModel(team_id=tid, rate_group_id=grp_zone.id, kind=SheetKind.ZONE,
-                           move_type=RateMoveType.LOAD, service_type=RateServiceType.LIVE, created_by_user_id=aid)
-    db.add(sheet)
+    # ── 요율 셀: UI 와 동일한 RateGroupEntryService.set_entry 경로(시트 자동 생성/라우팅) ──
+    rate_svc = RateGroupEntryService(db, tid)
+    L, E = RateMoveType.LOAD, RateMoveType.EMPTY
+    LV, DR = RateServiceType.LIVE, RateServiceType.DROP
+    S40, S20 = RateContainerSize.SIZE_40, RateContainerSize.SIZE_20
+    JAN = date(2026, 1, 1)
+
+    async def zcell(grp, mv, sv, fz, tz, size, amt, eff=JAN):
+        await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
+            move_type=mv, service_type=sv, from_zone_id=fz.id, to_zone_id=tz.id,
+            container_size=size, amount=D(amt), effective_from=eff), actor_user_id=aid)
+
+    async def ccell(grp, mv, sv, fc, tc, size, amt, eff=JAN):
+        await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
+            move_type=mv, service_type=sv, from_city=fc, from_state="CA", to_city=tc, to_state="CA",
+            container_size=size, amount=D(amt), effective_from=eff), actor_user_id=aid)
+
+    async def ucell(grp, per_unit, eff=JAN):
+        await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
+            per_unit=D(per_unit), effective_from=eff), actor_user_id=aid)
+
+    # Default ZONE — 다양한 (move,service,size); PORT→IE 는 285→310 버전 2개(이력)
+    await zcell(grp_zone, L, LV, z_port, z_ie, S40, "285")
+    await zcell(grp_zone, L, LV, z_port, z_ie, S40, "310", eff=date(2026, 6, 1))  # rate increase
+    await zcell(grp_zone, L, LV, z_port, z_la, S40, "180")
+    await zcell(grp_zone, L, LV, z_port, z_oc, S40, "250")
+    await zcell(grp_zone, L, LV, z_port, z_sd, S40, "320")
+    await zcell(grp_zone, L, LV, z_ie, z_port, S40, "300")
+    await zcell(grp_zone, L, DR, z_port, z_ie, S40, "290")
+    await zcell(grp_zone, L, DR, z_port, z_la, S40, "165")
+    await zcell(grp_zone, E, DR, z_ie, z_port, S40, "120")
+    await zcell(grp_zone, E, DR, z_la, z_port, S40, "95")
+    await zcell(grp_zone, L, LV, z_port, z_ie, S20, "265")
+    # Reefer ZONE
+    await zcell(grp_zone_rf, L, LV, z_port, z_ie, S40, "430")
+    await zcell(grp_zone_rf, L, LV, z_port, z_la, S40, "260")
+    await zcell(grp_zone_rf, L, LV, z_port, z_oc, S40, "370")
+    await zcell(grp_zone_rf, L, DR, z_port, z_ie, S40, "405")
+    # Overweight ZONE
+    await zcell(grp_zone_ow, L, LV, z_port, z_ie, S40, "460")
+    await zcell(grp_zone_ow, L, LV, z_port, z_oc, S40, "420")
+    await zcell(grp_zone_ow, L, DR, z_port, z_ie, S40, "440")
+    # City — SoCal (도시명은 zip 마스터 표기와 일치)
+    await ccell(grp_city, L, LV, "San Pedro", "Fontana", S40, "320")
+    await ccell(grp_city, L, LV, "San Pedro", "Anaheim", S40, "250")
+    await ccell(grp_city, L, LV, "Long Beach", "Ontario", S40, "305")
+    await ccell(grp_city, L, LV, "Long Beach", "Los Angeles", S40, "150")
+    await ccell(grp_city, E, DR, "Fontana", "San Pedro", S40, "110")
+    # City — Express
+    await ccell(grp_city_ex, L, LV, "San Pedro", "Fontana", S40, "385")
+    await ccell(grp_city_ex, L, LV, "Long Beach", "Santa Ana", S40, "330")
+    await ccell(grp_city_ex, L, DR, "San Pedro", "Fontana", S40, "360")
+    # City — Reefer
+    await ccell(grp_city_rf, L, LV, "San Pedro", "Fontana", S40, "470")
+    await ccell(grp_city_rf, L, LV, "San Pedro", "Anaheim", S40, "360")
+    # MILE / HOURLY per_unit (좌표 없는 단일 셀)
+    await ucell(grp_mile, "2.75")
+    await ucell(grp_mile_pr, "3.25")
+    await ucell(grp_mile_lo, "2.40")
+    await ucell(grp_hour, "85.00")
+    await ucell(grp_hour_dt, "120.00")
+    await ucell(grp_hour_tm, "150.00")
+
+    # 드라이버 배정 — 방식 다양화 (driver0=ZONE 유지: payroll/e2e 정합)
+    for _drv, _grp in [(drivers[0], grp_zone), (drivers[1], grp_mile), (drivers[2], grp_hour)]:
+        db.add(DriverRateAssignmentModel(team_id=tid, driver_id=_drv.id, rate_group_id=_grp.id,
+                                         effective_from=JAN, created_by_user_id=aid))
     await db.flush()
-    _cell = {"from_zone_id": zone_port.id, "to_zone_id": zone_ie.id,
-             "from_city": None, "from_state": None, "to_city": None, "to_state": None,
-             "container_size": RateContainerSize.SIZE_40}
-    # rate_entry + rate_entry_history 둘 다 생성
-    await versioning.set_rate(
-        RateSheetRepository(db, tid), sheet.id, _cell,
-        amount=D("285.00"), per_unit=None, effective_from=date(2026, 1, 1),
-        source=RateEntrySource.SHEET, reason="seed initial", actor_user_id=aid,
-    )
-    # 단가 변경(이력 한 줄 더)
-    await versioning.set_rate(
-        RateSheetRepository(db, tid), sheet.id, _cell,
-        amount=D("310.00"), per_unit=None, effective_from=date(2026, 6, 1),
-        source=RateEntrySource.MANUAL, reason="rate increase", actor_user_id=aid,
-    )
-    for drv in drivers:
-        db.add(DriverRateAssignmentModel(team_id=tid, driver_id=drv.id, rate_group_id=grp_zone.id,
-                                         effective_from=date(2026, 1, 1), created_by_user_id=aid))
-    await db.flush()
-    print("  zone×2 (port/IE) + member×4, group×2, multiplier×2, sheet(LOAD/LIVE)+entry+history, assignment×3")
+    print("  zone×5 + member×13, group×12 (ZONE/CITY/MILE/HOURLY 각 3), multiplier×4, "
+          "rate_entry 30+ (시트 자동생성), assignment×3")
 
     # ── 5. Load Type 템플릿 (시스템 시드) ─────────────────────
     banner("Load Type 템플릿")

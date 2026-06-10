@@ -9,7 +9,6 @@ class ChassisEventResponseSchema(ResponseSchema):
     id: int
     chassis_id: int
     leg_id: int | None = None
-    leg_stop_id: int | None = None
     event_kind: ChassisEventKind
     location_id: int | None = None
     occurred_at: datetime

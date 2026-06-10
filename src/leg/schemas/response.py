@@ -6,7 +6,7 @@ from typing import Literal, List, Optional
 from common.schemas.base import ResponseSchema
 from delivery_order.const.status import DeliveryStatus
 from leg.const.status import (
-    LegStatus, MoveType, ServiceType, LegLocationType, LegMoveCode,
+    LegStatus, MoveType, ServiceType, PointType, LegMoveCode,
 )
 
 
@@ -23,8 +23,10 @@ class LegResponseSchema(ResponseSchema):
     step: DeliveryStatus
     move_type: MoveType
     service_type: ServiceType
-    from_location_type: LegLocationType | None = None
-    to_location_type: LegLocationType | None = None
+    from_point_id: int | None = None
+    to_point_id: int | None = None
+    from_location_type: PointType | None = None
+    to_location_type: PointType | None = None
     move_code: LegMoveCode | None = None
     rate_point_id: int | None = None
     dest_zip: str | None = None
@@ -38,9 +40,7 @@ class LegResponseSchema(ResponseSchema):
     offered_at: datetime | None = None
     accepted_at: datetime | None = None
     rejected_at: datetime | None = None
-    pickup_location_id: int | None = None
     pickup_date: datetime | None = None
-    delivery_location_id: int | None = None
     delivery_date: datetime | None = None
     started_at: datetime | None = None
     arrived_at: datetime | None = None

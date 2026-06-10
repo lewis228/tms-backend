@@ -18,15 +18,18 @@ CONTAINER_NUMBER_PATTERN = r"^[A-Z]{4}\d{7}$"
 
 
 class StopCreateInner(RequestSchema):
-    """v3: D/O Create 시 컨테이너에 nested 로 받는 stop 1건.
+    """D/O Create 시 컨테이너에 nested 로 받는 Point 1건.
 
-    AI Intake 추출 또는 수동 입력. location_id 가 None 이면 location_name 으로
-    fuzzy 매칭 시도 (DOService 가 처리). 매칭 실패 시 location_id null 로 stop 생성.
+    point_type 별 마스터 참조: TERMINAL→terminal_id, YARD→location_id, CUSTOMER→customer_id.
+    AI Intake/수동 입력 호환을 위해 느슨하게 처리(DOService 가 추론·fuzzy 매칭). location_id 가
+    None 이고 YARD 면 location_name 으로 fuzzy 매칭.
     """
-    role: str  # ORIGIN / DELIVERY / TRANSIT / TERMINUS
+    point_type: str | None = None  # TERMINAL / YARD / CUSTOMER (없으면 채워진 FK 로 추론)
     sequence_no: int | None = None
+    terminal_id: int | None = None
     location_id: int | None = None
-    location_name: str | None = None  # fuzzy 매칭용
+    customer_id: int | None = None
+    location_name: str | None = None  # YARD fuzzy 매칭용
     planned_arrival: datetime | None = None
     planned_departure: datetime | None = None
     note: str | None = Field(default=None, max_length=500)

@@ -8,7 +8,7 @@ from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
 from delivery_order.const.status import DeliveryStatus
 from leg.const.status import (
-    LegStatus, MoveType, ServiceType, LegLocationType, LegMoveCode,
+    LegStatus, MoveType, ServiceType, PointType, LegMoveCode,
 )
 
 
@@ -18,9 +18,12 @@ class LegCreateRequest(RequestSchema):
     step: DeliveryStatus
     move_type: MoveType
     service_type: ServiceType
-    # 재설계: From×To×MoveType×ServiceType + Layer1 move_code
-    from_location_type: LegLocationType | None = None
-    to_location_type: LegLocationType | None = None
+    # 포인트 모델: from/to_point 선택 → 서비스가 point_type 을 from/to_location_type 으로 스냅샷.
+    # 포인트 없이 타입만 직접 줄 수도 있음(Bobtail 등). move_code 는 Layer1 코드.
+    from_point_id: int | None = None
+    to_point_id: int | None = None
+    from_location_type: PointType | None = None
+    to_location_type: PointType | None = None
     move_code: LegMoveCode | None = None
     driver_id: int | None = None
     truck_id: int | None = None
@@ -30,9 +33,7 @@ class LegCreateRequest(RequestSchema):
     container_at_start_id: int | None = None
     container_at_end_id: int | None = None
     remarks: str | None = Field(default=None, max_length=500)
-    pickup_location_id: int | None = None
     pickup_date: datetime | None = None
-    delivery_location_id: int | None = None
     delivery_date: datetime | None = None
     note: str | None = Field(default=None, max_length=3000)
 
@@ -42,8 +43,10 @@ class LegUpdateRequest(RequestSchema):
     step: DeliveryStatus | None = None
     move_type: MoveType | None = None
     service_type: ServiceType | None = None
-    from_location_type: LegLocationType | None = None
-    to_location_type: LegLocationType | None = None
+    from_point_id: int | None = None
+    to_point_id: int | None = None
+    from_location_type: PointType | None = None
+    to_location_type: PointType | None = None
     move_code: LegMoveCode | None = None
     rate_point_id: int | None = None
     dest_zip: str | None = Field(default=None, max_length=16)
@@ -59,9 +62,7 @@ class LegUpdateRequest(RequestSchema):
     container_at_start_id: int | None = None
     container_at_end_id: int | None = None
     remarks: str | None = Field(default=None, max_length=500)
-    pickup_location_id: int | None = None
     pickup_date: datetime | None = None
-    delivery_location_id: int | None = None
     delivery_date: datetime | None = None
     note: str | None = Field(default=None, max_length=3000)
 

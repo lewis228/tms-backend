@@ -35,7 +35,6 @@ from delivery_order.model import DeliveryOrderModel  # noqa: F401
 from delivery_order.addon_model import DeliveryOrderAddonModel  # noqa: F401
 from container.model import ContainerModel, ContainerEventModel  # noqa: F401
 from leg.model import LegModel  # noqa: F401
-from leg_stop.model import LegStopModel  # noqa: F401
 from chassis_event.model import ChassisEventModel  # noqa: F401
 from street_turn.model import StreetTurnModel  # noqa: F401
 

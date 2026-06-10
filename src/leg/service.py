@@ -36,17 +36,40 @@ class LegService:
         self.team_id = team_id
         self.repo = LegRepository(db, team_id)
 
+    async def _snapshot_point_types(self, data: dict) -> None:
+        """from_point_id/to_point_id 가 주어지면 그 포인트의 point_type 을
+        from/to_location_type 으로 스냅샷한다(읽기전용 표시·가격 무관)."""
+        from sqlalchemy import select
+        from container_stop.model import ContainerStopModel
+        for pid_key, type_key in (
+            ("from_point_id", "from_location_type"),
+            ("to_point_id", "to_location_type"),
+        ):
+            pid = data.get(pid_key)
+            if pid is None:
+                continue
+            pt = (await self.db.execute(
+                select(ContainerStopModel.point_type).where(
+                    ContainerStopModel.team_id == self.team_id,
+                    ContainerStopModel.id == pid,
+                )
+            )).scalar_one_or_none()
+            if pt is not None:
+                data[type_key] = pt
+
     # ═══════════════════════════════════════════════════════════════
     # Create (단건)
     # ═══════════════════════════════════════════════════════════════
-    
+
     async def create(
         self,
         payload: LegCreateRequest,
         actor_user_id: int | None = None,
     ) -> LegResponseSchema:
+        data = payload.model_dump()
+        await self._snapshot_point_types(data)
         row = await self.repo.create(
-            payload.model_dump(),
+            data,
             actor_user_id=actor_user_id,
         )
         # 자동 hook (best-effort) — 실패 시 rollback 으로 세션 invalid 회피.
@@ -84,8 +107,10 @@ class LegService:
         results: List[BulkResultItem] = []
         
         for item in payload.items:
+            data = item.model_dump()
+            await self._snapshot_point_types(data)
             row = await self.repo.create(
-                item.model_dump(),
+                data,
                 actor_user_id=actor_user_id,
             )
             leg = LegResponseSchema.model_validate(row)
@@ -159,6 +184,7 @@ class LegService:
         # - phone: null을 보내면 → {'phone': None} 포함 → DB에서 null로 업데이트
         # - phone 필드를 안 보내면 → dict에서 제외 → DB 값 유지
         data = payload.model_dump(exclude_unset=True)
+        await self._snapshot_point_types(data)
         row = await self.repo.update(
             leg_id,
             data,
@@ -325,13 +351,13 @@ class LegService:
             move_type=orig.move_type,
             service_type=orig.service_type,
             move_code=orig.move_code,
+            from_point_id=orig.from_point_id,
+            to_point_id=orig.to_point_id,
             from_location_type=orig.from_location_type,
             to_location_type=orig.to_location_type,
             rate_point_id=orig.rate_point_id,
             dest_zip=orig.dest_zip, dest_city=orig.dest_city, dest_state=orig.dest_state,
             rate_miles=orig.rate_miles, rate_hours=orig.rate_hours,
-            pickup_location_id=orig.pickup_location_id,
-            delivery_location_id=orig.delivery_location_id,
             status=LegStatus.PENDING,
             reissued_from_leg_id=orig.id,
             created_by_user_id=actor_user_id,

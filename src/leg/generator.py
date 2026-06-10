@@ -17,7 +17,7 @@ from container.model import ContainerModel
 from delivery_order.const.status import DeliveryStatus
 from leg.model import LegModel
 from leg.const.status import (
-    LegStatus, MoveType, ServiceType, LegLocationType, LegMoveCode,
+    LegStatus, MoveType, ServiceType, PointType, LegMoveCode,
 )
 from load_type_template.model import LoadTypeTemplateModel, LoadTypeTemplateStepModel
 from load_type_template.const.status import TemplateMoveType, TemplateServiceType
@@ -35,9 +35,9 @@ _SVC_MAP = {
     TemplateServiceType.NONE: ServiceType.NONE,
 }
 
-# LocationType / MoveCode 는 값이 동일(TERMINAL/YARD/CUSTOMER, PPU/PRE/…) → 값으로 변환
-def _loc(v) -> LegLocationType | None:
-    return LegLocationType(v.value) if v is not None else None
+# PointType / MoveCode 는 값이 동일(TERMINAL/YARD/CUSTOMER, PPU/PRE/…) → 값으로 변환
+def _loc(v) -> PointType | None:
+    return PointType(v.value) if v is not None else None
 
 
 def _code(v) -> LegMoveCode | None:

@@ -11,7 +11,6 @@ from leg.const.status import ChassisEventKind
 class ChassisEventCreateRequest(RequestSchema):
     chassis_id: int
     leg_id: int | None = None
-    leg_stop_id: int | None = None
     event_kind: ChassisEventKind
     location_id: int | None = None
     occurred_at: datetime

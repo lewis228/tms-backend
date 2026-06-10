@@ -851,16 +851,13 @@ def page_improvements():
         N.bullet(("요율 Service Type 차원 ", {"bold": True}), "— rate_sheet 슬롯에 service_type 추가. (From, To, Move Type, Service Type)로 요율표가 갈림. (같은 셀 Live $1000 / Drop $800)"),
         N.bullet(("Add-on 통합·중복 허용 ", {"bold": True}), "— Flag/Charge Event 구분 폐기, 모두 leg_addon(한 개념). 같은 code 여러 개 가능(Stop Off ×3). amount 1급 필드 + 시스템 자동 채움 + 사용자 CRUD."),
         N.bullet(("정산/청구 자동 합산 ", {"bold": True}), "— payroll.build / invoice cost 가 leg add-on 을 자동 합산. D/O 단위 add-on(Demurrage 등) → invoice 자동 청구."),
-        N.h2("남은 정리"),
-        gap("레거시 죽은 컬럼: leg.leg_kind / move_type_v3 / from_stop_id / to_stop_id 는 코드가 채우지 않음(프론트가 '—'로 렌더). "
-            "Confluence 모델은 from_location_type/to_location_type + move_type 을 쓰므로 이 컬럼·프론트 렌더를 함께 제거 예정(백+프론트 조정 변경)."),
-        gap("leg_charge_event / leg_stop_off 테이블은 add-on 통합으로 사실상 deprecated — 라우터/모델 정리 예정. "
-            "Stop Off 물리 추적(POD)이 필요하면 leg_stop_off 는 추적 전용으로 두고 과금은 add-on 으로."),
-        N.h2("운영 인프라 마무리"),
+        N.bullet(("레거시 컬럼·테이블 제거 ", {"bold": True}), "— leg.leg_kind / move_type_v3 / from_stop_id / to_stop_id 컬럼과 leg_charge_event / leg_stop_off 테이블을 마이그레이션으로 완전 삭제. Leg 는 from_location_type / to_location_type + move_type + service_type + move_code(Confluence 'Leg 전체 유형')로만 표현하고, 프론트 화면도 함께 정리했습니다. (컨테이너 정차 시퀀스 container_stop.role(ORIGIN/DELIVERY/TRANSIT/TERMINUS)은 운영 레이어로 그대로 유지 — leg 와의 FK 연결만 제거.)"),
+        N.bullet(("Add-on 프론트 UI ", {"bold": True}), "— leg add-on / D-O add-on 추가·수정·삭제 화면(amount 공란이면 마스터 단가 자동 채움) + 요율 시트 목록·상세에 Service Type 표시까지 프론트 배선 완료."),
+        N.h2("남은 운영 인프라 마무리"),
         N.bullet("Detention/Demurrage 자동 add-on 생성 — 대기시간 초과 감지 시 add-on 자동 부착(현재는 수동/계산 저장)."),
         N.bullet("푸시(FCM/APNS) 실제 발송 코드 — push_token 은 쌓이지만 보내는 곳이 없음."),
         N.bullet("X-API-Key 인증 배선 — api_key 는 발급되지만 검증 경로 미완."),
         N.bullet("analytics 캐시 — 매 요청 집계라 비쌈. Redis 캐시 권장."),
         N.bullet("WAITING_PLAN 진입 알림 + 다음 leg 후보 자동 제안."),
-        tip("사용자가 말한 '정산 로직'의 핵심(요율 (From,To,Move,Service) + add-on 자동 합산)은 코드로 완성됨. 남은 건 레거시 컬럼 정리 + 자동 add-on 생성."),
+        tip("사용자가 말한 '정산 로직'의 핵심(요율 (From,To,Move,Service) + add-on 자동 합산)은 코드+프론트로 완성됨. 레거시 컬럼·테이블 제거도 끝. 남은 건 대기 초과 감지 시 Detention/Demurrage 자동 add-on 생성 + 위 운영 인프라."),
     ]

@@ -2,24 +2,21 @@
 """컨테이너/leg enum 정책 unit 테스트 (DB 없음).
 
 - ContainerState 8단계 자동 derive 규칙
-- ChargeCategory / HandoverReason / StopRole / LegStatus enum
+- ChargeCategory / HandoverReason / PointType / LegStatus enum
 """
 from __future__ import annotations
 
 from leg.const.status import (
-    StopRole, ContainerState, HandoverReason, LegStatus,
+    PointType, ContainerState, HandoverReason, LegStatus,
 )
 from charge_code.const.status import ChargeCategory
 
 
 # ────────────────────────────────────────────────────────────────────
-# StopRole
+# PointType (포인트 모델 — 타입별 마스터)
 # ────────────────────────────────────────────────────────────────────
-def test_stop_role_values():
-    assert StopRole.ORIGIN.value == "ORIGIN"
-    assert StopRole.DELIVERY.value == "DELIVERY"
-    assert StopRole.TRANSIT.value == "TRANSIT"
-    assert StopRole.TERMINUS.value == "TERMINUS"
+def test_point_type_values():
+    assert {p.value for p in PointType} == {"TERMINAL", "YARD", "CUSTOMER"}
 
 
 # ────────────────────────────────────────────────────────────────────

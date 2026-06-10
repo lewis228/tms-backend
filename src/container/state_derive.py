@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from container.model import ContainerModel
 from container_stop.model import ContainerStopModel
 from leg.model import LegModel
-from leg.const.status import ContainerState, LegStatus, StopRole
+from leg.const.status import ContainerState, LegStatus
 
 
 async def derive_and_save_state(
@@ -72,12 +72,9 @@ async def derive_and_save_state(
         if not legs:
             new_state = ContainerState.PLANNED
         elif all(l.status == LegStatus.COMPLETED for l in legs):
-            # 모든 leg COMPLETED — 마지막 TERMINUS stop 도착 여부 확인
+            # 모든 leg COMPLETED — 마지막 포인트(max sequence_no) 도착 여부 확인
             last_stop = stops[-1]
-            if (
-                last_stop.role == StopRole.TERMINUS
-                and last_stop.actual_arrival is not None
-            ):
+            if last_stop.actual_arrival is not None:
                 new_state = ContainerState.COMPLETED
             else:
                 # 모든 leg 완료지만 종착 미도착 — 일단 AT_STOP 처리

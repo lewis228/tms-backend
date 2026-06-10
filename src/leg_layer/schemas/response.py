@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from common.schemas.base import ResponseSchema
 from leg_layer.const.status import LegAddonCode
+from leg.const.status import PointType
 
 
 class LegAddonResponseSchema(ResponseSchema):
@@ -14,6 +15,10 @@ class LegAddonResponseSchema(ResponseSchema):
     unit_amount: Decimal | None = None
     amount: Decimal = Decimal("0")
     amount_override: Decimal | None = None
+    point_type: PointType | None = None
+    terminal_id: int | None = None
+    location_id: int | None = None
+    customer_id: int | None = None
     extra: dict | None = None
     note: str | None = None
     is_active: bool

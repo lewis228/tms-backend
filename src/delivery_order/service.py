@@ -107,7 +107,7 @@ class DeliveryOrderService:
         """
         from sqlalchemy import select, func as _func
         from container_stop.model import ContainerStopModel
-        from leg.const.status import StopRole
+        from leg.const.status import PointType
         from location.model import LocationModel
         from container.state_derive import derive_and_save_state
 
@@ -137,21 +137,32 @@ class DeliveryOrderService:
             return None
 
         for idx, s in enumerate(stops, start=1):
-            role_raw = (s.get("role") or "TRANSIT").upper()
-            try:
-                role = StopRole(role_raw)
-            except Exception:  # noqa: BLE001
-                role = StopRole.TRANSIT
+            terminal_id = s.get("terminal_id")
+            customer_id = s.get("customer_id")
             location_id = s.get("location_id")
-            if location_id is None:
+            # point_type 결정: 명시값 우선 → 채워진 FK 로 추론 → 기본 YARD
+            pt_raw = (s.get("point_type") or "").upper()
+            try:
+                point_type = PointType(pt_raw)
+            except Exception:  # noqa: BLE001
+                if terminal_id:
+                    point_type = PointType.TERMINAL
+                elif customer_id:
+                    point_type = PointType.CUSTOMER
+                else:
+                    point_type = PointType.YARD
+            # YARD 이고 location 미지정이면 이름으로 fuzzy 매칭
+            if point_type == PointType.YARD and location_id is None:
                 location_id = fuzzy_lookup(s.get("location_name"))
             seq = s.get("sequence_no") if s.get("sequence_no") else idx
             self.db.add(ContainerStopModel(
                 team_id=self.team_id,
                 container_id=container_id,
                 sequence_no=seq,
-                role=role,
+                point_type=point_type,
+                terminal_id=terminal_id,
                 location_id=location_id,
+                customer_id=customer_id,
                 planned_arrival=s.get("planned_arrival"),
                 planned_departure=s.get("planned_departure"),
                 note=s.get("note"),

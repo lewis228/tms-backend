@@ -235,10 +235,17 @@ class ContainerService:
             "bl_released": bool(do_meta.bl_released) if do_meta else False,
         } if do_meta else {}
 
-        # Stops + location 이름
+        # Stops(=Points) + 타입별 마스터 이름 enrich
         stop_rows = (await self.db.execute(
-            select(ContainerStopModel, LocationModel.name)
+            select(
+                ContainerStopModel,
+                LocationModel.name.label("loc_name"),
+                TerminalModel.name.label("term_name"),
+                CustomerModel.name.label("cust_name"),
+            )
             .outerjoin(LocationModel, LocationModel.id == ContainerStopModel.location_id)
+            .outerjoin(TerminalModel, TerminalModel.id == ContainerStopModel.terminal_id)
+            .outerjoin(CustomerModel, CustomerModel.id == ContainerStopModel.customer_id)
             .where(
                 ContainerStopModel.team_id == self.repo.team_id,
                 ContainerStopModel.container_id == container_id,
@@ -247,8 +254,11 @@ class ContainerService:
             .order_by(ContainerStopModel.sequence_no.asc())
         )).all()
         stops = []
-        for s, loc_name in stop_rows:
-            stops.append(StopResponseSchema.model_validate(s).model_copy(update={"location_name": loc_name}))
+        for s, loc_name, term_name, cust_name in stop_rows:
+            point_name = term_name or loc_name or cust_name
+            stops.append(StopResponseSchema.model_validate(s).model_copy(
+                update={"location_name": loc_name, "point_name": point_name},
+            ))
 
         # Legs (active 만)
         legs_rows = (await self.db.execute(
@@ -303,6 +313,8 @@ class ContainerService:
                 container_id=l.container_id,
                 move_type=l.move_type,
                 service_type=l.service_type,
+                from_point_id=l.from_point_id,
+                to_point_id=l.to_point_id,
                 from_location_type=l.from_location_type,
                 to_location_type=l.to_location_type,
                 move_code=l.move_code,

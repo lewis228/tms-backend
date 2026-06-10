@@ -25,9 +25,6 @@ class ChassisEventModel(Base, TeamScopedMixin):
     leg_id: Mapped[int | None] = mapped_column(
         ForeignKey("leg.id", ondelete="SET NULL"), nullable=True,
     )
-    leg_stop_id: Mapped[int | None] = mapped_column(
-        ForeignKey("leg_stop.id", ondelete="SET NULL"), nullable=True,
-    )
     event_kind: Mapped[ChassisEventKind] = mapped_column(
         SAEnum(ChassisEventKind, name="chassis_event_kind"), nullable=False,
     )

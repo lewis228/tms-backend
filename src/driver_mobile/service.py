@@ -1,6 +1,7 @@
 # src/driver_mobile/service.py
 """Driver mobile 비즈니스 로직 — leg/file/user 재사용 + driver 매핑."""
 from __future__ import annotations
+from collections import namedtuple
 from datetime import datetime, timedelta, timezone, date
 from decimal import Decimal
 from typing import Optional
@@ -10,6 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.exceptions.base import NotFoundException, AppException
 from driver.model import DriverModel
+
+# leg from_point/to_point(container_stop) 의 타입별 마스터에서 추출한 표시 정보
+_PointInfo = namedtuple("_PointInfo", ["name", "address", "latitude", "longitude"])
 from driver.const.status import DutyStatus
 from leg.const.status import LegStatus
 from leg.model import LegModel
@@ -264,12 +268,45 @@ class DriverMobileService:
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
+    async def _resolve_point(self, point_id: int | None) -> "_PointInfo | None":
+        """leg.from_point_id/to_point_id(container_stop) → 타입별 마스터 표시정보."""
+        if not point_id:
+            return None
+        from container_stop.model import ContainerStopModel
+        from terminal.model import TerminalModel
+        p = (await self.db.execute(
+            select(ContainerStopModel).where(
+                ContainerStopModel.team_id == self.team_id,
+                ContainerStopModel.id == point_id,
+            )
+        )).scalar_one_or_none()
+        if p is None:
+            return None
+        if p.terminal_id:
+            t = (await self.db.execute(
+                select(TerminalModel).where(TerminalModel.id == p.terminal_id)
+            )).scalar_one_or_none()
+            if t:
+                return _PointInfo(t.name, t.address, t.latitude, t.longitude)
+        elif p.location_id:
+            loc = (await self.db.execute(
+                select(LocationModel).where(LocationModel.id == p.location_id)
+            )).scalar_one_or_none()
+            if loc:
+                return _PointInfo(loc.name, loc.address, loc.latitude, loc.longitude)
+        elif p.customer_id:
+            c = (await self.db.execute(
+                select(CustomerModel).where(CustomerModel.id == p.customer_id)
+            )).scalar_one_or_none()
+            if c:
+                return _PointInfo(c.name, getattr(c, "billing_address", None), None, None)
+        return None
+
     async def list_pending_offers(self, user_id: int) -> list[dict]:
         """미수락 배차 — offered_at != NULL AND accepted_at IS NULL AND rejected_at IS NULL."""
         driver_id = await self.resolve_driver_id(user_id)
         stmt = (
-            select(LegModel, DeliveryOrderModel, CustomerModel,
-                   LocationModel, LocationModel)
+            select(LegModel, DeliveryOrderModel, CustomerModel)
             .join(DeliveryOrderModel, and_(
                 DeliveryOrderModel.team_id == LegModel.team_id,
                 DeliveryOrderModel.id == LegModel.delivery_order_id,
@@ -278,7 +315,6 @@ class DriverMobileService:
                 CustomerModel.team_id == DeliveryOrderModel.team_id,
                 CustomerModel.id == DeliveryOrderModel.customer_id,
             ))
-            .outerjoin(LocationModel, LocationModel.id == LegModel.pickup_location_id)
             .where(
                 LegModel.team_id == self.team_id,
                 LegModel.driver_id == driver_id,
@@ -290,15 +326,12 @@ class DriverMobileService:
             .order_by(LegModel.offered_at.desc())
         )
         rows = (await self.db.execute(stmt)).all()
-        # delivery location 별도 조회 (alias 복잡해서 단순화)
+        # pickup/delivery = leg 의 from_point/to_point(타입별 마스터) 해석
         offers: list[dict] = []
         for row in rows:
-            leg, do, customer, pickup_loc, _ = row
-            delivery_loc = None
-            if leg.delivery_location_id:
-                delivery_loc = (await self.db.execute(
-                    select(LocationModel).where(LocationModel.id == leg.delivery_location_id)
-                )).scalar_one_or_none()
+            leg, do, customer = row
+            pickup_loc = await self._resolve_point(leg.from_point_id)
+            delivery_loc = await self._resolve_point(leg.to_point_id)
             offers.append({
                 "leg_id": leg.id,
                 "delivery_order_id": leg.delivery_order_id,
@@ -581,17 +614,9 @@ class DriverMobileService:
                 status_code=403,
             )
 
-        # location 정보 별도 조회
-        pickup_loc = None
-        delivery_loc = None
-        if leg.pickup_location_id:
-            pickup_loc = (await self.db.execute(
-                select(LocationModel).where(LocationModel.id == leg.pickup_location_id)
-            )).scalar_one_or_none()
-        if leg.delivery_location_id:
-            delivery_loc = (await self.db.execute(
-                select(LocationModel).where(LocationModel.id == leg.delivery_location_id)
-            )).scalar_one_or_none()
+        # pickup/delivery = leg 의 from_point/to_point(타입별 마스터) 해석
+        pickup_loc = await self._resolve_point(leg.from_point_id)
+        delivery_loc = await self._resolve_point(leg.to_point_id)
 
         # 운임 — payroll 라인 base
         revenue: Decimal | None = None

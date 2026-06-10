@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from container.model import ContainerModel
 from delivery_order.const.status import DeliveryStatus
-from leg.const.status import LegStatus, MoveType, ServiceType, LegLocationType, LegMoveCode
+from leg.const.status import LegStatus, MoveType, ServiceType, PointType, LegMoveCode
 from leg.model import LegModel
 from leg.service import LegService
 from load_type_template.model import LoadTypeTemplateModel, LoadTypeTemplateStepModel
@@ -74,8 +74,8 @@ async def test_apply_load_type_generates_legs(db_session):
         .order_by(LegModel.id.asc())
     )).scalars().all()
     assert [l.status for l in legs] == [LegStatus.PENDING] * 3
-    assert legs[0].from_location_type == LegLocationType.TERMINAL
-    assert legs[0].to_location_type == LegLocationType.YARD
+    assert legs[0].from_location_type == PointType.TERMINAL
+    assert legs[0].to_location_type == PointType.YARD
     assert legs[0].move_type == MoveType.LOADED        # LOAD → LOADED
     assert legs[0].service_type == ServiceType.DROP
     assert legs[0].move_code == LegMoveCode.PPL

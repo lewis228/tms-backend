@@ -9,9 +9,9 @@ from container.const.status import (
     ContainerStatus, ContainerSize, ContainerEventKind,
 )
 from leg.const.status import (
-    ServiceType, ContainerState, StopRole, MoveType,
+    ServiceType, ContainerState, MoveType,
     LegStatus, HandoverReason,
-    LegLocationType, LegMoveCode,
+    PointType, LegMoveCode,
 )
 
 
@@ -102,8 +102,13 @@ class StopResponseSchema(ResponseSchema):
     id: int
     container_id: int
     sequence_no: int
-    role: StopRole
+    point_type: PointType
+    # 타입별 마스터 참조 (정확히 하나)
+    terminal_id: int | None = None
     location_id: int | None = None
+    customer_id: int | None = None
+    # 표시명 (full 뷰에서 enrich)
+    point_name: str | None = None
     location_name: str | None = None
     planned_arrival:   datetime | None = None
     planned_departure: datetime | None = None
@@ -133,8 +138,10 @@ class LegFullSchema(ResponseSchema):
     container_id: int | None = None
     move_type: MoveType | None = None
     service_type: ServiceType | None = None
-    from_location_type: LegLocationType | None = None
-    to_location_type: LegLocationType | None = None
+    from_point_id: int | None = None
+    to_point_id: int | None = None
+    from_location_type: PointType | None = None
+    to_location_type: PointType | None = None
     move_code: LegMoveCode | None = None
     status: LegStatus
     driver_id: int | None = None

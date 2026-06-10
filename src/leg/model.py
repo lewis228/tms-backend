@@ -12,7 +12,7 @@ from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
 from delivery_order.const.status import DeliveryStatus
 from leg.const.status import (
-    LegStatus, MoveType, ServiceType, LegLocationType, LegMoveCode,
+    LegStatus, MoveType, ServiceType, PointType, LegMoveCode,
 )
 
 
@@ -41,13 +41,20 @@ class LegModel(Base, TeamScopedMixin):
         SAEnum(ServiceType, name="service_type"), nullable=False,
     )
 
-    # ── 재설계(컨플루언스): From × To × MoveType × ServiceType + Layer1 move_code ──
-    # move_type/service_type 는 위 기존 컬럼 재사용.
-    from_location_type: Mapped[LegLocationType | None] = mapped_column(
-        SAEnum(LegLocationType, name="leg_from_location_type"), nullable=True,
+    # ── 포인트 모델: Leg = from_point → to_point 간선 ───────────────
+    # 사용자가 '레그 추가' 시 컨테이너 포인트(container_stop) 중 from/to 를 고른다.
+    # from/to_location_type 은 그 포인트의 point_type 스냅샷(읽기전용, 가격엔 미사용).
+    from_point_id: Mapped[int | None] = mapped_column(
+        ForeignKey("container_stop.id", ondelete="SET NULL"), nullable=True,
     )
-    to_location_type: Mapped[LegLocationType | None] = mapped_column(
-        SAEnum(LegLocationType, name="leg_to_location_type"), nullable=True,
+    to_point_id: Mapped[int | None] = mapped_column(
+        ForeignKey("container_stop.id", ondelete="SET NULL"), nullable=True,
+    )
+    from_location_type: Mapped[PointType | None] = mapped_column(
+        SAEnum(PointType, name="leg_from_location_type"), nullable=True,
+    )
+    to_location_type: Mapped[PointType | None] = mapped_column(
+        SAEnum(PointType, name="leg_to_location_type"), nullable=True,
     )
     move_code: Mapped[LegMoveCode | None] = mapped_column(
         SAEnum(LegMoveCode, name="leg_move_code"), nullable=True,
@@ -97,13 +104,8 @@ class LegModel(Base, TeamScopedMixin):
         ForeignKey("container.id", ondelete="SET NULL"), nullable=True,
     )
     remarks: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    pickup_location_id: Mapped[int | None] = mapped_column(
-        ForeignKey("location.id", ondelete="SET NULL"), nullable=True,
-    )
+    # 픽업/배송 위치는 from_point/to_point(container_stop)가 대체. 날짜(스케줄)만 leg 에 유지.
     pickup_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    delivery_location_id: Mapped[int | None] = mapped_column(
-        ForeignKey("location.id", ondelete="SET NULL"), nullable=True,
-    )
     delivery_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # ── 진행 시각 ───────────────────────────────────────────────
@@ -140,6 +142,8 @@ class LegModel(Base, TeamScopedMixin):
         Index("ix_leg_team_driver",    "team_id", "driver_id"),
         Index("ix_leg_team_truck",     "team_id", "truck_id"),
         Index("ix_leg_team_chassis",   "team_id", "chassis_id"),
+        Index("ix_leg_team_from_point", "team_id", "from_point_id"),
+        Index("ix_leg_team_to_point",   "team_id", "to_point_id"),
         Index("ix_leg_team_status",    "team_id", "status"),
         Index("ix_leg_team_pickup",    "team_id", "pickup_date"),
         Index("ix_leg_team_active_id", "team_id", "is_active", "id"),

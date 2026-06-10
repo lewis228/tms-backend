@@ -74,7 +74,6 @@ from delivery_order.router import router as delivery_order_router
 from delivery_order.addon_router import router as delivery_order_addon_router
 from container.router import router as container_router
 from leg.router import router as leg_router
-from leg_stop.router import router as leg_stop_router
 from chassis_event.router import router as chassis_event_router
 from street_turn.router import router as street_turn_router
 from analytics.router import router as analytics_router
@@ -164,7 +163,6 @@ app.include_router(delivery_order_router)
 app.include_router(delivery_order_addon_router)
 app.include_router(container_router)
 app.include_router(leg_router)
-app.include_router(leg_stop_router)
 app.include_router(chassis_event_router)
 app.include_router(street_turn_router)
 app.include_router(analytics_router)

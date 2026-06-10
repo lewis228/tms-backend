@@ -130,7 +130,7 @@ async def get_today_containers_for_driver(
             "id": s.id,
             "container_id": s.container_id,
             "sequence_no": s.sequence_no,
-            "role": s.role.value if hasattr(s.role, "value") else str(s.role),
+            "point_type": s.point_type.value if hasattr(s.point_type, "value") else str(s.point_type),
             "location_id": s.location_id,
             "location_name": loc_name,
             "location_address": loc_addr,

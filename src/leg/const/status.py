@@ -30,8 +30,11 @@ class ServiceType(StrEnum):
     NONE = "NONE"  # 재설계: Bobtail/Shunt/Failed (처리 없음)
 
 
-class LegLocationType(StrEnum):
-    """재설계: Leg From/To 의 Location 종류 (컨플루언스 Leg 유형 분석)."""
+class PointType(StrEnum):
+    """Point(=container_stop) / Leg From·To 의 종류. 타입별로 다른 마스터를 가리킨다:
+    TERMINAL→terminal, YARD→location(kind=YARD), CUSTOMER→customer.
+    (구 LegLocationType 와 동일 값 — 포인트 모델로 통일.)
+    """
     TERMINAL = "TERMINAL"
     YARD     = "YARD"
     CUSTOMER = "CUSTOMER"
@@ -48,37 +51,6 @@ class LegMoveCode(StrEnum):
     RMP = "RMP"   # Rail Ramp
     OTR = "OTR"   # Over-the-Road
     ERP = "ERP"   # Empty Reposition
-
-
-class StopKind(StrEnum):
-    """leg_stop 의 stop 종류."""
-    PICKUP_FULL      = "PICKUP_FULL"       # 적재 컨 픽업
-    DROP_FULL        = "DROP_FULL"         # 적재 컨 떨굼
-    PICKUP_EMPTY     = "PICKUP_EMPTY"      # 빈 컨 픽업
-    DROP_EMPTY       = "DROP_EMPTY"        # 빈 컨 떨굼 (반납 등)
-    CHASSIS_GET      = "CHASSIS_GET"       # 챠시 빌림 (풀에서)
-    CHASSIS_RETURN   = "CHASSIS_RETURN"    # 챠시 반납
-    WAIT             = "WAIT"              # 대기
-    FUEL             = "FUEL"              # 주유
-    SCALE            = "SCALE"             # 계량
-    OTHER            = "OTHER"
-
-
-class StopRole(StrEnum):
-    """v3 컨테이너 정차점(Stop)의 역할 — 4가지로 단순화.
-
-    - ORIGIN     : 첫 시작점 (보통 터미널, 항만, 차고 등 — 필수 X).
-    - DELIVERY   : 화주 도어/창고 등 화물을 내리거나 적재하는 지점. N개 가능 (LCL).
-    - TRANSIT    : 중간 경유 (휴식·환승). 적재 변화 없음.
-    - TERMINUS   : 마지막 종료점 (보통 빈 컨 반납 디포 — 필수 X).
-
-    액션(픽업/드롭/empty/full)은 이 role + 인접 leg.move_type 조합으로 derive.
-    시간 소비형(WAIT/FUEL/SCALE) 은 stop 이 아니라 leg_layer/정산 라인으로 흡수.
-    """
-    ORIGIN   = "ORIGIN"
-    DELIVERY = "DELIVERY"
-    TRANSIT  = "TRANSIT"
-    TERMINUS = "TERMINUS"
 
 
 class HandoverReason(StrEnum):

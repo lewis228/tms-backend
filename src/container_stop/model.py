@@ -1,11 +1,10 @@
 # src/container_stop/model.py
-"""v3: Container 의 정차점(Stop) 시퀀스.
+"""Container 의 Point(정차 지점) 시퀀스.
 
-기존 `leg_stop` 은 leg 내부의 정차 액션(픽업/드롭/대기 등) 표현용이라
-*Container 시퀀스*를 표현하기에 부적합하다. v3 부터 별도 도메인으로 분리.
-
-- Container 1개 = ContainerStop N 개 (sequence_no 순).
-- 각 stop 은 Location 마스터 참조 + role(ORIGIN/DELIVERY/TRANSIT/TERMINUS).
+- Container 1개 = Point N 개 (sequence_no 순). Leg 가 from_point→to_point 로 이 포인트들을 잇는다.
+- 각 Point 는 **타입(point_type)** + 그 타입 마스터 참조(정확히 하나):
+    TERMINAL → terminal_id, YARD → location_id(kind=YARD), CUSTOMER → customer_id.
+- 테이블명은 호환 위해 container_stop 유지(드라이버앱 arrive/depart 등). 개념은 'Point'.
 """
 from __future__ import annotations
 from datetime import datetime
@@ -17,22 +16,29 @@ from sqlalchemy import (
 
 from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
-from leg.const.status import StopRole
+from leg.const.status import PointType
 
 
 class ContainerStopModel(Base, TeamScopedMixin):
-    """Container 의 정차점 시퀀스 (v3)."""
+    """Container 의 Point 시퀀스 (타입별 마스터 참조)."""
     __tablename__ = "container_stop"
 
     container_id: Mapped[int] = mapped_column(
         ForeignKey("container.id", ondelete="CASCADE"), nullable=False,
     )
     sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
-    role: Mapped[StopRole] = mapped_column(
-        SAEnum(StopRole, name="stop_role"), nullable=False,
+    point_type: Mapped[PointType] = mapped_column(
+        SAEnum(PointType, name="point_type"), nullable=False,
+    )
+    # ── 타입별 마스터 참조 (정확히 하나 non-null — 서비스에서 검증) ──
+    terminal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("terminal.id", ondelete="SET NULL"), nullable=True,
     )
     location_id: Mapped[int | None] = mapped_column(
         ForeignKey("location.id", ondelete="SET NULL"), nullable=True,
+    )
+    customer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("customer.id", ondelete="SET NULL"), nullable=True,
     )
 
     # ── 일정 ─────────────────────────────────────────────
@@ -47,7 +53,7 @@ class ContainerStopModel(Base, TeamScopedMixin):
         UniqueConstraint("team_id", "id", name="uq_container_stop_team_id_id"),
         UniqueConstraint("container_id", "sequence_no", name="uq_container_stop_container_seq"),
         Index("ix_container_stop_team_container",  "team_id", "container_id", "sequence_no"),
-        Index("ix_container_stop_team_role",       "team_id", "role"),
+        Index("ix_container_stop_team_type",       "team_id", "point_type"),
         Index("ix_container_stop_team_location",   "team_id", "location_id"),
         Index("ix_container_stop_team_active_id",  "team_id", "is_active", "id"),
     )

@@ -2,7 +2,7 @@
 """요율 종합 해석 엔진 — driver → 유효 요율그룹 → method 분기 → 단가 산출.
 
 payroll/invoice 가 정산·청구 시점에 사용. payroll.resolve.resolve_leg_rate 가 leg 의
-(driver, work_date, move_type, rate_point, dest_zip/city, container_size, miles/hours) 를
+(driver, work_date, move_type, origin/dest zip·city, container_size, miles/hours) 를
 뽑아 이 RateResolver.resolve 를 호출하고, 결과 base 를 payroll_line 에 snapshot 동결한다.
 """
 from __future__ import annotations
@@ -38,8 +38,9 @@ class RateResolver:
 
     async def resolve(
         self, *, driver_id: int, work_date: date,
-        move_type: RateMoveType | None = None, row_point_id: int | None = None,
+        move_type: RateMoveType | None = None,
         service_type: RateServiceType | None = None,
+        from_zip: str | None = None, from_city: str | None = None, from_state: str | None = None,
         dest_zip: str | None = None, dest_city: str | None = None, dest_state: str | None = None,
         container_size: RateContainerSize | None = None,
         miles: Decimal | None = None, hours: Decimal | None = None,
@@ -58,10 +59,12 @@ class RateResolver:
         if method in (RateMethod.MILE, RateMethod.HOURLY):
             kind = SheetKind.MILE if method == RateMethod.MILE else SheetKind.HOURLY
             qty = miles if method == RateMethod.MILE else hours
-            sheet = await self.sheet_repo.find_slot(gid, kind, None, None)
+            sheet = await self.sheet_repo.find_slot(gid, kind, None)
             if sheet is None:
                 return _fail(f"{method.value} 시트가 없습니다.", method=method.value, rate_group_id=gid)
-            empty_cell = {k: None for k in ("col_zone_id", "col_point_id", "col_city", "col_state", "container_size")}
+            empty_cell = {k: None for k in (
+                "from_zone_id", "to_zone_id", "from_city", "from_state", "to_city", "to_state", "container_size",
+            )}
             lk = await lookup.resolve_cell(self.sheet_repo, sheet.id, empty_cell, work_date)
             if not lk.found or lk.per_unit is None:
                 return _fail(lk.message or "단가 미등록", method=method.value, rate_group_id=gid, rate_sheet_id=sheet.id)
@@ -72,32 +75,39 @@ class RateResolver:
                 rate_entry_id=lk.rate_entry_id, per_unit=lk.per_unit, quantity=q, base_amount=base,
             )
 
-        # ZONE / CITY 매트릭스
-        if move_type is None or row_point_id is None:
-            return _fail("ZONE/CITY 해석에는 move_type 과 row_point_id 가 필요합니다.", method=method.value, rate_group_id=gid)
-        kind = SheetKind.POINT_ZONE if method == RateMethod.ZONE else SheetKind.POINT_CITY
-        # 컨플루언스 'Leg 전체 유형': service_type 별 요율 우선, 없으면 service_type 무관(NULL) 슬롯 폴백.
-        sheet = await self.sheet_repo.find_slot(gid, kind, move_type, row_point_id, service_type=service_type)
+        # ZONE / CITY 매트릭스 (from→to)
+        if move_type is None:
+            return _fail("ZONE/CITY 해석에는 move_type 이 필요합니다.", method=method.value, rate_group_id=gid)
+        kind = SheetKind.ZONE if method == RateMethod.ZONE else SheetKind.CITY
+        # service_type 별 요율 우선, 없으면 service_type 무관(NULL) 슬롯 폴백.
+        sheet = await self.sheet_repo.find_slot(gid, kind, move_type, service_type=service_type)
         if sheet is None and service_type is not None:
-            sheet = await self.sheet_repo.find_slot(gid, kind, move_type, row_point_id, service_type=None)
+            sheet = await self.sheet_repo.find_slot(gid, kind, move_type, service_type=None)
         if sheet is None:
             return _fail(
                 f"{method.value} 시트가 없습니다 (move={move_type.value}, "
-                f"service={service_type.value if service_type else None}, point={row_point_id}).",
+                f"service={service_type.value if service_type else None}).",
                 method=method.value, rate_group_id=gid)
 
         zone_id = None
         if method == RateMethod.ZONE:
-            if not dest_zip:
-                return _fail("ZONE 해석에는 dest_zip 이 필요합니다.", method=method.value, rate_group_id=gid, rate_sheet_id=sheet.id)
-            zone_id = await self.zone_repo.resolve_zone_id_by_zip(dest_zip)
-            if zone_id is None:
-                return _fail(f"zip={dest_zip} 에 매핑된 Zone 이 없습니다.", method=method.value, rate_group_id=gid, rate_sheet_id=sheet.id)
-            coord = {"col_zone_id": zone_id, "col_point_id": None, "col_city": None, "col_state": None}
+            if not from_zip or not dest_zip:
+                return _fail("ZONE 해석에는 from_zip 과 dest_zip 이 모두 필요합니다.", method=method.value, rate_group_id=gid, rate_sheet_id=sheet.id)
+            from_zone_id = await self.zone_repo.resolve_zone_id_by_zip(from_zip)
+            to_zone_id = await self.zone_repo.resolve_zone_id_by_zip(dest_zip)
+            if from_zone_id is None:
+                return _fail(f"from zip={from_zip} 에 매핑된 Zone 이 없습니다.", method=method.value, rate_group_id=gid, rate_sheet_id=sheet.id)
+            if to_zone_id is None:
+                return _fail(f"to zip={dest_zip} 에 매핑된 Zone 이 없습니다.", method=method.value, rate_group_id=gid, rate_sheet_id=sheet.id)
+            zone_id = to_zone_id  # 응답 호환: 도착존
+            coord = {"from_zone_id": from_zone_id, "to_zone_id": to_zone_id,
+                     "from_city": None, "from_state": None, "to_city": None, "to_state": None}
         else:  # CITY
-            if not dest_city:
-                return _fail("CITY 해석에는 dest_city 가 필요합니다.", method=method.value, rate_group_id=gid, rate_sheet_id=sheet.id)
-            coord = {"col_zone_id": None, "col_point_id": None, "col_city": dest_city, "col_state": dest_state}
+            if not from_city or not dest_city:
+                return _fail("CITY 해석에는 from_city 와 dest_city 가 모두 필요합니다.", method=method.value, rate_group_id=gid, rate_sheet_id=sheet.id)
+            coord = {"from_zone_id": None, "to_zone_id": None,
+                     "from_city": from_city, "from_state": from_state,
+                     "to_city": dest_city, "to_state": dest_state}
 
         # 사이즈 해석: ① 요청 사이즈 셀(오버라이드/정확값) 우선 → 그대로 사용(배율 1.0)
         #             ② 없으면 40ft 마스터 셀 × 배율(20/45). Bobtail(size=None) 은 배율 미적용.

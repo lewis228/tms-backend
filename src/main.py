@@ -56,7 +56,6 @@ from equipment_pool.router import router as equipment_pool_router
 from chassis.router import router as chassis_router
 
 # ── TMS D/O / Leg / Settlement routers (Phase C) ─────────────
-from rate_point.router import router as rate_point_router
 from rate_group.router import router as rate_group_router
 from driver_rate_assignment.router import router as driver_rate_assignment_router
 from rate_zone.router import router as rate_zone_router
@@ -144,7 +143,6 @@ app.include_router(equipment_pool_router)
 app.include_router(chassis_router)
 
 # ── TMS D/O / Leg / Settlement router 등록 (Phase C) ─────────
-app.include_router(rate_point_router)
 app.include_router(rate_group_router)
 app.include_router(driver_rate_assignment_router)
 app.include_router(rate_zone_router)

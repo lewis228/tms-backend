@@ -28,7 +28,9 @@ class LegResponseSchema(ResponseSchema):
     from_location_type: PointType | None = None
     to_location_type: PointType | None = None
     move_code: LegMoveCode | None = None
-    rate_point_id: int | None = None
+    origin_zip: str | None = None
+    origin_city: str | None = None
+    origin_state: str | None = None
     dest_zip: str | None = None
     dest_city: str | None = None
     dest_state: str | None = None

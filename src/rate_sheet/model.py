@@ -17,10 +17,11 @@ from rate_sheet.const.status import (
 
 
 class RateSheetModel(Base, TeamScopedMixin):
-    """요율표 슬롯 (헤더) — (rate_group, kind, move_type, row_point) 단위.
+    """요율표 슬롯 (헤더) — (rate_group, kind, move_type, service_type) 단위.
 
-    컨플루언스 [Terry] 요율표 기획: (MoveType, Point) × Zone 매트릭스 한 장.
-    실제 단가는 rate_entry(셀, 유효일자 버전)에 들어간다.
+    재설계(Zone×Zone): 한 슬롯 = 한 (MoveType, ServiceType) 매트릭스. 셀(rate_entry)이
+    from→to(zone/city) 좌표를 가진다. kind 는 group.method 와 동일(편의 denormalize).
+    MILE/HOURLY 는 move/service NULL 단일 슬롯(per_unit). row_point 개념 폐기.
     """
     __tablename__ = "rate_sheet"
 
@@ -31,12 +32,9 @@ class RateSheetModel(Base, TeamScopedMixin):
     move_type: Mapped[RateMoveType | None] = mapped_column(
         SAEnum(RateMoveType, name="rate_move_type"), nullable=True,  # MILE/HOURLY 는 None
     )
-    # 컨플루언스 'Leg 전체 유형': 같은 From→To·Move 라도 Service Type(Live/Drop/None) 별 요율 분리.
+    # 같은 From→To·Move 라도 Service Type(Live/Drop/None) 별 요율 분리.
     service_type: Mapped[RateServiceType | None] = mapped_column(
         SAEnum(RateServiceType, name="rate_service_type"), nullable=True,  # MILE/HOURLY·미지정 None
-    )
-    row_point_id: Mapped[int | None] = mapped_column(
-        ForeignKey("rate_point.id", ondelete="SET NULL"), nullable=True,  # MILE/HOURLY 는 None
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -55,7 +53,7 @@ class RateSheetModel(Base, TeamScopedMixin):
     __table_args__ = (
         UniqueConstraint("team_id", "id", name="uq_rate_sheet_team_id_id"),
         UniqueConstraint(
-            "team_id", "rate_group_id", "kind", "move_type", "service_type", "row_point_id",
+            "team_id", "rate_group_id", "kind", "move_type", "service_type",
             name="uq_rate_sheet_slot",
         ),
         Index("ix_rate_sheet_team_active_id", "team_id", "is_active", "id"),
@@ -70,7 +68,7 @@ class RateEntryModel(Base, TeamScopedMixin):
 
     하나의 (sheet, 셀 좌표) 에 대해 effective_from 별로 여러 버전이 누적된다.
     절대 UPDATE 하지 않고 close(effective_to) + 새 row insert 로 버전 관리.
-    셀 좌표 = (col_zone_id | col_point_id | col_city+col_state) + container_size.
+    셀 좌표 = (from_zone_id→to_zone_id) ZONE | (from_city/state→to_city/state) CITY + container_size.
     MILE/HOURLY 시트는 좌표 없이 per_unit 단일 셀.
     """
     __tablename__ = "rate_entry"
@@ -78,11 +76,13 @@ class RateEntryModel(Base, TeamScopedMixin):
 
     rate_sheet_id: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # ── 셀 좌표 (kind 에 따라 하나만 사용) ──────────────────────
-    col_zone_id:  Mapped[int | None] = mapped_column(ForeignKey("rate_zone.id", ondelete="SET NULL"), nullable=True)
-    col_point_id: Mapped[int | None] = mapped_column(ForeignKey("rate_point.id", ondelete="SET NULL"), nullable=True)
-    col_city:  Mapped[str | None] = mapped_column(String(120), nullable=True)
-    col_state: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # ── 셀 좌표 (kind 에 따라 zone 쌍 또는 city 쌍 사용; MILE/HOURLY 는 둘 다 NULL) ──
+    from_zone_id: Mapped[int | None] = mapped_column(ForeignKey("rate_zone.id", ondelete="SET NULL"), nullable=True)
+    to_zone_id:   Mapped[int | None] = mapped_column(ForeignKey("rate_zone.id", ondelete="SET NULL"), nullable=True)
+    from_city:  Mapped[str | None] = mapped_column(String(120), nullable=True)
+    from_state: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    to_city:    Mapped[str | None] = mapped_column(String(120), nullable=True)
+    to_state:   Mapped[str | None] = mapped_column(String(8), nullable=True)
     container_size: Mapped[RateContainerSize | None] = mapped_column(
         SAEnum(RateContainerSize, name="rate_container_size"), nullable=True,
     )
@@ -120,11 +120,10 @@ class RateEntryModel(Base, TeamScopedMixin):
             name="fk_rate_entry_sheet_team_id_id",
         ),
         Index("ix_rate_entry_team_id_id", "team_id", "id"),
-        # 핫패스: 시트+셀좌표+사이즈+유효시작일 lookup
-        Index("ix_rate_entry_lookup", "team_id", "rate_sheet_id", "col_zone_id", "container_size", "effective_from"),
+        # 핫패스: 시트+from존+to존+사이즈+유효시작일 lookup
+        Index("ix_rate_entry_lookup", "team_id", "rate_sheet_id", "from_zone_id", "to_zone_id", "container_size", "effective_from"),
         Index("ix_rate_entry_team_sheet", "team_id", "rate_sheet_id"),
-        Index("ix_rate_entry_team_city", "team_id", "col_city", "col_state"),
-        Index("ix_rate_entry_team_point", "team_id", "col_point_id"),
+        Index("ix_rate_entry_team_city", "team_id", "from_city", "from_state", "to_city", "to_state"),
         Index("ix_rate_entry_team_active", "team_id", "is_active"),
     )
 
@@ -138,10 +137,12 @@ class RateEntryHistoryModel(Base, TeamScopedMixin):
     rate_entry_id:  Mapped[int | None] = mapped_column(Integer, nullable=True)  # 새로 생성/대상 셀 id
 
     # 셀 좌표 (스냅샷)
-    col_zone_id:  Mapped[int | None] = mapped_column(Integer, nullable=True)
-    col_point_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    col_city:  Mapped[str | None] = mapped_column(String(120), nullable=True)
-    col_state: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    from_zone_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    to_zone_id:   Mapped[int | None] = mapped_column(Integer, nullable=True)
+    from_city:  Mapped[str | None] = mapped_column(String(120), nullable=True)
+    from_state: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    to_city:    Mapped[str | None] = mapped_column(String(120), nullable=True)
+    to_state:   Mapped[str | None] = mapped_column(String(8), nullable=True)
     container_size: Mapped[RateContainerSize | None] = mapped_column(
         SAEnum(RateContainerSize, name="rate_container_size_hist"), nullable=True,
     )

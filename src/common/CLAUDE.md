@@ -542,8 +542,7 @@ from load_type_template.model import LoadTypeTemplateModel, LoadTypeTemplateStep
 from street_turn.model import StreetTurnModel
 from dual_transaction.model import DualTransactionModel
 
-# Rate (재설계) — 요율 서브시스템
-from rate_point.model import RatePointModel
+# Rate (재설계 Zone×Zone) — 요율 서브시스템
 from rate_zone.model import RateZoneModel, RateZoneMemberModel
 from rate_group.model import RateGroupModel
 from rate_sheet.model import RateSheetModel, RateEntryModel, RateEntryHistoryModel

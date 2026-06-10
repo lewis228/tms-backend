@@ -355,8 +355,9 @@ def page_leg_gen():
 POST /legs/bulk/create  → Leg1(P1→P2), Leg2(P2→P3) PENDING 생성
 → 컨테이너 work_state = PLANNED, D/O status = DISPATCHING
 """),
-        tip("요율 해석 입력(rate_point_id=터미널/야드, dest_zip/city/state, rate_miles/hours)은 from/to Point 와 별개로 "
-            "leg 에 스냅샷되어 정산 시 RateResolver 가 쓴다. from/to_location_type·move_code 는 가격에 직접 안 쓰인다."),
+        tip("요율 해석 입력(origin_zip/city/state=from_point 스냅샷, dest_zip/city/state=to_point 스냅샷, rate_miles/hours)은 "
+            "leg 에 자동채움되어 정산 시 RateResolver 가 from_zip→from_zone, dest_zip→to_zone 으로 쓴다. "
+            "from/to_location_type·move_code 는 가격에 직접 안 쓰인다."),
     ]
 
 
@@ -505,10 +506,10 @@ def page_rate():
         N.p("4가지 방식:"),
         N.bullet(("MILE ", {"bold": True}), "— 거리 × 마일당 단가"),
         N.bullet(("HOURLY ", {"bold": True}), "— 시간 × 시간당 단가"),
-        N.bullet(("ZONE ", {"bold": True}), "— (출발지 point) × (목적지 zip→zone) 매트릭스 셀 금액"),
-        N.bullet(("CITY ", {"bold": True}), "— (출발지 point) × (목적지 city/state) 매트릭스 셀 금액"),
-        N.p("ZONE/CITY 는 행(rate_point=터미널/야드) × 열(rate_zone=zip/city 묶음, 또는 city)로 된 표이고, "
-            "컨테이너 사이즈별 셀을 가집니다. 요율표는 절대 덮어쓰지 않고 유효일자(effective_from/to)로 새 버전을 쌓습니다(append-only). "
+        N.bullet(("ZONE ", {"bold": True}), "— (출발 zip→from_zone) × (도착 zip→to_zone) 매트릭스 셀 금액"),
+        N.bullet(("CITY ", {"bold": True}), "— (출발 city/state) × (도착 city/state) 매트릭스 셀 금액"),
+        N.p("ZONE/CITY 는 출발존→도착존(from→to) 매트릭스이고(rate_point 폐기), 슬롯은 (그룹, Move Type, Service Type)마다 "
+            "한 장씩, 컨테이너 사이즈별 셀을 가집니다. 요율표는 절대 덮어쓰지 않고 유효일자(effective_from/to)로 새 버전을 쌓습니다(append-only). "
             "사이즈 배율(rate_multiplier)은 20/40/45 에 대해 기본 0.85/1.0/1.0."),
         warn("컨플루언스 'Leg 전체 유형': leg 의 기본요금은 (From, To, **Move Type**, **Service Type**) 조합으로 "
              "갈립니다. 같은 (터미널→고객, Load) 셀이라도 Service Type 이 Live 냐 Drop 이냐에 따라 다른 요율표를 씁니다. "

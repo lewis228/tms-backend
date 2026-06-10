@@ -44,7 +44,7 @@ TMS Pro Backend — 컨테이너 운송 / 항만 / 트럭 디스패치 워크플
 핵심 비즈니스 도메인:
 - **D/O (Delivery Order)** — 헤더 (`delivery_order/`) + 컨테이너 (`container/`, =Shipment) 분리. PLANNING → DISPATCHING → DISPATCHED → YARD_STAGED → FINAL_DELIVERY → EMPTY_STAGED → COMPLETED. 상태는 leg 기준 파생 + Hold/Cancel overlay.
 - **Leg** — 트럭 한 대가 한 컨테이너로 한 구간. PENDING → ASSIGNED → IN_TRANSIT → COMPLETED/FAILED, DRY_RUN(빠꾸→reissue). `load_type_template` 로 자동생성.
-- **요율 (재설계)** — `rate_group`(method ZONE/CITY/MILE/HOURLY) + `rate_sheet`/`rate_entry`(유효일자 버전관리) + `rate_point`/`rate_zone`/`rate_multiplier` + `driver_rate_assignment`. `RateResolver` 가 해석.
+- **요율 (재설계 Zone×Zone)** — `rate_group`(method ZONE/CITY/MILE/HOURLY) + `rate_sheet`(슬롯 = group×move×service) / `rate_entry`(from→to zone/city 셀, 유효일자 버전관리) + `rate_zone`/`rate_multiplier` + `driver_rate_assignment`. `RateResolver` 가 from_zip→from_zone, dest_zip→to_zone 으로 해석. (rate_point 폐기)
 - **정산 · 청구 (재설계)** — `payroll`(드라이버 정산, leg base snapshot) + `invoice`(고객 청구, cost-plus 원가프리필+마진).
 - **Driver / Truck / Chassis** — 운송 자원 마스터. driver 는 모바일 앱 사용자.
 - **Street Turn / Dual Transaction** — 컨테이너 직접 이전 / 반납+픽업 묶음.
@@ -166,7 +166,7 @@ cd src && PYTHONPATH=. celery -A celery_app beat --loglevel=info
 | Master Data | `customer`, `terminal`, `vessel`, `location`, `driver`, `truck`, `equipment_pool`, `chassis` |
 | D/O Workflow | `delivery_order`, `container`, `container_stop`, `chassis_event`, `street_turn`, `dual_transaction` |
 | Leg / Dispatch | `leg`, `leg_layer`, `leg_driver_segment`, `load_type_template` |
-| Rate (재설계) | `rate_point`, `rate_zone`, `rate_group`, `rate_sheet`, `rate_multiplier`, `driver_rate_assignment`, `addon`, `rate_import` |
+| Rate (재설계 Zone×Zone) | `rate_zone`, `rate_group`, `rate_sheet`, `rate_multiplier`, `driver_rate_assignment`, `addon`, `rate_import` |
 | 정산 · 청구 (재설계) | `payroll`, `invoice`, `audit_log` |
 | Mobile / Realtime | `location_ping`, `push_token`, `notification`, `realtime`, `driver_mobile` (BFF) |
 | AI / Analytics | `ai_intake`, `analytics` |

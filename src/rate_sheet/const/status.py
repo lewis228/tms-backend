@@ -4,20 +4,18 @@ from enum import StrEnum
 
 
 class SheetKind(StrEnum):
-    """Rate Sheet(요율표 슬롯) 종류.
+    """Rate Sheet(요율표 슬롯) 종류 = rate_group.method 와 동일(denormalize).
 
-    컨플루언스 [Terry] 요율표 기획:
-    - POINT_ZONE : (MoveType, Point) × Zone 매트릭스 (가장 일반)
-    - POINT_CITY : (MoveType, Point) × City/Zip 매트릭스 (Zone 대신 City 방식)
-    - POINT_POINT: Point × Point 고정 구간 (Terminal↔Yard 등)
-    - MILE       : 거리 × per_unit (요율표 불필요, per_unit 단일 셀)
-    - HOURLY     : 시간 × per_unit (요율표 불필요, per_unit 단일 셀)
+    재설계(Zone×Zone):
+    - ZONE   : from_zone → to_zone 매트릭스 (가장 일반)
+    - CITY   : from_city/state → to_city/state 매트릭스 (zip 마스터 도시명)
+    - MILE   : 거리 × per_unit (좌표 없이 per_unit 단일 셀)
+    - HOURLY : 시간 × per_unit (좌표 없이 per_unit 단일 셀)
     """
-    POINT_ZONE  = "POINT_ZONE"
-    POINT_CITY  = "POINT_CITY"
-    POINT_POINT = "POINT_POINT"
-    MILE        = "MILE"
-    HOURLY      = "HOURLY"
+    ZONE   = "ZONE"
+    CITY   = "CITY"
+    MILE   = "MILE"
+    HOURLY = "HOURLY"
 
 
 class RateMoveType(StrEnum):

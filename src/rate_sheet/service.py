@@ -52,7 +52,7 @@ class RateSheetService:
         self, payload: RateSheetCreateRequest, actor_user_id: int | None = None
     ) -> RateSheetResponseSchema:
         existing = await self.repo.find_slot(
-            payload.rate_group_id, payload.kind, payload.move_type, payload.row_point_id,
+            payload.rate_group_id, payload.kind, payload.move_type,
             service_type=payload.service_type,
         )
         if existing is not None:

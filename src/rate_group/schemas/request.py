@@ -1,11 +1,14 @@
 # src/rate_group/schemas/request.py
 from __future__ import annotations
-from typing import Optional, Literal
-from pydantic import Field
+from datetime import date
+from decimal import Decimal
+from typing import Optional, Literal, List
+from pydantic import Field, model_validator
 
 from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
 from rate_group.const.status import RateMethod
+from rate_sheet.const.status import RateMoveType, RateServiceType, RateContainerSize, RateEntrySource
 
 
 class RateGroupCreateRequest(RequestSchema):
@@ -34,3 +37,38 @@ class PaginateRateGroupRequest(BasePaginationSchema):
     where__name__i_like: Optional[str] = None
     where__method__equal: Optional[RateMethod] = None
     where__is_default__equal: Optional[bool] = None
+
+
+class FlatRateEntryRequest(RequestSchema):
+    """그룹 단위 플랫 행 입력(이미지3 형식) — 내부적으로 (group, kind, move, service) 시트로 라우팅.
+
+    - ZONE: move_type 필요 + from_zone_id/to_zone_id
+    - CITY: move_type 필요 + from_city/from_state/to_city/to_state
+    - MILE/HOURLY: move/service 없음, per_unit 만
+    값은 amount(매트릭스) 또는 per_unit(MILE/HOURLY) 중 하나.
+    """
+    move_type: RateMoveType | None = None
+    service_type: RateServiceType | None = None
+    from_zone_id: int | None = None
+    to_zone_id: int | None = None
+    from_city: str | None = Field(default=None, max_length=120)
+    from_state: str | None = Field(default=None, max_length=8)
+    to_city: str | None = Field(default=None, max_length=120)
+    to_state: str | None = Field(default=None, max_length=8)
+    container_size: RateContainerSize | None = None
+    amount: Decimal | None = None
+    per_unit: Decimal | None = None
+    effective_from: date
+    source: RateEntrySource = RateEntrySource.SHEET
+    reason: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _validate_value(self):
+        if self.amount is None and self.per_unit is None:
+            raise ValueError("amount 또는 per_unit 중 하나는 필요합니다.")
+        return self
+
+
+class BulkFlatRateEntryRequest(RequestSchema):
+    """그룹 플랫 행 일괄 입력(Excel/대량)."""
+    items: List[FlatRateEntryRequest] = Field(..., min_length=1, max_length=5000)

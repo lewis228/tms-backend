@@ -16,8 +16,8 @@ from rate_sheet.schemas.request import PaginateRateSheetRequest
 from rate_sheet.schemas.response import RateSheetResponseSchema
 
 
-# 셀 좌표 키 (rate_entry 컬럼명과 동일)
-_CELL_KEYS = ("col_zone_id", "col_point_id", "col_city", "col_state", "container_size")
+# 셀 좌표 키 (rate_entry 컬럼명과 동일) — from→to (zone/city) + size
+_CELL_KEYS = ("from_zone_id", "to_zone_id", "from_city", "from_state", "to_city", "to_state", "container_size")
 
 
 def _cell_conditions(cell: dict):
@@ -57,14 +57,24 @@ class RateSheetRepository(TeamScopedRepoMixin):
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
+    async def list_sheets_by_group(self, rate_group_id: int) -> List[RateSheetModel]:
+        """그룹의 활성 시트 전부(리스트/매트릭스 플랫 조회용)."""
+        q = select(RateSheetModel).where(
+            RateSheetModel.team_id == self._require_team(),
+            RateSheetModel.rate_group_id == rate_group_id,
+            RateSheetModel.is_active.is_(True),
+        ).order_by(RateSheetModel.id.asc())
+        return list((await self.db.execute(q)).scalars().all())
+
     async def find_slot(
         self, rate_group_id: int, kind: SheetKind,
-        move_type: RateMoveType | None, row_point_id: int | None,
+        move_type: RateMoveType | None,
         service_type=None,
     ) -> Optional[RateSheetModel]:
         """슬롯 식별자로 기존 시트 조회 (중복 생성 방지 + 해석).
 
-        컨플루언스 'Leg 전체 유형': service_type 별 요율 분리. None 이면 service_type 무관(NULL) 슬롯.
+        재설계(Zone×Zone): 슬롯 = (group, kind, move_type, service_type). row_point 폐기.
+        service_type None 이면 service_type 무관(NULL) 슬롯.
         """
         conds = [
             RateSheetModel.team_id == self._require_team(),
@@ -73,7 +83,6 @@ class RateSheetRepository(TeamScopedRepoMixin):
             RateSheetModel.is_active.is_(True),
             RateSheetModel.move_type.is_(None) if move_type is None else RateSheetModel.move_type == move_type,
             RateSheetModel.service_type.is_(None) if service_type is None else RateSheetModel.service_type == service_type,
-            RateSheetModel.row_point_id.is_(None) if row_point_id is None else RateSheetModel.row_point_id == row_point_id,
         ]
         return (await self.db.execute(select(RateSheetModel).where(*conds))).scalar_one_or_none()
 
@@ -94,7 +103,7 @@ class RateSheetRepository(TeamScopedRepoMixin):
             return None
         for k, v in payload.items():
             if k in {"id", "team_id", "is_active", "created_at", "created_by_user_id",
-                     "rate_group_id", "kind", "move_type", "row_point_id"}:
+                     "rate_group_id", "kind", "move_type", "service_type"}:
                 continue
             setattr(row, k, v)
         if actor_user_id is not None:
@@ -222,8 +231,9 @@ class RateSheetRepository(TeamScopedRepoMixin):
         h = RateEntryHistoryModel(
             team_id=self._require_team(),
             rate_sheet_id=sheet_id, rate_entry_id=rate_entry_id,
-            col_zone_id=cell.get("col_zone_id"), col_point_id=cell.get("col_point_id"),
-            col_city=cell.get("col_city"), col_state=cell.get("col_state"),
+            from_zone_id=cell.get("from_zone_id"), to_zone_id=cell.get("to_zone_id"),
+            from_city=cell.get("from_city"), from_state=cell.get("from_state"),
+            to_city=cell.get("to_city"), to_state=cell.get("to_state"),
             container_size=cell.get("container_size"),
             old_amount=old_amount, new_amount=new_amount,
             old_per_unit=old_per_unit, new_per_unit=new_per_unit,

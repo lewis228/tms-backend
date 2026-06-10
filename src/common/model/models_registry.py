@@ -48,7 +48,6 @@ from push_token.model import PushTokenModel  # noqa: F401
 from api_key.model import ApiKeyModel  # noqa: F401
 
 # ── TMS 재설계 (Confluence 기준) — Rate 서브시스템 ───────────
-from rate_point.model import RatePointModel  # noqa: F401
 from rate_group.model import RateGroupModel  # noqa: F401
 from driver_rate_assignment.model import DriverRateAssignmentModel  # noqa: F401
 from rate_zone.model import RateZoneModel, RateZoneMemberModel  # noqa: F401

@@ -14,11 +14,14 @@ from user.schemas.response import UserResponseSchema
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from common.pagination.schemas.sync_response import SyncResponse
 from rate_group.service import RateGroupService
+from rate_group.entry_service import RateGroupEntryService
 from rate_group.schemas.request import (
     RateGroupCreateRequest, RateGroupUpdateRequest, PaginateRateGroupRequest,
+    FlatRateEntryRequest, BulkFlatRateEntryRequest,
 )
 from rate_group.schemas.response import (
     RateGroupResponseSchema, RateGroupDeleteResponseSchema,
+    FlatRateEntrySchema, RateGroupEntriesResponse,
 )
 
 router = APIRouter(prefix="/api/v1/rate-groups", tags=["rate-groups"])
@@ -95,3 +98,43 @@ async def delete_rate_group(
 ):
     """Rate Group 삭제(소프트)."""
     return await RateGroupService(db, team_id).delete(group_id, actor_user_id=int(me.id))
+
+
+# ── 그룹 단위 플랫 행 요율(리스트 뷰 + Excel) ───────────────────
+@router.get("/{group_id}/entries", response_model=RateGroupEntriesResponse)
+async def list_group_entries(
+    group_id: int,
+    _1: None = Depends(access_token),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_read_db),
+):
+    """그룹의 모든 시트 셀을 플랫 행으로 반환(리스트 뷰)."""
+    return await RateGroupEntryService(db, team_id).list_entries(group_id)
+
+
+@router.post("/{group_id}/entries", response_model=FlatRateEntrySchema)
+async def set_group_entry(
+    group_id: int,
+    body: FlatRateEntryRequest,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(RATE_GROUP_WRITE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """플랫 행 1건 등록(append-only) — (group,kind,move,service) 시트 자동 라우팅."""
+    return await RateGroupEntryService(db, team_id).set_entry(group_id, body, actor_user_id=int(me.id))
+
+
+@router.post("/{group_id}/entries/bulk", response_model=list[FlatRateEntrySchema])
+async def set_group_entries_bulk(
+    group_id: int,
+    body: BulkFlatRateEntryRequest,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(RATE_GROUP_WRITE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """플랫 행 일괄 등록(Excel/대량)."""
+    return await RateGroupEntryService(db, team_id).set_entries_bulk(group_id, body, actor_user_id=int(me.id))

@@ -17,7 +17,6 @@ class RateSheetResponseSchema(ResponseSchema):
     kind: SheetKind
     move_type: RateMoveType | None = None
     service_type: RateServiceType | None = None
-    row_point_id: int | None = None
     note: str | None = None
     is_active: bool
     status: SheetStatus = SheetStatus.EMPTY
@@ -27,10 +26,12 @@ class RateSheetResponseSchema(ResponseSchema):
 class RateEntryResponseSchema(ResponseSchema):
     id: int
     rate_sheet_id: int
-    col_zone_id: int | None = None
-    col_point_id: int | None = None
-    col_city: str | None = None
-    col_state: str | None = None
+    from_zone_id: int | None = None
+    to_zone_id: int | None = None
+    from_city: str | None = None
+    from_state: str | None = None
+    to_city: str | None = None
+    to_state: str | None = None
     container_size: RateContainerSize | None = None
     amount: Decimal | None = None
     per_unit: Decimal | None = None
@@ -57,10 +58,12 @@ class RateEntryHistoryResponseSchema(ResponseSchema):
     id: int
     rate_sheet_id: int
     rate_entry_id: int | None = None
-    col_zone_id: int | None = None
-    col_point_id: int | None = None
-    col_city: str | None = None
-    col_state: str | None = None
+    from_zone_id: int | None = None
+    to_zone_id: int | None = None
+    from_city: str | None = None
+    from_state: str | None = None
+    to_city: str | None = None
+    to_state: str | None = None
     container_size: RateContainerSize | None = None
     old_amount: Decimal | None = None
     new_amount: Decimal | None = None

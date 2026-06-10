@@ -76,14 +76,12 @@ async def seed(db: AsyncSession):
     from addon.service import AddonService
     from addon.model import AddonModel
     from addon.const.status import AddonCategory, AddonUnit
-    from rate_point.model import RatePointModel
-    from rate_point.const.status import PointType as RatePointType
     from rate_zone.model import RateZoneModel, RateZoneMemberModel
     from rate_group.model import RateGroupModel
     from rate_group.const.status import RateMethod
     from rate_multiplier.model import RateMultiplierModel
     from rate_sheet.model import RateSheetModel
-    from rate_sheet.const.status import SheetKind, RateMoveType, RateContainerSize, RateEntrySource
+    from rate_sheet.const.status import SheetKind, RateMoveType, RateServiceType, RateContainerSize, RateEntrySource
     from rate_sheet.repository import RateSheetRepository
     from rate_sheet import versioning
     from driver_rate_assignment.model import DriverRateAssignmentModel
@@ -284,23 +282,22 @@ async def seed(db: AsyncSession):
 
     # ── 4. 요율 서브시스템 ────────────────────────────────────
     banner("요율 (rate_*)")
-    rp_term = RatePointModel(team_id=tid, name="APM Pier 400", code="APM4", point_type=RatePointType.TERMINAL,
-                             terminal_id=term1.id, latitude=D("33.730"), longitude=D("-118.260"), created_by_user_id=aid)
-    rp_yard = RatePointModel(team_id=tid, name="Carson Yard", code="CARY", point_type=RatePointType.YARD,
-                             location_id=loc_yard.id, created_by_user_id=aid)
-    db.add_all([rp_term, rp_yard])
-
-    zone = RateZoneModel(team_id=tid, name="Inland Empire", code="IE", color="#3b82f6",
-                         description="Fontana / Ontario / Riverside", created_by_user_id=aid)
-    db.add(zone)
+    # 재설계(Zone×Zone): 출발존(항만) → 도착존(내륙). zip→zone 매핑으로 정산 해석.
+    zone_port = RateZoneModel(team_id=tid, name="Port / Harbor", code="PORT", color="#0ea5e9",
+                              description="San Pedro / Long Beach 항만", created_by_user_id=aid)
+    zone_ie = RateZoneModel(team_id=tid, name="Inland Empire", code="IE", color="#3b82f6",
+                            description="Fontana / Ontario / Riverside", created_by_user_id=aid)
+    db.add_all([zone_port, zone_ie])
     await db.flush()
     db.add_all([
-        RateZoneMemberModel(team_id=tid, zone_id=zone.id, zip_code="92335"),
-        RateZoneMemberModel(team_id=tid, zone_id=zone.id, zip_code="91761"),
+        RateZoneMemberModel(team_id=tid, zone_id=zone_port.id, zip_code="90731"),  # San Pedro
+        RateZoneMemberModel(team_id=tid, zone_id=zone_port.id, zip_code="90802"),  # Long Beach
+        RateZoneMemberModel(team_id=tid, zone_id=zone_ie.id, zip_code="92335"),    # Fontana
+        RateZoneMemberModel(team_id=tid, zone_id=zone_ie.id, zip_code="91761"),    # Ontario
     ])
 
     grp_zone = RateGroupModel(team_id=tid, name="Default ZONE Rates", method=RateMethod.ZONE, is_default=True,
-                              description="기본 존 기반 요율", created_by_user_id=aid)
+                              description="기본 존간(from→to) 요율", created_by_user_id=aid)
     grp_mile = RateGroupModel(team_id=tid, name="Mileage Rates", method=RateMethod.MILE,
                               description="마일당 요율", created_by_user_id=aid)
     db.add_all([grp_zone, grp_mile])
@@ -313,23 +310,23 @@ async def seed(db: AsyncSession):
                             factor=D("1.15"), note="45ft 할증", created_by_user_id=aid),
     ])
 
-    sheet = RateSheetModel(team_id=tid, rate_group_id=grp_zone.id, kind=SheetKind.POINT_ZONE,
-                           move_type=RateMoveType.LOAD, row_point_id=rp_term.id, created_by_user_id=aid)
+    # (LOAD, LIVE) 슬롯 — port→IE from→to 셀
+    sheet = RateSheetModel(team_id=tid, rate_group_id=grp_zone.id, kind=SheetKind.ZONE,
+                           move_type=RateMoveType.LOAD, service_type=RateServiceType.LIVE, created_by_user_id=aid)
     db.add(sheet)
     await db.flush()
+    _cell = {"from_zone_id": zone_port.id, "to_zone_id": zone_ie.id,
+             "from_city": None, "from_state": None, "to_city": None, "to_state": None,
+             "container_size": RateContainerSize.SIZE_40}
     # rate_entry + rate_entry_history 둘 다 생성
     await versioning.set_rate(
-        RateSheetRepository(db, tid), sheet.id,
-        {"col_zone_id": zone.id, "col_point_id": None, "col_city": None, "col_state": None,
-         "container_size": RateContainerSize.SIZE_40},
+        RateSheetRepository(db, tid), sheet.id, _cell,
         amount=D("285.00"), per_unit=None, effective_from=date(2026, 1, 1),
         source=RateEntrySource.SHEET, reason="seed initial", actor_user_id=aid,
     )
     # 단가 변경(이력 한 줄 더)
     await versioning.set_rate(
-        RateSheetRepository(db, tid), sheet.id,
-        {"col_zone_id": zone.id, "col_point_id": None, "col_city": None, "col_state": None,
-         "container_size": RateContainerSize.SIZE_40},
+        RateSheetRepository(db, tid), sheet.id, _cell,
         amount=D("310.00"), per_unit=None, effective_from=date(2026, 6, 1),
         source=RateEntrySource.MANUAL, reason="rate increase", actor_user_id=aid,
     )
@@ -337,7 +334,7 @@ async def seed(db: AsyncSession):
         db.add(DriverRateAssignmentModel(team_id=tid, driver_id=drv.id, rate_group_id=grp_zone.id,
                                          effective_from=date(2026, 1, 1), created_by_user_id=aid))
     await db.flush()
-    print("  rate_point×2, zone+member×2, group×2, multiplier×2, sheet+entry+history, assignment×3")
+    print("  zone×2 (port/IE) + member×4, group×2, multiplier×2, sheet(LOAD/LIVE)+entry+history, assignment×3")
 
     # ── 5. Load Type 템플릿 (시스템 시드) ─────────────────────
     banner("Load Type 템플릿")
@@ -406,7 +403,8 @@ async def seed(db: AsyncSession):
             team_id=tid, delivery_order_id=do.id, container_id=cont.id, step=DeliveryStatus.DISPATCHED,
             move_type=mt, service_type=st, from_point_id=frm.id, to_point_id=to.id,
             from_location_type=frm.point_type, to_location_type=to.point_type, move_code=mc,
-            rate_point_id=rp_term.id, dest_zip="92335", dest_city="Fontana", dest_state="CA",
+            origin_zip="90731", origin_city="San Pedro", origin_state="CA",
+            dest_zip="92335", dest_city="Fontana", dest_state="CA",
             rate_miles=D("58.0"), status=status, driver_id=(drv.id if drv else None),
             truck_id=(trucks[0].id if drv else None), chassis_id=cont.chassis_id,
             pickup_date=NOW, completed_at=(NOW if completed else None), is_settled=completed,

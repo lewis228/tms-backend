@@ -20,11 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from common.exceptions.base import NotFoundException
 from rate_sheet.repository import RateSheetRepository
 from rate_sheet import versioning
-from rate_sheet.const.status import RateContainerSize, RateEntrySource
+from rate_sheet.const.status import RateContainerSize, RateEntrySource, RateMoveType, RateServiceType
 from rate_zone.repository import RateZoneRepository
 from rate_import.schemas.response import CsvImportReport, ImportRowError
 
-_ENTRY_HEADER = ["col_zone_id", "col_point_id", "col_city", "col_state",
+_ENTRY_HEADER = ["from_zone_id", "to_zone_id", "from_city", "from_state", "to_city", "to_state",
+                 "container_size", "amount", "per_unit", "effective_from"]
+# 그룹 단위 플랫 행(이미지3 표준): move/service 컬럼 포함
+_GROUP_HEADER = ["move_type", "service_type", "from_zone_id", "to_zone_id",
+                 "from_city", "from_state", "to_city", "to_state",
                  "container_size", "amount", "per_unit", "effective_from"]
 _MEMBER_HEADER = ["zip_code", "city", "state"]
 
@@ -69,10 +73,12 @@ class RateImportService:
                     raise ValueError("amount 또는 per_unit 필요")
                 rows.append({
                     "cell": {
-                        "col_zone_id": _opt_int(raw.get("col_zone_id")),
-                        "col_point_id": _opt_int(raw.get("col_point_id")),
-                        "col_city": (raw.get("col_city") or "").strip() or None,
-                        "col_state": (raw.get("col_state") or "").strip() or None,
+                        "from_zone_id": _opt_int(raw.get("from_zone_id")),
+                        "to_zone_id": _opt_int(raw.get("to_zone_id")),
+                        "from_city": (raw.get("from_city") or "").strip() or None,
+                        "from_state": (raw.get("from_state") or "").strip() or None,
+                        "to_city": (raw.get("to_city") or "").strip() or None,
+                        "to_state": (raw.get("to_state") or "").strip() or None,
                         "container_size": cs,
                     },
                     "amount": amount, "per_unit": per_unit,
@@ -110,10 +116,75 @@ class RateImportService:
         w.writerow(_ENTRY_HEADER)
         for e in entries:
             w.writerow([
-                e.col_zone_id or "", e.col_point_id or "", e.col_city or "", e.col_state or "",
+                e.from_zone_id or "", e.to_zone_id or "", e.from_city or "", e.from_state or "",
+                e.to_city or "", e.to_state or "",
                 e.container_size.value if e.container_size else "",
                 e.amount if e.amount is not None else "", e.per_unit if e.per_unit is not None else "",
                 e.effective_from.isoformat(),
+            ])
+        return buf.getvalue()
+
+    # ── 그룹 단위 플랫 행 import/export (move/service 포함) ──────
+    def _parse_group_rows(self, csv_text: str):
+        """플랫 CSV → List[FlatRateEntryRequest], errors. (lazy import 로 순환참조 회피)"""
+        from rate_group.schemas.request import FlatRateEntryRequest
+        rows = []
+        errors: List[ImportRowError] = []
+        reader = csv.DictReader(io.StringIO(csv_text))
+        for i, raw in enumerate(reader, start=1):
+            try:
+                eff = (raw.get("effective_from") or "").strip()
+                if not eff:
+                    raise ValueError("effective_from 필수")
+                mv = (raw.get("move_type") or "").strip() or None
+                sv = (raw.get("service_type") or "").strip() or None
+                size = (raw.get("container_size") or "").strip() or None
+                rows.append(FlatRateEntryRequest(
+                    move_type=RateMoveType(mv) if mv else None,
+                    service_type=RateServiceType(sv) if sv else None,
+                    from_zone_id=_opt_int(raw.get("from_zone_id")),
+                    to_zone_id=_opt_int(raw.get("to_zone_id")),
+                    from_city=(raw.get("from_city") or "").strip() or None,
+                    from_state=(raw.get("from_state") or "").strip() or None,
+                    to_city=(raw.get("to_city") or "").strip() or None,
+                    to_state=(raw.get("to_state") or "").strip() or None,
+                    container_size=RateContainerSize(size) if size else None,
+                    amount=_opt_dec(raw.get("amount")),
+                    per_unit=_opt_dec(raw.get("per_unit")),
+                    effective_from=date.fromisoformat(eff),
+                    source=RateEntrySource.IMPORT,
+                    reason="CSV import",
+                ))
+            except (ValueError, KeyError) as e:
+                errors.append(ImportRowError(row=i, message=str(e)))
+        return rows, errors
+
+    async def import_group_entries(self, group_id: int, csv_text: str, dry_run: bool, actor_user_id: int | None) -> CsvImportReport:
+        from rate_group.entry_service import RateGroupEntryService
+        rows, errors = self._parse_group_rows(csv_text)
+        if errors:
+            return CsvImportReport(ok=False, total=len(rows) + len(errors), applied=0, dry_run=dry_run, errors=errors)
+        if dry_run:
+            return CsvImportReport(ok=True, total=len(rows), applied=0, dry_run=True)
+        svc = RateGroupEntryService(self.db, self.team_id)
+        for row in rows:
+            await svc.set_entry(group_id, row, actor_user_id=actor_user_id)
+        return CsvImportReport(ok=True, total=len(rows), applied=len(rows), dry_run=False)
+
+    async def export_group_entries(self, group_id: int) -> str:
+        from rate_group.entry_service import RateGroupEntryService
+        resp = await RateGroupEntryService(self.db, self.team_id).list_entries(group_id)
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(_GROUP_HEADER)
+        for r in resp.rows:
+            w.writerow([
+                r.move_type.value if r.move_type else "", r.service_type.value if r.service_type else "",
+                r.from_zone_id or "", r.to_zone_id or "", r.from_city or "", r.from_state or "",
+                r.to_city or "", r.to_state or "",
+                r.container_size.value if r.container_size else "",
+                r.amount if r.amount is not None else "", r.per_unit if r.per_unit is not None else "",
+                r.effective_from.isoformat(),
             ])
         return buf.getvalue()
 

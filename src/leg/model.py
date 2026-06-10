@@ -60,11 +60,12 @@ class LegModel(Base, TeamScopedMixin):
         SAEnum(LegMoveCode, name="leg_move_code"), nullable=True,
     )
 
-    # ── 재설계: 요율 해석 입력 (RateResolver 가 사용) ──────────────
-    # row_point(터미널/야드) + 목적지(zip/city) + 거리/시간. 정산 시 driver→그룹→method 로 해석.
-    rate_point_id: Mapped[int | None] = mapped_column(
-        ForeignKey("rate_point.id", ondelete="SET NULL"), nullable=True,
-    )
+    # ── 재설계(Zone×Zone): 요율 해석 입력 (RateResolver 가 사용) ──────────────
+    # 출발(from_point 자동채움) + 도착(to_point 자동채움) zip/city + 거리/시간.
+    # 정산 시 driver→그룹→method(ZONE: from_zip→from_zone, dest_zip→to_zone)로 해석.
+    origin_zip:   Mapped[str | None] = mapped_column(String(16), nullable=True)
+    origin_city:  Mapped[str | None] = mapped_column(String(120), nullable=True)
+    origin_state: Mapped[str | None] = mapped_column(String(8), nullable=True)
     dest_zip:   Mapped[str | None] = mapped_column(String(16), nullable=True)
     dest_city:  Mapped[str | None] = mapped_column(String(120), nullable=True)
     dest_state: Mapped[str | None] = mapped_column(String(8), nullable=True)

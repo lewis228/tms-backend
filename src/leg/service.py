@@ -57,14 +57,14 @@ class LegService:
             if pt is not None:
                 data[type_key] = pt
 
-    async def _autofill_dest_from_point(self, data: dict) -> None:
-        """to_point 마스터(terminal/location/customer)의 zip_id → zip_code 조회 →
-        dest_zip/city/state 자동 스냅샷. 명시 입력값(override)은 안 덮는다.
-        도착지 마스터에 zip 없으면 폴백(수동). 정산(ZONE/CITY)의 dest 입력."""
-        if any(data.get(k) for k in ("dest_zip", "dest_city", "dest_state")):
+    async def _autofill_loc_from_point(self, data: dict, *, point_key: str, prefix: str) -> None:
+        """point_key(from_point_id/to_point_id) 마스터(terminal/location/customer)의 zip_id →
+        zip_code 조회 → {prefix}_zip/city/state 자동 스냅샷. 명시 입력값(override)은 안 덮는다.
+        정산(Zone×Zone)의 origin(from)/dest(to) 입력. 마스터에 zip 없으면 폴백(수동)."""
+        if any(data.get(f"{prefix}_{s}") for s in ("zip", "city", "state")):
             return  # override 우선
-        to_pid = data.get("to_point_id")
-        if to_pid is None:
+        pid = data.get(point_key)
+        if pid is None:
             return
         from sqlalchemy import select
         from container_stop.model import ContainerStopModel
@@ -73,7 +73,7 @@ class LegService:
 
         stop = (await self.db.execute(select(ContainerStopModel).where(
             ContainerStopModel.team_id == self.team_id,
-            ContainerStopModel.id == to_pid,
+            ContainerStopModel.id == pid,
         ))).scalar_one_or_none()
         if stop is None:
             return
@@ -99,9 +99,14 @@ class LegService:
 
         zc = (await self.db.execute(select(ZipCodeModel).where(ZipCodeModel.id == zip_id))).scalar_one_or_none()
         if zc is not None:
-            data["dest_zip"] = zc.zip
-            data["dest_city"] = zc.city
-            data["dest_state"] = zc.state
+            data[f"{prefix}_zip"] = zc.zip
+            data[f"{prefix}_city"] = zc.city
+            data[f"{prefix}_state"] = zc.state
+
+    async def _autofill_rate_points(self, data: dict) -> None:
+        """출발(from_point→origin) + 도착(to_point→dest) 둘 다 자동채움."""
+        await self._autofill_loc_from_point(data, point_key="from_point_id", prefix="origin")
+        await self._autofill_loc_from_point(data, point_key="to_point_id", prefix="dest")
 
     # ═══════════════════════════════════════════════════════════════
     # Create (단건)
@@ -114,7 +119,7 @@ class LegService:
     ) -> LegResponseSchema:
         data = payload.model_dump()
         await self._snapshot_point_types(data)
-        await self._autofill_dest_from_point(data)
+        await self._autofill_rate_points(data)
         row = await self.repo.create(
             data,
             actor_user_id=actor_user_id,
@@ -156,7 +161,7 @@ class LegService:
         for item in payload.items:
             data = item.model_dump()
             await self._snapshot_point_types(data)
-            await self._autofill_dest_from_point(data)
+            await self._autofill_rate_points(data)
             row = await self.repo.create(
                 data,
                 actor_user_id=actor_user_id,
@@ -235,7 +240,7 @@ class LegService:
         await self._snapshot_point_types(data)
         # to_point_id 가 바뀌면 dest 도 자동 갱신(명시 dest override 우선).
         # helper 는 data 에 to_point_id 가 있을 때만 동작 → 다른 필드만 수정 시 무영향.
-        await self._autofill_dest_from_point(data)
+        await self._autofill_rate_points(data)
         row = await self.repo.update(
             leg_id,
             data,
@@ -406,7 +411,7 @@ class LegService:
             to_point_id=orig.to_point_id,
             from_location_type=orig.from_location_type,
             to_location_type=orig.to_location_type,
-            rate_point_id=orig.rate_point_id,
+            origin_zip=orig.origin_zip, origin_city=orig.origin_city, origin_state=orig.origin_state,
             dest_zip=orig.dest_zip, dest_city=orig.dest_city, dest_state=orig.dest_state,
             rate_miles=orig.rate_miles, rate_hours=orig.rate_hours,
             status=LegStatus.PENDING,

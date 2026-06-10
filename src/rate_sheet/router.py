@@ -41,7 +41,7 @@ async def create_rate_sheet(
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
-    """Rate Sheet(슬롯) 생성 — (group,kind,move_type,row_point) 단위. 쓰기 권한 필요."""
+    """Rate Sheet(슬롯) 생성 — (group,kind,move_type,service_type) 단위. 쓰기 권한 필요."""
     return await RateSheetService(db, team_id).create_sheet(body, actor_user_id=int(me.id))
 
 
@@ -173,10 +173,12 @@ async def get_rate_sheet_history(
 async def lookup_rate_entry(
     sheet_id: int,
     work_date: date = Query(..., description="조회 기준일"),
-    col_zone_id: Optional[int] = Query(default=None),
-    col_point_id: Optional[int] = Query(default=None),
-    col_city: Optional[str] = Query(default=None),
-    col_state: Optional[str] = Query(default=None),
+    from_zone_id: Optional[int] = Query(default=None),
+    to_zone_id: Optional[int] = Query(default=None),
+    from_city: Optional[str] = Query(default=None),
+    from_state: Optional[str] = Query(default=None),
+    to_city: Optional[str] = Query(default=None),
+    to_state: Optional[str] = Query(default=None),
     container_size: Optional[RateContainerSize] = Query(default=None),
     _1: None = Depends(access_token),
     team_id: int = Depends(get_team_scope),
@@ -184,7 +186,8 @@ async def lookup_rate_entry(
 ):
     """work_date 기준 셀 단가 조회(미등록이면 found=False)."""
     cell = {
-        "col_zone_id": col_zone_id, "col_point_id": col_point_id,
-        "col_city": col_city, "col_state": col_state, "container_size": container_size,
+        "from_zone_id": from_zone_id, "to_zone_id": to_zone_id,
+        "from_city": from_city, "from_state": from_state,
+        "to_city": to_city, "to_state": to_state, "container_size": container_size,
     }
     return await RateSheetService(db, team_id).lookup(sheet_id, cell, work_date)

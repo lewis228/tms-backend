@@ -17,11 +17,10 @@ RUN useradd -m -u 10001 appuser \
  && mkdir -p /app/logs /app/public \
  && chown -R appuser:appuser /app
 
-COPY --chown=appuser:appuser pyproject.toml /app/pyproject.toml
+# src 레이아웃(packages.find where=["src"])이라 빌드 시 소스가 있어야 한다 → 전체 복사 후 설치.
+COPY --chown=appuser:appuser . /app
 RUN pip install --upgrade pip \
  && pip install --no-cache-dir .
-
-COPY --chown=appuser:appuser . /app
 
 EXPOSE 8080
 

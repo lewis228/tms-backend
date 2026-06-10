@@ -19,8 +19,8 @@ from payroll.flag_charges import collect_leg_flag_charges
 async def compute_do_cost(db: AsyncSession, team_id: int, do_id: int) -> tuple[Decimal, dict[int | None, Decimal]]:
     """D/O 의 COMPLETED leg 원가 합계 + 컨테이너별 원가 맵 반환.
 
-    각 leg 원가 = 기본료(RateResolver base) + leg 단위 Flag(Add-on/Charge Event/Stop Off) 합산.
-    컨플루언스: 고객 청구 원가도 leg 의 3-Layer 를 다 합산(기사 정산과 같은 요금줄, cost-plus 의 cost 축).
+    각 leg 원가 = 기본료(RateResolver base) + leg 단위 Add-on(중복 가능) 합산.
+    컨플루언스: 고객 청구 원가도 leg 의 add-on(옛 Layer2/3 통합)을 다 합산(기사 정산과 같은 요금줄, cost-plus 의 cost 축).
     returns (total_cost, {container_id: cost}) — container_id None 은 컨테이너 미지정 leg.
     """
     legs = list((await db.execute(select(LegModel).where(

@@ -460,6 +460,9 @@ class LegService:
             #  exclude_unset=True 사용
             data = item.model_dump(exclude_unset=True)
             data.pop('id', None)  # id는 제외
+            # 단건 update 와 동일하게 point_type 스냅샷 + origin/dest 자동채움.
+            await self._snapshot_point_types(data)
+            await self._autofill_rate_points(data)
             row = await self.repo.update(
                 item.id,
                 data,

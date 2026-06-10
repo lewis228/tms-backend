@@ -52,7 +52,7 @@ class RateZoneMemberModel(Base, TeamScopedMixin):
     """Zone 의 zip 멤버 (라인) — zip→zone 조회 인덱스의 진실.
 
     조회는 폴리곤 연산이 아니라 이 테이블의 zip_code 매칭으로 한다.
-    (존 = zip 묶음. 도시별 요율은 CITY 방식의 rate_entry.col_city 가 별도 담당.)
+    (존 = zip 묶음. 도시별 요율은 CITY 방식의 rate_entry(from_city/to_city) 가 별도 담당.)
     Excel import 로 대량 채운다.
     """
     __tablename__ = "rate_zone_member"

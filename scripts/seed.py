@@ -466,10 +466,12 @@ async def seed(db: AsyncSession):
     db.add(settle)
     await db.flush()
     db.add_all([
+        # leg_imp1(LOADED/LIVE, port→IE) work_date 2026-06-09 → 유효요율 310(2026-06-01부) 과 일치.
         PayrollLineModel(team_id=tid, settlement_id=settle.id, leg_id=leg_imp1.id, work_date=date(2026, 6, 9),
-                         base_amount=D("285.00"), source=PayrollLineSource.RESOLVED, created_by_user_id=aid),
+                         base_amount=D("310.00"), source=PayrollLineSource.RESOLVED, created_by_user_id=aid),
+        # leg_imp2(EMPTY/DROP) 는 해당 시트 미존재 → 실제 정산이면 unresolved. 데모용 수기값.
         PayrollLineModel(team_id=tid, settlement_id=settle.id, leg_id=leg_imp2.id, work_date=date(2026, 6, 9),
-                         base_amount=D("285.00"), source=PayrollLineSource.RESOLVED, created_by_user_id=aid),
+                         base_amount=D("180.00"), source=PayrollLineSource.MANUAL, created_by_user_id=aid),
     ])
     db.add_all([
         PayrollChargeModel(team_id=tid, settlement_id=settle.id, addon_id=(addon_ngt.id if addon_ngt else None),

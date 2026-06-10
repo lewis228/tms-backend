@@ -109,6 +109,8 @@ class RateZoneRepository(TeamScopedRepoMixin):
                 RateZoneMemberModel.zip_code == zip_code,
                 RateZoneModel.is_active.is_(True),
             )
+            # zip 이 (실수로) 여러 존에 들어가도 결정적으로 가장 작은 zone_id 선택.
+            .order_by(RateZoneMemberModel.zone_id.asc())
             .limit(1)
         )
         return (await self.db.execute(q)).scalar_one_or_none()

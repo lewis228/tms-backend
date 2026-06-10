@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from rate_sheet.repository import RateSheetRepository
+from rate_sheet.repository import RateSheetRepository, _CELL_KEYS
 from rate_sheet import lookup
 from rate_sheet.const.status import SheetKind, RateMoveType, RateServiceType, RateContainerSize
 from rate_sheet.schemas.response import RateResolveResultSchema
@@ -62,9 +62,7 @@ class RateResolver:
             sheet = await self.sheet_repo.find_slot(gid, kind, None)
             if sheet is None:
                 return _fail(f"{method.value} 시트가 없습니다.", method=method.value, rate_group_id=gid)
-            empty_cell = {k: None for k in (
-                "from_zone_id", "to_zone_id", "from_city", "from_state", "to_city", "to_state", "container_size",
-            )}
+            empty_cell = {k: None for k in _CELL_KEYS}
             lk = await lookup.resolve_cell(self.sheet_repo, sheet.id, empty_cell, work_date)
             if not lk.found or lk.per_unit is None:
                 return _fail(lk.message or "단가 미등록", method=method.value, rate_group_id=gid, rate_sheet_id=sheet.id)

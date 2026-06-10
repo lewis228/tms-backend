@@ -66,6 +66,15 @@ class FlatRateEntryRequest(RequestSchema):
     def _validate_value(self):
         if self.amount is None and self.per_unit is None:
             raise ValueError("amount 또는 per_unit 중 하나는 필요합니다.")
+        if self.amount is not None and self.amount < 0:
+            raise ValueError("amount 는 0 이상이어야 합니다.")
+        if self.per_unit is not None and self.per_unit < 0:
+            raise ValueError("per_unit 은 0 이상이어야 합니다.")
+        # 좌표 쌍 정합성: from/to 는 둘 다 있거나 둘 다 없어야(반쪽 셀 방지).
+        if (self.from_zone_id is None) != (self.to_zone_id is None):
+            raise ValueError("from_zone_id 와 to_zone_id 는 함께 지정해야 합니다.")
+        if bool(self.from_city) != bool(self.to_city):
+            raise ValueError("from_city 와 to_city 는 함께 지정해야 합니다.")
         return self
 
 

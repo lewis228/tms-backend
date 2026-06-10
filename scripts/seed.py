@@ -1,0 +1,572 @@
+# scripts/seed.py
+"""TMS 통합 시드 — DB를 통째로 비우고 모든 테이블에 데이터를 한 번에 채운다.
+
+- 실행:   PYTHONPATH=src python scripts/seed.py
+- 멱등:   매 실행마다 전 테이블 TRUNCATE 후 새로 삽입 → 항상 동일한 깨끗한 상태.
+- 로그인: test@test.com / 1234  (role=ADMIN, 팀 ADMIN 권한그룹 → 모든 화면 접근)
+- 커버:   alembic_version 제외 모든 비즈니스 테이블(49개)에 ≥1 행. 말미에 전수 단언.
+
+기존 seed_local.py / seed_redesign_demo.py / e2e_redesign.py 를 하나로 통합.
+"""
+from __future__ import annotations
+import asyncio
+from datetime import date, datetime, timezone
+from decimal import Decimal
+
+import bcrypt
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+import common.model.models_registry  # noqa: F401  (49개 모델 전부 등록)
+from common.model.base_model import Base
+from database.mysql_connection import write_engine
+
+# ── 로그인 ───────────────────────────────────────────────────
+LOGIN_EMAIL = "test@test.com"
+LOGIN_PW = "1234"
+NOW = datetime(2026, 6, 9, 10, 0, tzinfo=timezone.utc)
+TODAY = date(2026, 6, 9)
+
+
+def _hash(pw: str) -> str:
+    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+
+
+def banner(m: str):
+    print(f"\n{'=' * 10} {m} {'=' * 10}")
+
+
+async def wipe(db: AsyncSession):
+    """alembic_version 제외 전 테이블 TRUNCATE (FK 무시)."""
+    banner("WIPE — 전 테이블 비우기")
+    names = [r[0] for r in (await db.execute(text("SHOW TABLES"))).all()]
+    await db.execute(text("SET FOREIGN_KEY_CHECKS=0"))
+    for n in names:
+        if n == "alembic_version":
+            continue
+        await db.execute(text(f"TRUNCATE TABLE `{n}`"))
+    await db.execute(text("SET FOREIGN_KEY_CHECKS=1"))
+    await db.commit()
+    print(f"  {len(names) - 1}개 테이블 비움")
+
+
+async def seed(db: AsyncSession):
+    # ── enum / model imports ──────────────────────────────────
+    from user.model import UserModel
+    from user.const.roles import RolesEnum
+    from team.model import TeamModel, UserTeamModel
+    from rbac.model import PermissionModel, PermissionGroupModel, PermissionGroupPermission
+    from rbac.const.const import ALL_PERMISSION_CODES, GROUP_DEFAULTS_BY_SYSTEM_KEY
+    from file.model import FileAssetModel
+    from file.const.domains import FileDomain
+    from customer.model import CustomerModel
+    from customer.const.status import PartnerKind
+    from terminal.model import TerminalModel
+    from vessel.model import VesselModel
+    from location.model import LocationModel
+    from location.const.kind import LocationKind
+    from equipment_pool.model import EquipmentPoolModel
+    from equipment_pool.const.status import EquipmentPoolKind
+    from driver.model import DriverModel
+    from driver.const.status import DutyStatus, EmploymentKind, PaymentTermsKind
+    from truck.model import TruckModel
+    from truck.const.status import TruckOwnerKind, TruckStatus
+    from chassis.model import ChassisModel
+    from chassis.const.status import ChassisSize, ChassisOwnerKind, ChassisStatus
+    from addon.service import AddonService
+    from addon.model import AddonModel
+    from addon.const.status import AddonCategory, AddonUnit
+    from rate_point.model import RatePointModel
+    from rate_point.const.status import PointType as RatePointType
+    from rate_zone.model import RateZoneModel, RateZoneMemberModel
+    from rate_group.model import RateGroupModel
+    from rate_group.const.status import RateMethod
+    from rate_multiplier.model import RateMultiplierModel
+    from rate_sheet.model import RateSheetModel
+    from rate_sheet.const.status import SheetKind, RateMoveType, RateContainerSize, RateEntrySource
+    from rate_sheet.repository import RateSheetRepository
+    from rate_sheet import versioning
+    from driver_rate_assignment.model import DriverRateAssignmentModel
+    from load_type_template.service import LoadTypeTemplateService
+    from delivery_order.model import DeliveryOrderModel, DeliveryOrderAddonModel
+    from delivery_order.const.status import DeliveryStatus, ShipmentDirection
+    from container.model import ContainerModel, ContainerEventModel
+    from container.const.status import ContainerSize, ContainerEventKind
+    from container_stop.model import ContainerStopModel
+    from leg.model import LegModel
+    from leg.const.status import (
+        PointType, MoveType, ServiceType, ContainerState, LegStatus,
+        LegMoveCode, HandoverReason, ChassisEventKind,
+    )
+    from leg_layer.model import LegAddonModel
+    from leg_driver_segment.model import LegDriverSegmentModel
+    from chassis_event.model import ChassisEventModel
+    from street_turn.model import StreetTurnModel
+    from street_turn.const.link_type import StreetTurnLinkType
+    from street_turn.const.status import StreetTurnStatus
+    from dual_transaction.model import DualTransactionModel
+    from dual_transaction.const.status import DualTransactionStatus
+    from payroll.model import PayrollSettlementModel, PayrollLineModel, PayrollChargeModel
+    from payroll.const.status import PayrollStatus, PayrollLineSource
+    from invoice.model import InvoiceModel, InvoiceLineModel
+    from invoice.const.status import InvoiceStatus, InvoiceLineSource
+    from notification.model import NotificationModel
+    from notification.const.channel import NotificationChannel, NotificationStatus
+    from chat.model import ChatMessageModel
+    from chat.const.sender import ChatSenderType
+    from location_ping.model import LocationPingModel
+    from push_token.model import PushTokenModel
+    from api_key.model import ApiKeyModel
+    from audit_log.model import AuditLogModel
+
+    D = Decimal
+
+    # ── 1. RBAC / 전역 ────────────────────────────────────────
+    banner("RBAC · 유저 · 팀")
+    perms = [PermissionModel(code=c, label=c.replace("_", " ").title(), category="seed",
+                             description=f"{c} permission") for c in ALL_PERMISSION_CODES]
+    db.add_all(perms)
+    await db.flush()
+    code_to_pid = {p.code: p.id for p in perms}
+
+    admin = UserModel(email=LOGIN_EMAIL, password=_hash(LOGIN_PW), auth_provider="EMAIL",
+                      role=RolesEnum.ADMIN, name="Test Admin", phone="+1-310-000-0001")
+    dispatcher = UserModel(email="dispatch@test.com", password=_hash(LOGIN_PW), auth_provider="EMAIL",
+                           role=RolesEnum.DISPATCHER, name="Dana Dispatcher", phone="+1-310-000-0002")
+    duser = [
+        UserModel(email=f"driver{i}@test.com", password=_hash(LOGIN_PW), auth_provider="EMAIL",
+                  role=RolesEnum.DRIVER, name=f"Driver {i}", phone=f"+1-310-000-01{i:02d}")
+        for i in (1, 2, 3)
+    ]
+    db.add_all([admin, dispatcher, *duser])
+    await db.flush()
+    aid = admin.id
+
+    team = TeamModel(
+        name="TMS Demo Drayage Co", onboarding_step1_done=True, onboarding_step2_done=True,
+        onboarding_step3_done=True, onboarding_completed=True, currency="USD", currency_symbol="$",
+        decimal_places=2, timezone="America/Los_Angeles", company_name="TMS Demo Drayage Co.",
+        representative_name="Test Admin", phone_number="+1-310-555-1000", address="123 Harbor Blvd, Long Beach, CA",
+        created_by_user_id=aid,
+    )
+    db.add(team)
+    await db.flush()
+    tid = team.id
+
+    # 권한 그룹 3종 (ADMIN/MEMBER/VIEWER) + 매핑
+    groups = {}
+    for key, name in (("ADMIN", "Administrators"), ("MEMBER", "Dispatchers"), ("VIEWER", "Viewers")):
+        g = PermissionGroupModel(team_id=tid, name=name, is_admin=(key == "ADMIN"),
+                                 is_system=True, system_key=key, version=1, created_by_user_id=aid)
+        db.add(g)
+        await db.flush()
+        groups[key] = g
+        for code in GROUP_DEFAULTS_BY_SYSTEM_KEY.get(key, []):
+            pid = code_to_pid.get(code)
+            if pid:
+                db.add(PermissionGroupPermission(team_id=tid, group_id=g.id, permission_id=pid))
+
+    # 멤버십
+    db.add(UserTeamModel(user_id=admin.id, team_id=tid, permission_group_id=groups["ADMIN"].id))
+    db.add(UserTeamModel(user_id=dispatcher.id, team_id=tid, permission_group_id=groups["MEMBER"].id))
+    for u in duser:
+        db.add(UserTeamModel(user_id=u.id, team_id=tid, permission_group_id=None))  # driver=role 가드
+    await db.flush()
+    print(f"  team={tid}, 권한 {len(perms)}개, 그룹 3, 로그인 {LOGIN_EMAIL}/{LOGIN_PW}")
+
+    # ── 2. 마스터 데이터 ──────────────────────────────────────
+    banner("마스터 데이터")
+    cust = CustomerModel(team_id=tid, name="ACME Importers", code="ACME", kind=PartnerKind.CUSTOMER,
+                         contact_name="Amy Chen", contact_email="amy@acme.com", contact_phone="+1-213-555-0101",
+                         billing_address="500 Cargo Way, Los Angeles, CA", payment_terms_days=30, created_by_user_id=aid)
+    carrier = CustomerModel(team_id=tid, name="Blue Line Carrier", code="BLUE", kind=PartnerKind.CARRIER,
+                            mc_number="MC-998877", dot_number="DOT-223344", insurance_expires_at=date(2027, 1, 31),
+                            contact_email="ops@blueline.com", created_by_user_id=aid)
+    broker = CustomerModel(team_id=tid, name="Pacific Broker Group", code="PBG", kind=PartnerKind.BROKER, created_by_user_id=aid)
+    vendor = CustomerModel(team_id=tid, name="Yard Services Vendor", code="YSV", kind=PartnerKind.VENDOR, created_by_user_id=aid)
+    db.add_all([cust, carrier, broker, vendor])
+    await db.flush()
+
+    term1 = TerminalModel(team_id=tid, name="APM Terminals Pier 400", code="APM4",
+                          address="2500 Navy Way, San Pedro, CA", latitude=D("33.730"), longitude=D("-118.260"), created_by_user_id=aid)
+    term2 = TerminalModel(team_id=tid, name="LBCT Long Beach", code="LBCT",
+                          address="1521 Pier G Ave, Long Beach, CA", latitude=D("33.752"), longitude=D("-118.205"), created_by_user_id=aid)
+    db.add_all([term1, term2])
+
+    ves1 = VesselModel(team_id=tid, name="MAERSK ESSEX", imo_number="9456789", line="Maersk", created_by_user_id=aid)
+    ves2 = VesselModel(team_id=tid, name="ONE TRIUMPH", imo_number="9789456", line="ONE", created_by_user_id=aid)
+    db.add_all([ves1, ves2])
+
+    loc_yard = LocationModel(team_id=tid, name="Carson Yard", kind=LocationKind.YARD,
+                             address="18000 S Main St, Carson, CA", latitude=D("33.831"), longitude=D("-118.281"), created_by_user_id=aid)
+    loc_cust = LocationModel(team_id=tid, name="ACME DC Fontana", kind=LocationKind.CUSTOMER,
+                             address="15000 Valley Blvd, Fontana, CA", latitude=D("34.092"), longitude=D("-117.435"),
+                             customer_id=cust.id, created_by_user_id=aid)
+    loc_port = LocationModel(team_id=tid, name="POLA Gate", kind=LocationKind.PORT,
+                             latitude=D("33.742"), longitude=D("-118.272"), created_by_user_id=aid)
+    loc_other = LocationModel(team_id=tid, name="Truck Wash Wilmington", kind=LocationKind.OTHER, created_by_user_id=aid)
+    db.add_all([loc_yard, loc_cust, loc_port, loc_other])
+    await db.flush()
+
+    pool1 = EquipmentPoolModel(team_id=tid, name="TRAC Pool LA", kind=EquipmentPoolKind.THIRD_PARTY_POOL,
+                               operator="TRAC Intermodal", location_id=loc_yard.id, created_by_user_id=aid)
+    pool2 = EquipmentPoolModel(team_id=tid, name="APM Terminal Pool", kind=EquipmentPoolKind.TERMINAL_POOL,
+                               operator="APM", location_id=loc_port.id, created_by_user_id=aid)
+    db.add_all([pool1, pool2])
+    await db.flush()
+
+    # 드라이버 (user 링크) — default_truck/chassis 는 나중에 update (순환 FK)
+    drivers = []
+    for i, u in enumerate(duser, start=1):
+        drv = DriverModel(
+            team_id=tid, user_id=u.id, license_number=f"CDL-{1000 + i}", license_state="CA",
+            duty_status=DutyStatus.ON_DUTY if i == 1 else DutyStatus.OFF_DUTY,
+            employment_kind=EmploymentKind.IN_HOUSE if i < 3 else EmploymentKind.CARRIER_DRIVER,
+            carrier_id=carrier.id if i == 3 else None,
+            payment_terms_kind=PaymentTermsKind.PER_LEG if i < 3 else PaymentTermsKind.PERCENT_OF_REVENUE,
+            payment_terms_value=D("150") if i < 3 else D("0.72"),
+            license_expires_at=date(2028, 5, 31), hire_date=date(2024, 1, 15), created_by_user_id=aid,
+        )
+        db.add(drv)
+        drivers.append(drv)
+    await db.flush()
+
+    trucks = [
+        TruckModel(team_id=tid, plate_no=f"CA-TRK{100 + i}", vin=f"1FUJA6CV{i:06d}", make="Freightliner",
+                   model="Cascadia", year=2022, owner_kind=TruckOwnerKind.COMPANY, status=TruckStatus.ACTIVE,
+                   insurance_expires_at=date(2027, 3, 31), created_by_user_id=aid)
+        for i in (1, 2, 3)
+    ]
+    db.add_all(trucks)
+    await db.flush()
+
+    chassis = [
+        ChassisModel(team_id=tid, chassis_number=f"CHS-{200 + i}", size=ChassisSize.SIZE_40,
+                     owner_kind=ChassisOwnerKind.THIRD_PARTY_POOL, owner_pool_id=pool1.id,
+                     status=ChassisStatus.AVAILABLE, current_location_id=loc_yard.id, created_by_user_id=aid)
+        for i in (1, 2, 3)
+    ]
+    db.add_all(chassis)
+    await db.flush()
+
+    # 순환 FK 마무리: 드라이버 기본 트럭/샤시
+    for drv, trk, chs in zip(drivers, trucks, chassis):
+        drv.default_truck_id = trk.id
+        drv.default_chassis_id = chs.id
+    await db.flush()
+    print("  customer×4, terminal×2, vessel×2, location×4, pool×2, driver×3, truck×3, chassis×3")
+
+    # ── 3. Add-on 마스터 (시스템 시드 + per-driver override) ───
+    banner("Add-on 마스터")
+    await AddonService(db, tid).seed_defaults(actor_user_id=aid)
+    await db.flush()
+    db.add(AddonModel(team_id=tid, code="FUEL", name="Fuel (Driver Override)", category=AddonCategory.FUEL,
+                      unit=AddonUnit.PERCENT, percent=D("0.18"), driver_id=drivers[0].id,
+                      is_billable_to_customer=True, is_payable_to_driver=True, created_by_user_id=aid))
+    await db.flush()
+    addon_ngt = (await db.execute(text(
+        "SELECT id, code FROM addon WHERE team_id=:t AND code='NGT' AND driver_id IS NULL LIMIT 1"
+    ), {"t": tid})).first()
+    print("  addon seed_defaults + FUEL per-driver override")
+
+    # ── 4. 요율 서브시스템 ────────────────────────────────────
+    banner("요율 (rate_*)")
+    rp_term = RatePointModel(team_id=tid, name="APM Pier 400", code="APM4", point_type=RatePointType.TERMINAL,
+                             terminal_id=term1.id, latitude=D("33.730"), longitude=D("-118.260"), created_by_user_id=aid)
+    rp_yard = RatePointModel(team_id=tid, name="Carson Yard", code="CARY", point_type=RatePointType.YARD,
+                             location_id=loc_yard.id, created_by_user_id=aid)
+    db.add_all([rp_term, rp_yard])
+
+    zone = RateZoneModel(team_id=tid, name="Inland Empire", code="IE", color="#3b82f6",
+                         description="Fontana / Ontario / Riverside", created_by_user_id=aid)
+    db.add(zone)
+    await db.flush()
+    db.add_all([
+        RateZoneMemberModel(team_id=tid, zone_id=zone.id, zip_code="92335", city="Fontana", state="CA"),
+        RateZoneMemberModel(team_id=tid, zone_id=zone.id, zip_code="91761", city="Ontario", state="CA"),
+    ])
+
+    grp_zone = RateGroupModel(team_id=tid, name="Default ZONE Rates", method=RateMethod.ZONE, is_default=True,
+                              description="기본 존 기반 요율", created_by_user_id=aid)
+    grp_mile = RateGroupModel(team_id=tid, name="Mileage Rates", method=RateMethod.MILE,
+                              description="마일당 요율", created_by_user_id=aid)
+    db.add_all([grp_zone, grp_mile])
+    await db.flush()
+
+    db.add_all([
+        RateMultiplierModel(team_id=tid, rate_group_id=grp_zone.id, container_size=RateContainerSize.SIZE_20,
+                            factor=D("0.85"), note="20ft 할인", created_by_user_id=aid),
+        RateMultiplierModel(team_id=tid, rate_group_id=grp_zone.id, container_size=RateContainerSize.SIZE_45,
+                            factor=D("1.15"), note="45ft 할증", created_by_user_id=aid),
+    ])
+
+    sheet = RateSheetModel(team_id=tid, rate_group_id=grp_zone.id, kind=SheetKind.POINT_ZONE,
+                           move_type=RateMoveType.LOAD, row_point_id=rp_term.id, created_by_user_id=aid)
+    db.add(sheet)
+    await db.flush()
+    # rate_entry + rate_entry_history 둘 다 생성
+    await versioning.set_rate(
+        RateSheetRepository(db, tid), sheet.id,
+        {"col_zone_id": zone.id, "col_point_id": None, "col_city": None, "col_state": None,
+         "container_size": RateContainerSize.SIZE_40},
+        amount=D("285.00"), per_unit=None, effective_from=date(2026, 1, 1),
+        source=RateEntrySource.SHEET, reason="seed initial", actor_user_id=aid,
+    )
+    # 단가 변경(이력 한 줄 더)
+    await versioning.set_rate(
+        RateSheetRepository(db, tid), sheet.id,
+        {"col_zone_id": zone.id, "col_point_id": None, "col_city": None, "col_state": None,
+         "container_size": RateContainerSize.SIZE_40},
+        amount=D("310.00"), per_unit=None, effective_from=date(2026, 6, 1),
+        source=RateEntrySource.MANUAL, reason="rate increase", actor_user_id=aid,
+    )
+    for drv in drivers:
+        db.add(DriverRateAssignmentModel(team_id=tid, driver_id=drv.id, rate_group_id=grp_zone.id,
+                                         effective_from=date(2026, 1, 1), created_by_user_id=aid))
+    await db.flush()
+    print("  rate_point×2, zone+member×2, group×2, multiplier×2, sheet+entry+history, assignment×3")
+
+    # ── 5. Load Type 템플릿 (시스템 시드) ─────────────────────
+    banner("Load Type 템플릿")
+    await LoadTypeTemplateService(db, tid).seed_defaults(actor_user_id=aid)
+    await db.flush()
+    print("  load_type_template + steps (시스템 시드)")
+
+    # ── 6. D/O 워크플로우 ─────────────────────────────────────
+    banner("D/O · 컨테이너 · Point · 이벤트")
+    do_imp = DeliveryOrderModel(team_id=tid, customer_id=cust.id, direction=ShipmentDirection.IMPORT,
+                                status=DeliveryStatus.DISPATCHED, bl_number="MAEU-1234567", booking_number="BK-IMP-001",
+                                reference="PO-99001", terminal_id=term1.id, vessel_id=ves1.id, eta=NOW,
+                                bl_released=True, internal_note="우선 처리", created_by_user_id=aid)
+    do_exp = DeliveryOrderModel(team_id=tid, customer_id=cust.id, direction=ShipmentDirection.EXPORT,
+                                status=DeliveryStatus.PLANNING, bl_number="ONEY-7654321", booking_number="BK-EXP-002",
+                                terminal_id=term2.id, vessel_id=ves2.id, eta=NOW, created_by_user_id=aid)
+    db.add_all([do_imp, do_exp])
+    await db.flush()
+
+    cont_imp = ContainerModel(team_id=tid, delivery_order_id=do_imp.id, sequence_no=1, container_number="MSCU1234567",
+                              seal_no="SEAL-001", size=ContainerSize.SIZE_40HC, type="DRY", weight_kg=D("18500"),
+                              chassis_id=chassis[0].id, service_type=ServiceType.LIVE, status=DeliveryStatus.DISPATCHED,
+                              work_state=ContainerState.IN_TRANSIT, pier_pass_paid=True, customs_cleared=True,
+                              delivery_location_id=loc_cust.id, return_location_id=loc_yard.id,
+                              demurrage_lfd=date(2026, 6, 12), detention_lfd=date(2026, 6, 18), created_by_user_id=aid)
+    cont_exp = ContainerModel(team_id=tid, delivery_order_id=do_exp.id, sequence_no=1, container_number="TCLU7654321",
+                              size=ContainerSize.SIZE_20GP, type="DRY", weight_kg=D("12000"),
+                              service_type=ServiceType.DROP, status=DeliveryStatus.PLANNING,
+                              work_state=ContainerState.PLANNED, created_by_user_id=aid)
+    db.add_all([cont_imp, cont_exp])
+    await db.flush()
+
+    # Point 시퀀스 (각 컨테이너 3 포인트 = 2 레그)
+    def stops_for(cont, points):
+        out = []
+        for seq, (pt, kw) in enumerate(points, start=1):
+            out.append(ContainerStopModel(team_id=tid, container_id=cont.id, sequence_no=seq, point_type=pt,
+                                           planned_arrival=NOW, created_by_user_id=aid, **kw))
+        return out
+
+    imp_stops = stops_for(cont_imp, [
+        (PointType.TERMINAL, {"terminal_id": term1.id}),
+        (PointType.CUSTOMER, {"customer_id": cust.id, "location_id": loc_cust.id}),
+        (PointType.YARD, {"location_id": loc_yard.id}),
+    ])
+    exp_stops = stops_for(cont_exp, [
+        (PointType.YARD, {"location_id": loc_yard.id}),
+        (PointType.CUSTOMER, {"customer_id": cust.id}),
+        (PointType.TERMINAL, {"terminal_id": term2.id}),
+    ])
+    db.add_all([*imp_stops, *exp_stops])
+    await db.flush()
+
+    db.add_all([
+        ContainerEventModel(team_id=tid, container_id=cont_imp.id, event_kind=ContainerEventKind.GATE_OUT,
+                            location_id=loc_port.id, occurred_at=NOW, created_by_user_id=aid),
+        ContainerEventModel(team_id=tid, container_id=cont_imp.id, event_kind=ContainerEventKind.DELIVERED,
+                            location_id=loc_cust.id, occurred_at=NOW, created_by_user_id=aid),
+    ])
+
+    # ── 7. 레그 + add-on + segment ───────────────────────────
+    banner("레그 · leg add-on · 세그먼트")
+
+    def make_leg(do, cont, frm, to, mt, st, status, mc, completed=False, drv=None):
+        return LegModel(
+            team_id=tid, delivery_order_id=do.id, container_id=cont.id, step=DeliveryStatus.DISPATCHED,
+            move_type=mt, service_type=st, from_point_id=frm.id, to_point_id=to.id,
+            from_location_type=frm.point_type, to_location_type=to.point_type, move_code=mc,
+            rate_point_id=rp_term.id, dest_zip="92335", dest_city="Fontana", dest_state="CA",
+            rate_miles=D("58.0"), status=status, driver_id=(drv.id if drv else None),
+            truck_id=(trucks[0].id if drv else None), chassis_id=cont.chassis_id,
+            pickup_date=NOW, completed_at=(NOW if completed else None), is_settled=completed,
+            created_by_user_id=aid,
+        )
+
+    leg_imp1 = make_leg(do_imp, cont_imp, imp_stops[0], imp_stops[1], MoveType.LOADED, ServiceType.LIVE,
+                        LegStatus.COMPLETED, LegMoveCode.PPU, completed=True, drv=drivers[0])
+    leg_imp2 = make_leg(do_imp, cont_imp, imp_stops[1], imp_stops[2], MoveType.EMPTY, ServiceType.DROP,
+                        LegStatus.COMPLETED, LegMoveCode.PRE, completed=True, drv=drivers[0])
+    leg_exp1 = make_leg(do_exp, cont_exp, exp_stops[0], exp_stops[1], MoveType.LOADED, ServiceType.LIVE,
+                        LegStatus.PENDING, LegMoveCode.PPU)
+    leg_exp2 = make_leg(do_exp, cont_exp, exp_stops[1], exp_stops[2], MoveType.EMPTY, ServiceType.NONE,
+                        LegStatus.PENDING, LegMoveCode.PRE)
+    db.add_all([leg_imp1, leg_imp2, leg_exp1, leg_exp2])
+    await db.flush()
+
+    # leg add-on: 일반(NGT) + EXTRA_STOP(STP, 위치형)
+    db.add_all([
+        LegAddonModel(team_id=tid, leg_id=leg_imp1.id, addon_id=(addon_ngt.id if addon_ngt else None),
+                      code="NGT", quantity=D("1"), amount=D("50.00"),
+                      is_payable_to_driver=True, is_billable_to_customer=True, created_by_user_id=aid),
+        LegAddonModel(team_id=tid, leg_id=leg_imp1.id, code="STP", quantity=D("1"), amount=D("30.00"),
+                      is_payable_to_driver=True, is_billable_to_customer=True,
+                      point_type=PointType.CUSTOMER, customer_id=cust.id, location_id=loc_cust.id,
+                      note="Extra stop at DC", created_by_user_id=aid),
+    ])
+    db.add(LegDriverSegmentModel(team_id=tid, leg_id=leg_imp1.id, sequence_no=1, driver_id=drivers[0].id,
+                                 truck_id=trucks[0].id, started_at=NOW, ended_at=NOW,
+                                 handover_reason=HandoverReason.SHIFT_CHANGE, created_by_user_id=aid))
+    db.add(ChassisEventModel(team_id=tid, chassis_id=chassis[0].id, leg_id=leg_imp1.id,
+                             event_kind=ChassisEventKind.PICKED_UP, location_id=loc_port.id,
+                             occurred_at=NOW, created_by_user_id=aid))
+    # D/O 단위 add-on (고객 청구)
+    db.add(DeliveryOrderAddonModel(team_id=tid, delivery_order_id=do_imp.id, code="DMR", quantity=D("2"),
+                                   unit_amount=D("125.00"), amount=D("250.00"), is_payable_to_driver=False,
+                                   is_billable_to_customer=True, note="Demurrage 2 days", created_by_user_id=aid))
+    await db.flush()
+    print("  leg×4(2완료/2대기), leg_addon×2, segment×1, chassis_event×1, do_addon×1, container_event×2")
+
+    # ── 8. Street turn / Dual transaction ─────────────────────
+    banner("Street Turn · Dual Transaction")
+    db.add(StreetTurnModel(team_id=tid, import_order_id=do_imp.id, export_order_id=do_exp.id,
+                           container_id=cont_imp.id, container_number=cont_imp.container_number,
+                           link_type=StreetTurnLinkType.MANUAL, status=StreetTurnStatus.APPROVED,
+                           carrier_approval_no="ST-APPR-001", requested_by=aid, requested_at=NOW,
+                           approved_by=aid, approved_at=NOW, created_by_user_id=aid))
+    db.add(DualTransactionModel(team_id=tid, driver_id=drivers[0].id, truck_id=trucks[0].id,
+                                return_leg_id=leg_imp2.id, pickup_leg_id=leg_exp1.id,
+                                status=DualTransactionStatus.PLANNED, scheduled_at=NOW, created_by_user_id=aid))
+    await db.flush()
+
+    # ── 9. 정산 · 청구 ────────────────────────────────────────
+    banner("Payroll · Invoice")
+    settle = PayrollSettlementModel(team_id=tid, driver_id=drivers[0].id, period_start=date(2026, 6, 1),
+                                    period_end=date(2026, 6, 14), status=PayrollStatus.CONFIRMED,
+                                    base_total=D("570.00"), addon_total=D("80.00"), grand_total=D("650.00"),
+                                    note="격주 정산", created_by_user_id=aid)
+    db.add(settle)
+    await db.flush()
+    db.add_all([
+        PayrollLineModel(team_id=tid, settlement_id=settle.id, leg_id=leg_imp1.id, work_date=date(2026, 6, 9),
+                         base_amount=D("285.00"), source=PayrollLineSource.RESOLVED, created_by_user_id=aid),
+        PayrollLineModel(team_id=tid, settlement_id=settle.id, leg_id=leg_imp2.id, work_date=date(2026, 6, 9),
+                         base_amount=D("285.00"), source=PayrollLineSource.RESOLVED, created_by_user_id=aid),
+    ])
+    db.add_all([
+        PayrollChargeModel(team_id=tid, settlement_id=settle.id, addon_id=(addon_ngt.id if addon_ngt else None),
+                           code="NGT", quantity=D("1"), amount=D("50.00"), note="leg #1 NGT", created_by_user_id=aid),
+        PayrollChargeModel(team_id=tid, settlement_id=settle.id, code="STP", quantity=D("1"), amount=D("30.00"),
+                           note="leg #1 STP", created_by_user_id=aid),
+    ])
+
+    inv = InvoiceModel(team_id=tid, customer_id=cust.id, delivery_order_id=do_imp.id, invoice_number="INV-2026-001",
+                       status=InvoiceStatus.ISSUED, issue_date=date(2026, 6, 10), due_date=date(2026, 7, 10),
+                       cost_total=D("650.00"), charge_total=D("950.00"), note="원가+마진", created_by_user_id=aid)
+    db.add(inv)
+    await db.flush()
+    db.add_all([
+        InvoiceLineModel(team_id=tid, invoice_id=inv.id, container_id=cont_imp.id, description="Drayage MSCU1234567",
+                         quantity=D("1"), unit_amount=D("650.00"), amount=D("650.00"), source=InvoiceLineSource.PREFILL,
+                         cost_amount=D("570.00"), created_by_user_id=aid),
+        InvoiceLineModel(team_id=tid, invoice_id=inv.id, description="Demurrage (2 days)", quantity=D("2"),
+                         unit_amount=D("150.00"), amount=D("300.00"), source=InvoiceLineSource.MANUAL, created_by_user_id=aid),
+    ])
+    await db.flush()
+    print("  settlement(line×2, charge×2), invoice(line×2)")
+
+    # ── 10. 모바일 · 실시간 · 기타 ────────────────────────────
+    banner("모바일 · 알림 · 감사 · API · 파일")
+    db.add_all([
+        LocationPingModel(team_id=tid, driver_id=drivers[0].id, latitude=D("33.7401"), longitude=D("-118.2710"),
+                          speed_kmh=D("65.0"), heading_deg=D("90.0"), accuracy_m=D("5.0"), occurred_at=NOW, created_by_user_id=aid),
+        LocationPingModel(team_id=tid, driver_id=drivers[0].id, latitude=D("33.8200"), longitude=D("-118.0500"),
+                          speed_kmh=D("0.0"), occurred_at=NOW, created_by_user_id=aid),
+        LocationPingModel(team_id=tid, driver_id=drivers[1].id, latitude=D("33.7520"), longitude=D("-118.2050"),
+                          speed_kmh=D("40.0"), occurred_at=NOW, created_by_user_id=aid),
+    ])
+    db.add_all([
+        NotificationModel(team_id=tid, user_id=dispatcher.id, channel=NotificationChannel.PUSH,
+                          status=NotificationStatus.SENT, event_type="leg.completed", title="Leg 완료",
+                          body="Leg #1 이 완료되었습니다.", is_read=False, sent_at=NOW, created_by_user_id=aid),
+        NotificationModel(team_id=tid, user_id=admin.id, channel=NotificationChannel.EMAIL,
+                          status=NotificationStatus.DELIVERED, event_type="invoice.issued", title="인보이스 발행",
+                          body="INV-2026-001 발행됨.", is_read=True, read_at=NOW, sent_at=NOW, created_by_user_id=aid),
+    ])
+    db.add_all([
+        ChatMessageModel(team_id=tid, driver_user_id=duser[0].id, sender_type=ChatSenderType.DISPATCHER,
+                         sender_user_id=dispatcher.id, content="픽업 준비됐나요?", created_by_user_id=aid),
+        ChatMessageModel(team_id=tid, driver_user_id=duser[0].id, sender_type=ChatSenderType.DRIVER,
+                         sender_user_id=duser[0].id, content="네, 터미널 도착했습니다.", read_at=NOW, created_by_user_id=aid),
+    ])
+    db.add_all([
+        AuditLogModel(team_id=tid, entity_type="delivery_order", entity_id=do_imp.id, action="status_changed",
+                      summary="PLANNING → DISPATCHED", before_state={"status": "PLANNING"},
+                      after_state={"status": "DISPATCHED"}, created_by_user_id=aid),
+        AuditLogModel(team_id=tid, entity_type="invoice", entity_id=inv.id, action="issued",
+                      summary="INV-2026-001 발행", created_by_user_id=aid),
+    ])
+    db.add(ApiKeyModel(team_id=tid, name="Default Integration Key", description="외부 통합용",
+                       key="tmsk_" + "0" * 40, prefix="tmsk_0000", created_by_user_id=aid))
+    db.add_all([
+        FileAssetModel(domain=FileDomain.TEAM, object_id=tid, subdir="logo", filename="logo.png", size=20480,
+                       mime="image/png", is_public=True, logical_path=f"team/{tid}/logo/logo.png",
+                       team_id=tid, created_by_user_id=aid),
+        FileAssetModel(domain=FileDomain.LEG_DOCUMENT, object_id=leg_imp1.id, subdir="pod", filename="pod_signed.pdf",
+                       size=102400, mime="application/pdf", is_public=False,
+                       logical_path=f"leg/{leg_imp1.id}/pod/pod_signed.pdf", team_id=tid, created_by_user_id=aid),
+    ])
+    # push_token (ORM 모델 있음 — registry import 로 등록됨)
+    for i, drv in enumerate(drivers):
+        db.add(PushTokenModel(team_id=tid, driver_id=drv.id, platform="fcm",
+                              token=f"fcmtoken_{drv.id}_{i}", last_used_at=NOW, created_by_user_id=aid))
+    await db.flush()
+    await db.commit()
+    print("  location_ping×3, notification×2, chat×2, audit_log×2, api_key×1, file_asset×2, push_token×3")
+
+
+async def verify(db: AsyncSession):
+    """alembic_version 제외 전 테이블 COUNT≥1 단언 + 로그인 검증."""
+    banner("VERIFY — 전수 단언")
+    names = [r[0] for r in (await db.execute(text("SHOW TABLES"))).all() if r[0] != "alembic_version"]
+    empty = []
+    total = 0
+    for n in names:
+        c = (await db.execute(text(f"SELECT COUNT(*) FROM `{n}`"))).scalar() or 0
+        total += c
+        if c == 0:
+            empty.append(n)
+    print(f"  테이블 {len(names)}개, 총 {total} 행")
+    if empty:
+        print(f"  ❌ 빈 테이블 {len(empty)}개: {', '.join(empty)}")
+    else:
+        print(f"  ✅ 빈 테이블 0개 — 모든 테이블에 데이터 존재")
+
+    # 로그인 검증
+    row = (await db.execute(text("SELECT password, role FROM user WHERE email=:e"), {"e": LOGIN_EMAIL})).first()
+    ok = bool(row) and bcrypt.checkpw(LOGIN_PW.encode(), row[0].encode())
+    print(f"  로그인 {LOGIN_EMAIL}/{LOGIN_PW}: {'✅ OK' if ok else '❌ FAIL'} (role={row[1] if row else '?'})")
+    return not empty and ok
+
+
+async def main():
+    try:
+        async with AsyncSession(write_engine, expire_on_commit=False) as db:
+            await wipe(db)
+            await seed(db)
+            ok = await verify(db)
+        banner("DONE" if ok else "DONE (경고: 위 실패 확인)")
+        print(f"로그인: {LOGIN_EMAIL} / {LOGIN_PW}\n")
+    finally:
+        await write_engine.dispose()  # aiomysql 커넥션 정리(이벤트 루프 경고 방지)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

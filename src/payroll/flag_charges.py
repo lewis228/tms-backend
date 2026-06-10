@@ -21,13 +21,13 @@ async def collect_leg_flag_charges(
 ) -> list[dict]:
     """leg 의 모든 add-on → charge dict 목록 (정산/청구 공용).
 
-    dict = {code, accessorial_id, snapshot_unit_amount, quantity, amount, note}
-    저장 amount(>0) 우선. 미설정이면 accessorial 마스터 단가로 해석(PERCENT 는 base 사용).
+    dict = {code, addon_id, snapshot_unit_amount, quantity, amount, note}
+    저장 amount(>0) 우선. 미설정이면 addon 마스터 단가로 해석(PERCENT 는 base 사용).
     """
     layer = LegLayerRepository(db, team_id)
     out: list[dict] = []
     for a in await layer.list_addons(leg.id):
-        code = a.code.value
+        code = a.code  # leg_addon.code 는 addon.code 스냅샷(String)
         stored = a.amount if (a.amount is not None and a.amount != _D0) else (a.amount_override or _D0)
         if stored != _D0:
             amount, unit, qty = stored, a.unit_amount, (a.quantity or Decimal("1"))
@@ -42,7 +42,7 @@ async def collect_leg_flag_charges(
         if amount == _D0:
             continue
         out.append({
-            "code": code, "accessorial_id": None,
+            "code": code, "addon_id": a.addon_id,
             "snapshot_unit_amount": unit, "quantity": qty, "amount": amount,
             "note": f"leg #{leg.id} {code}",
         })

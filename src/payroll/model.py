@@ -1,7 +1,7 @@
 # src/payroll/model.py
 """드라이버 정산(Payroll) — RateResolver 기반.
 
-settlement(헤더: driver+기간) + payroll_line(leg snapshot, 요율 동결) + payroll_charge(accessorial).
+settlement(헤더: driver+기간) + payroll_line(leg snapshot, 요율 동결) + payroll_charge(addon).
 요율은 정산 시점에 RateResolver 가 해석해 라인에 동결(snapshot)한다.
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ class PayrollSettlementModel(Base, TeamScopedMixin):
         default=PayrollStatus.DRAFT, server_default=PayrollStatus.DRAFT.value, nullable=False,
     )
     base_total:        Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, server_default="0", nullable=False)
-    accessorial_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, server_default="0", nullable=False)
+    addon_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, server_default="0", nullable=False)
     grand_total:       Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, server_default="0", nullable=False)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
@@ -92,12 +92,12 @@ class PayrollLineModel(Base, TeamScopedMixin):
 
 
 class PayrollChargeModel(Base, TeamScopedMixin):
-    """정산의 accessorial 라인 — accessorial 정의의 값을 snapshot."""
+    """정산의 addon 라인 — addon 정의의 값을 snapshot."""
     __tablename__ = "payroll_charge"
     __with_team_rel__ = False
 
     settlement_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    accessorial_id: Mapped[int | None] = mapped_column(ForeignKey("accessorial.id", ondelete="SET NULL"), nullable=True)
+    addon_id: Mapped[int | None] = mapped_column(ForeignKey("addon.id", ondelete="SET NULL"), nullable=True)
     code: Mapped[str] = mapped_column(String(48), nullable=False)
     snapshot_unit_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=1, server_default="1", nullable=False)

@@ -8,7 +8,7 @@ from __future__ import annotations
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    String, Integer, Numeric, JSON,
+    String, Integer, Numeric, JSON, ForeignKey,
     Index, UniqueConstraint, ForeignKeyConstraint,
 )
 
@@ -17,12 +17,13 @@ from common.model.team_scoped_mixin import TeamScopedMixin
 
 
 class DeliveryOrderAddonModel(Base, TeamScopedMixin):
-    """D/O 단위 추가요금 한 줄 (중복 가능). amount = 확정 금액(자동/수동)."""
+    """D/O 단위 추가요금 인스턴스 (중복 가능). addon_id=타입, code=addon.code 스냅샷, amount=확정."""
     __tablename__ = "delivery_order_addon"
     __with_team_rel__ = False
 
     delivery_order_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    code: Mapped[str] = mapped_column(String(48), nullable=False)  # DMR/DET/HZM 등
+    addon_id: Mapped[int | None] = mapped_column(ForeignKey("addon.id", ondelete="SET NULL"), nullable=True)
+    code: Mapped[str] = mapped_column(String(48), nullable=False)  # addon.code 스냅샷
     quantity:    Mapped[Decimal] = mapped_column(Numeric(12, 2), default=1, server_default="1", nullable=False)
     unit_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     amount:      Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, server_default="0", nullable=False)

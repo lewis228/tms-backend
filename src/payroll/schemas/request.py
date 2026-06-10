@@ -37,9 +37,9 @@ class PayrollBuildPeriodRequest(RequestSchema):
 
 
 class PayrollChargeAddRequest(RequestSchema):
-    """정산에 accessorial 추가."""
+    """정산에 addon 추가."""
     code: str = Field(min_length=1, max_length=48)
-    accessorial_id: int | None = None
+    addon_id: int | None = None
     snapshot_unit_amount: Decimal | None = None
     quantity: Decimal = Decimal("1")
     amount: Decimal

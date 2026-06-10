@@ -180,7 +180,7 @@ class PayrollService:
         await self.repo.set_status(header, PayrollStatus.VOID, actor_user_id=actor_user_id)
         return await self._to_detail(settlement_id)
 
-    # ── Accessorial ─────────────────────────────────────────────
+    # ── Addon ─────────────────────────────────────────────
     async def add_charge(self, settlement_id: int, body: PayrollChargeAddRequest, actor_user_id: int | None = None) -> PayrollDetailSchema:
         header = await self.repo.get(settlement_id)
         if not header:

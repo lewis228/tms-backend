@@ -55,7 +55,6 @@ from equipment_pool.router import router as equipment_pool_router
 from chassis.router import router as chassis_router
 
 # ── TMS D/O / Leg / Settlement routers (Phase C) ─────────────
-from charge_code.router import router as charge_code_router
 from rate_point.router import router as rate_point_router
 from rate_group.router import router as rate_group_router
 from driver_rate_assignment.router import router as driver_rate_assignment_router
@@ -64,7 +63,7 @@ from rate_sheet.router import router as rate_sheet_router
 from rate_multiplier.router import router as rate_multiplier_router
 from rate_import.router import router as rate_import_router
 from load_type_template.router import router as load_type_template_router
-from accessorial.router import router as accessorial_router
+from addon.router import router as addon_router
 from audit_log.router import router as audit_log_router
 from leg_layer.router import router as leg_layer_router
 from payroll.router import router as payroll_router
@@ -144,7 +143,6 @@ app.include_router(equipment_pool_router)
 app.include_router(chassis_router)
 
 # ── TMS D/O / Leg / Settlement router 등록 (Phase C) ─────────
-app.include_router(charge_code_router)
 app.include_router(rate_point_router)
 app.include_router(rate_group_router)
 app.include_router(driver_rate_assignment_router)
@@ -153,7 +151,7 @@ app.include_router(rate_sheet_router)
 app.include_router(rate_multiplier_router)
 app.include_router(rate_import_router)
 app.include_router(load_type_template_router)
-app.include_router(accessorial_router)
+app.include_router(addon_router)
 app.include_router(audit_log_router)
 app.include_router(leg_layer_router)
 app.include_router(payroll_router)

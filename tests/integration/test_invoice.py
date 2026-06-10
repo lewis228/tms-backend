@@ -122,10 +122,9 @@ async def test_lifecycle_and_edit_lock(db_session):
 async def test_cost_prefill_includes_leg_flags(db_session):
     """컨플루언스: 고객 청구 원가도 leg 단위 Flag(Add-on)를 합산한다."""
     from datetime import datetime, timezone
-    from accessorial.model import AccessorialModel
-    from accessorial.const.status import AccessorialCategory, AccessorialUnit
+    from addon.model import AddonModel
+    from addon.const.status import AddonCategory, AddonUnit
     from leg_layer.model import LegAddonModel
-    from leg_layer.const.status import LegAddonCode
     from leg.const.status import LegStatus
     from tests.integration.factories import make_driver, make_leg
 
@@ -140,11 +139,11 @@ async def test_cost_prefill_includes_leg_flags(db_session):
         status=LegStatus.COMPLETED, container_id=container.id,
         completed_at=datetime(2026, 5, 9, 10, tzinfo=timezone.utc),
     )
-    db_session.add(AccessorialModel(
+    db_session.add(AddonModel(
         team_id=team.id, code="NGT", name="Night Gate",
-        category=AccessorialCategory.NIGHT_GATE, unit=AccessorialUnit.FLAT, amount=Decimal("50"),
+        category=AddonCategory.NIGHT_GATE, unit=AddonUnit.FLAT, amount=Decimal("50"),
     ))
-    db_session.add(LegAddonModel(team_id=team.id, leg_id=leg.id, code=LegAddonCode.NGT))
+    db_session.add(LegAddonModel(team_id=team.id, leg_id=leg.id, code="NGT"))
     await db_session.commit()
 
     svc = InvoiceService(db_session, team.id)

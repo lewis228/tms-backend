@@ -33,13 +33,24 @@ class LegLayerService:
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
+    async def _get_addon(self, addon_id: int):
+        from addon.model import AddonModel
+        q = select(AddonModel).where(
+            AddonModel.team_id == self.repo._require_team(), AddonModel.id == addon_id,
+        )
+        return (await self.db.execute(q)).scalar_one_or_none()
+
     async def add_addon(self, payload: LegAddonCreateRequest, actor_user_id: int | None = None) -> LegAddonResponseSchema:
-        # 컨플루언스 재정의: 같은 code 중복 허용(Stop Off ×3 등). 시스템이 amount 기본값 자동 채움.
+        # 같은 addon 타입 중복 허용(Stop Off ×3 등). addon 마스터에서 code 스냅샷 + amount 자동.
+        addon = await self._get_addon(payload.addon_id)
+        if addon is None:
+            raise NotFoundException("Add-on type")
         data = payload.model_dump()
+        data["code"] = addon.code  # 스냅샷
         if data.get("amount") in (None, Decimal("0")) and data.get("amount_override") is None:
             leg = await self._get_leg(payload.leg_id)
             filled = await resolve_addon_amount(
-                self.db, self.repo._require_team(), payload.code.value,
+                self.db, self.repo._require_team(), addon.code,
                 driver_id=getattr(leg, "driver_id", None), rate_miles=getattr(leg, "rate_miles", None),
             )
             if filled is not None:

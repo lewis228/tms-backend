@@ -92,7 +92,7 @@ class PayrollRepository(TeamScopedRepoMixin):
                 func.count(PayrollSettlementModel.id).label("count"),
                 func.count(func.distinct(PayrollSettlementModel.driver_id)).label("driver_count"),
                 func.coalesce(func.sum(PayrollSettlementModel.base_total), 0).label("base_total"),
-                func.coalesce(func.sum(PayrollSettlementModel.accessorial_total), 0).label("accessorial_total"),
+                func.coalesce(func.sum(PayrollSettlementModel.addon_total), 0).label("addon_total"),
                 func.coalesce(func.sum(PayrollSettlementModel.grand_total), 0).label("grand_total"),
             )
             .where(
@@ -108,7 +108,7 @@ class PayrollRepository(TeamScopedRepoMixin):
             "count": int(row.count or 0),
             "driver_count": int(row.driver_count or 0),
             "base_total": row.base_total or 0,
-            "accessorial_total": row.accessorial_total or 0,
+            "addon_total": row.addon_total or 0,
             "grand_total": row.grand_total or 0,
         }
 
@@ -167,7 +167,7 @@ class PayrollRepository(TeamScopedRepoMixin):
             PayrollChargeModel.team_id == self._require_team(), PayrollChargeModel.settlement_id == row.id,
         ))).scalar_one()
         row.base_total = base
-        row.accessorial_total = acc
+        row.addon_total = acc
         row.grand_total = base + acc
         await self.db.flush()
 

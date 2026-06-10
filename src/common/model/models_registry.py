@@ -30,7 +30,6 @@ from equipment_pool.model import EquipmentPoolModel  # noqa: F401
 from chassis.model import ChassisModel  # noqa: F401
 
 # ── TMS D/O / Leg (Phase C) ──────────────────────────────────
-from charge_code.model import ChargeCodeModel  # noqa: F401
 from delivery_order.model import DeliveryOrderModel  # noqa: F401
 from delivery_order.addon_model import DeliveryOrderAddonModel  # noqa: F401
 from container.model import ContainerModel, ContainerEventModel  # noqa: F401
@@ -56,7 +55,7 @@ from rate_zone.model import RateZoneModel, RateZoneMemberModel  # noqa: F401
 from rate_sheet.model import RateSheetModel, RateEntryModel, RateEntryHistoryModel  # noqa: F401
 from rate_multiplier.model import RateMultiplierModel  # noqa: F401
 from load_type_template.model import LoadTypeTemplateModel, LoadTypeTemplateStepModel  # noqa: F401
-from accessorial.model import AccessorialModel  # noqa: F401
+from addon.model import AddonModel  # noqa: F401
 from audit_log.model import AuditLogModel  # noqa: F401
 from leg_layer.model import LegAddonModel  # noqa: F401
 from payroll.model import PayrollSettlementModel, PayrollLineModel, PayrollChargeModel  # noqa: F401

@@ -1,9 +1,9 @@
-# src/accessorial/const/status.py
+# src/addon/const/status.py
 from __future__ import annotations
 from enum import StrEnum
 
 
-class AccessorialCategory(StrEnum):
+class AddonCategory(StrEnum):
     """부가요금/Surcharge 분류 (컨플루언스 Add-on / Charge Event / Flag 통합)."""
     WAITING      = "WAITING"        # Detention(대기)
     EXTRA_STOP   = "EXTRA_STOP"     # Stop Off
@@ -24,7 +24,7 @@ class AccessorialCategory(StrEnum):
     OTHER        = "OTHER"
 
 
-class AccessorialUnit(StrEnum):
+class AddonUnit(StrEnum):
     """과금 단위."""
     FLAT    = "FLAT"     # 정액
     HOUR    = "HOUR"     # 시간당

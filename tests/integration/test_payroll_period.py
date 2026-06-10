@@ -145,10 +145,9 @@ async def test_confirm_blocked_when_lines_unresolved(db_session):
 @pytest.mark.asyncio
 async def test_leg_flag_auto_charges_into_payroll(db_session):
     """컨플루언스: leg 단위 Flag(Add-on) → 기사 정산 charge 자동 가산."""
-    from accessorial.model import AccessorialModel
-    from accessorial.const.status import AccessorialCategory, AccessorialUnit
+    from addon.model import AddonModel
+    from addon.const.status import AddonCategory, AddonUnit
     from leg_layer.model import LegAddonModel
-    from leg_layer.const.status import LegAddonCode
 
     team = await make_team(db_session)
     customer = await make_customer(db_session, team=team)
@@ -157,14 +156,14 @@ async def test_leg_flag_auto_charges_into_payroll(db_session):
     driver = await make_driver(db_session, team=team)
     leg = await _completed_leg(db_session, team, do, driver, day=9)
 
-    # accessorial 마스터: Night Gate 정액 $50 (팀 전역)
-    db_session.add(AccessorialModel(
+    # addon 마스터: Night Gate 정액 $50 (팀 전역)
+    db_session.add(AddonModel(
         team_id=team.id, code="NGT", name="Night Gate",
-        category=AccessorialCategory.NIGHT_GATE, unit=AccessorialUnit.FLAT,
+        category=AddonCategory.NIGHT_GATE, unit=AddonUnit.FLAT,
         amount=Decimal("50"), auto_apply=True,
     ))
     # leg 에 Night Gate flag 부착
-    db_session.add(LegAddonModel(team_id=team.id, leg_id=leg.id, code=LegAddonCode.NGT))
+    db_session.add(LegAddonModel(team_id=team.id, leg_id=leg.id, code="NGT"))
     await db_session.commit()
 
     svc = PayrollService(db_session, team.id)
@@ -176,17 +175,16 @@ async def test_leg_flag_auto_charges_into_payroll(db_session):
     ngt = [c for c in detail.charges if c.code == "NGT"]
     assert len(ngt) == 1
     assert ngt[0].amount == Decimal("50.00")
-    assert detail.accessorial_total == Decimal("50.00")
+    assert detail.addon_total == Decimal("50.00")
     assert detail.grand_total == detail.base_total + Decimal("50.00")
 
 
 @pytest.mark.asyncio
 async def test_repeatable_addons_sum(db_session):
     """컨플루언스 재정의: 같은 add-on(Stop Off) 여러 개 → 각각 정산 합산."""
-    from accessorial.model import AccessorialModel
-    from accessorial.const.status import AccessorialCategory, AccessorialUnit
+    from addon.model import AddonModel
+    from addon.const.status import AddonCategory, AddonUnit
     from leg_layer.model import LegAddonModel
-    from leg_layer.const.status import LegAddonCode
 
     team = await make_team(db_session)
     customer = await make_customer(db_session, team=team)
@@ -195,13 +193,13 @@ async def test_repeatable_addons_sum(db_session):
     driver = await make_driver(db_session, team=team)
     leg = await _completed_leg(db_session, team, do, driver, day=9)
 
-    db_session.add(AccessorialModel(
+    db_session.add(AddonModel(
         team_id=team.id, code="STP", name="Stop Off",
-        category=AccessorialCategory.EXTRA_STOP, unit=AccessorialUnit.FLAT, amount=Decimal("20"),
+        category=AddonCategory.EXTRA_STOP, unit=AddonUnit.FLAT, amount=Decimal("20"),
     ))
     # Stop Off 3개 부착 (중복 허용)
     for _ in range(3):
-        db_session.add(LegAddonModel(team_id=team.id, leg_id=leg.id, code=LegAddonCode.STP))
+        db_session.add(LegAddonModel(team_id=team.id, leg_id=leg.id, code="STP"))
     await db_session.commit()
 
     svc = PayrollService(db_session, team.id)
@@ -211,4 +209,4 @@ async def test_repeatable_addons_sum(db_session):
     )
     stp = [c for c in detail.charges if c.code == "STP"]
     assert len(stp) == 3                       # 3개 각각 charge
-    assert detail.accessorial_total == Decimal("60.00")   # 3 × $20
+    assert detail.addon_total == Decimal("60.00")   # 3 × $20

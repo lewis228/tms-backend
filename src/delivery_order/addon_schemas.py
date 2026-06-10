@@ -8,7 +8,7 @@ from common.schemas.base import RequestSchema, ResponseSchema
 
 class DoAddonCreateRequest(RequestSchema):
     delivery_order_id: int
-    code: str = Field(min_length=1, max_length=48)   # DMR/DET/HZM 등
+    addon_id: int   # addon 마스터 타입
     quantity: Decimal = Decimal("1")
     unit_amount: Decimal | None = None
     amount: Decimal | None = None        # None 이면 시스템이 마스터 단가로 자동 채움
@@ -25,6 +25,7 @@ class DoAddonUpdateRequest(RequestSchema):
 class DoAddonResponseSchema(ResponseSchema):
     id: int
     delivery_order_id: int
+    addon_id: int | None = None
     code: str
     quantity: Decimal = Decimal("1")
     unit_amount: Decimal | None = None

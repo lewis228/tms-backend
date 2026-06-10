@@ -3,14 +3,14 @@ from __future__ import annotations
 from decimal import Decimal
 
 from common.schemas.base import ResponseSchema
-from leg_layer.const.status import LegAddonCode
 from leg.const.status import PointType
 
 
 class LegAddonResponseSchema(ResponseSchema):
     id: int
     leg_id: int
-    code: LegAddonCode
+    addon_id: int | None = None
+    code: str
     quantity: Decimal = Decimal("1")
     unit_amount: Decimal | None = None
     amount: Decimal = Decimal("0")

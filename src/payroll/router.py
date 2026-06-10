@@ -171,7 +171,7 @@ async def add_payroll_charge(
     db: AsyncSession = Depends(get_write_db),
     me: UserResponseSchema = Depends(get_current_user),
 ):
-    """정산에 accessorial(부가요금) 추가."""
+    """정산에 addon(부가요금) 추가."""
     return await PayrollService(db, team_id).add_charge(settlement_id, body, actor_user_id=int(me.id))
 
 

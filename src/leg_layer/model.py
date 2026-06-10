@@ -16,24 +16,24 @@ from sqlalchemy import (
 
 from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
-from leg_layer.const.status import LegAddonCode
 from leg.const.status import PointType
 
 
 class LegAddonModel(Base, TeamScopedMixin):
-    """Leg 의 Add-on(=추가요금 한 줄). 컨플루언스 재정의: Flag/Charge Event 구분 없이 모두 Add-on.
+    """Leg 의 Add-on 인스턴스(=레그에 붙인 부가요금 한 줄). 한 레그에 여러 행 가능(Stop Off ×3 등).
 
-    같은 code 를 여러 개 붙일 수 있다(예: Stop Off ×3). 시스템 자동 추가 + 사용자 CRUD.
-    amount 가 이 add-on 의 확정 금액(자동 채움 + 사용자 수정). quantity×unit_amount 내역.
+    **addon_id** = 어떤 addon 타입(마스터)인지. code = addon.code 스냅샷(표시/청구). amount = 확정 금액
+    (추가 시 addon 마스터 단가로 자동 채움 + 사용자 수정).
 
-    Stop(STP) 등 '위치가 의미 있는' add-on 은 typed 위치를 가진다(메인 포인트 시퀀스와 별개,
-    '그 레그에서 추가로 들른 곳'): point_type + terminal_id/location_id/customer_id(정확히 하나).
+    addon.category==EXTRA_STOP(Stop Off) 인 경우만 typed 위치(point_type + terminal_id/location_id/
+    customer_id, 정확히 하나)를 채운다 — '그 레그에서 추가로 들른 곳'. 나머지 타입은 NULL.
     """
     __tablename__ = "leg_addon"
     __with_team_rel__ = False
 
     leg_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    code: Mapped[LegAddonCode] = mapped_column(SAEnum(LegAddonCode, name="leg_addon_code"), nullable=False)
+    addon_id: Mapped[int | None] = mapped_column(ForeignKey("addon.id", ondelete="SET NULL"), nullable=True)
+    code: Mapped[str] = mapped_column(String(48), nullable=False)  # addon.code 스냅샷
     quantity:    Mapped[Decimal] = mapped_column(Numeric(12, 2), default=1, server_default="1", nullable=False)
     unit_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     amount:      Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, server_default="0", nullable=False)
@@ -54,4 +54,5 @@ class LegAddonModel(Base, TeamScopedMixin):
                              ondelete="CASCADE", name="fk_leg_addon_leg_team_id_id"),
         Index("ix_leg_addon_team_id_id", "team_id", "id"),
         Index("ix_leg_addon_team_leg", "team_id", "leg_id"),
+        Index("ix_leg_addon_team_addon", "team_id", "addon_id"),
     )

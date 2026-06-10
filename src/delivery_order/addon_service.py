@@ -30,9 +30,16 @@ class DoAddonService(TeamScopedRepoMixin):
         return [DoAddonResponseSchema.model_validate(r) for r in (await self.db.execute(q)).scalars().all()]
 
     async def add_addon(self, payload: DoAddonCreateRequest, actor_user_id: int | None = None) -> DoAddonResponseSchema:
+        from addon.model import AddonModel
+        addon = (await self.db.execute(select(AddonModel).where(
+            AddonModel.team_id == self._require_team(), AddonModel.id == payload.addon_id,
+        ))).scalar_one_or_none()
+        if addon is None:
+            raise NotFoundException("Add-on type")
         data = payload.model_dump()
+        data["code"] = addon.code  # 스냅샷
         if data.get("amount") in (None, Decimal("0")):
-            filled = await resolve_addon_amount(self.db, self._require_team(), payload.code)  # D/O = driver 없음 → 팀 기본
+            filled = await resolve_addon_amount(self.db, self._require_team(), addon.code)  # D/O = driver 없음 → 팀 기본
             if filled is not None:
                 data["amount"], data["unit_amount"], data["quantity"] = filled
         if data.get("amount") is None:

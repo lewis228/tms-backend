@@ -2,14 +2,14 @@
 """컨테이너/leg enum 정책 unit 테스트 (DB 없음).
 
 - ContainerState 8단계 자동 derive 규칙
-- ChargeCategory / HandoverReason / PointType / LegStatus enum
+- AddonCategory / HandoverReason / PointType / LegStatus enum
 """
 from __future__ import annotations
 
 from leg.const.status import (
     PointType, ContainerState, HandoverReason, LegStatus,
 )
-from charge_code.const.status import ChargeCategory
+from addon.const.status import AddonCategory
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -136,13 +136,12 @@ def test_move_type_values():
 
 
 # ────────────────────────────────────────────────────────────────────
-# ChargeCategory enum
+# AddonCategory enum (Stop Off = EXTRA_STOP → 위치형 신호)
 # ────────────────────────────────────────────────────────────────────
-def test_charge_category_values():
-    assert {c.value for c in ChargeCategory} == {
-        "BASE", "WAITING", "EXTRA_STOP", "DRY_RUN",
-        "PENALTY", "SURCHARGE", "ADJUSTMENT", "OTHER",
-    }
+def test_addon_category_has_extra_stop():
+    vals = {c.value for c in AddonCategory}
+    assert "EXTRA_STOP" in vals
+    assert {"NIGHT_GATE", "PIER_PASS", "FUEL", "HAZMAT"} <= vals
 
 
 # ────────────────────────────────────────────────────────────────────

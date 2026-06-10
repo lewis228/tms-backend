@@ -4,14 +4,13 @@ from decimal import Decimal
 from pydantic import Field
 
 from common.schemas.base import RequestSchema
-from leg_layer.const.status import LegAddonCode
 from leg.const.status import PointType
 
 
-# ── Add-on (추가요금 한 줄 — 중복 가능) ───────────────────────
+# ── Add-on (레그에 붙인 부가요금 한 줄 — 중복 가능) ───────────────
 class LegAddonCreateRequest(RequestSchema):
     leg_id: int
-    code: LegAddonCode
+    addon_id: int  # addon 마스터 타입
     quantity: Decimal = Decimal("1")
     unit_amount: Decimal | None = None
     amount: Decimal | None = None        # None 이면 시스템이 마스터 단가로 자동 채움

@@ -21,7 +21,7 @@ class PayrollLineResponseSchema(ResponseSchema):
 class PayrollChargeResponseSchema(ResponseSchema):
     id: int
     code: str
-    accessorial_id: int | None = None
+    addon_id: int | None = None
     snapshot_unit_amount: Decimal | None = None
     quantity: Decimal
     amount: Decimal
@@ -36,7 +36,7 @@ class PayrollSummarySchema(ResponseSchema):
     period_end: date
     status: PayrollStatus
     base_total: Decimal
-    accessorial_total: Decimal
+    addon_total: Decimal
     grand_total: Decimal
     note: str | None = None
     is_active: bool
@@ -80,7 +80,7 @@ class PayrollPeriodSummarySchema(ResponseSchema):
     count: int                 # 정산 헤더 수
     driver_count: int          # 고유 드라이버 수
     base_total: Decimal
-    accessorial_total: Decimal
+    addon_total: Decimal
     grand_total: Decimal
 
 

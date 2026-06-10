@@ -174,11 +174,20 @@ async def seed(db: AsyncSession):
     await db.flush()
     print(f"  team={tid}, 권한 {len(perms)}개, 그룹 3, 로그인 {LOGIN_EMAIL}/{LOGIN_PW}")
 
+    # ── zip 마스터 적재 (전역) — 외부 GeoNames, 시드는 CA만(reset 빠르게) ──
+    banner("zip 마스터 (외부 적재)")
+    from import_zips import load_zip_codes
+    await load_zip_codes(db, states=["CA"])
+    await db.flush()
+    _zrows = (await db.execute(text("SELECT zip, id FROM zip_code"))).all()
+    zmap = {z: i for z, i in _zrows}  # zip → zip_code.id
+
     # ── 2. 마스터 데이터 ──────────────────────────────────────
     banner("마스터 데이터")
     cust = CustomerModel(team_id=tid, name="ACME Importers", code="ACME", kind=PartnerKind.CUSTOMER,
                          contact_name="Amy Chen", contact_email="amy@acme.com", contact_phone="+1-213-555-0101",
-                         billing_address="500 Cargo Way, Los Angeles, CA", payment_terms_days=30, created_by_user_id=aid)
+                         billing_address="500 Cargo Way, Los Angeles, CA", payment_terms_days=30,
+                         zip_id=zmap.get("90021"), created_by_user_id=aid)
     carrier = CustomerModel(team_id=tid, name="Blue Line Carrier", code="BLUE", kind=PartnerKind.CARRIER,
                             mc_number="MC-998877", dot_number="DOT-223344", insurance_expires_at=date(2027, 1, 31),
                             contact_email="ops@blueline.com", created_by_user_id=aid)
@@ -188,9 +197,11 @@ async def seed(db: AsyncSession):
     await db.flush()
 
     term1 = TerminalModel(team_id=tid, name="APM Terminals Pier 400", code="APM4",
-                          address="2500 Navy Way, San Pedro, CA", latitude=D("33.730"), longitude=D("-118.260"), created_by_user_id=aid)
+                          address="2500 Navy Way, San Pedro, CA", latitude=D("33.730"), longitude=D("-118.260"),
+                          zip_id=zmap.get("90731"), created_by_user_id=aid)
     term2 = TerminalModel(team_id=tid, name="LBCT Long Beach", code="LBCT",
-                          address="1521 Pier G Ave, Long Beach, CA", latitude=D("33.752"), longitude=D("-118.205"), created_by_user_id=aid)
+                          address="1521 Pier G Ave, Long Beach, CA", latitude=D("33.752"), longitude=D("-118.205"),
+                          zip_id=zmap.get("90802"), created_by_user_id=aid)
     db.add_all([term1, term2])
 
     ves1 = VesselModel(team_id=tid, name="MAERSK ESSEX", imo_number="9456789", line="Maersk", created_by_user_id=aid)
@@ -198,10 +209,11 @@ async def seed(db: AsyncSession):
     db.add_all([ves1, ves2])
 
     loc_yard = LocationModel(team_id=tid, name="Carson Yard", kind=LocationKind.YARD,
-                             address="18000 S Main St, Carson, CA", latitude=D("33.831"), longitude=D("-118.281"), created_by_user_id=aid)
+                             address="18000 S Main St, Carson, CA", latitude=D("33.831"), longitude=D("-118.281"),
+                             zip_id=zmap.get("90745"), created_by_user_id=aid)
     loc_cust = LocationModel(team_id=tid, name="ACME DC Fontana", kind=LocationKind.CUSTOMER,
                              address="15000 Valley Blvd, Fontana, CA", latitude=D("34.092"), longitude=D("-117.435"),
-                             customer_id=cust.id, created_by_user_id=aid)
+                             customer_id=cust.id, zip_id=zmap.get("92335"), created_by_user_id=aid)
     loc_port = LocationModel(team_id=tid, name="POLA Gate", kind=LocationKind.PORT,
                              latitude=D("33.742"), longitude=D("-118.272"), created_by_user_id=aid)
     loc_other = LocationModel(team_id=tid, name="Truck Wash Wilmington", kind=LocationKind.OTHER, created_by_user_id=aid)

@@ -43,6 +43,7 @@ from user.router import router as user_router
 from team.router import router as team_router
 from rbac.router import router as rbac_router
 from file.router import router as file_router
+from zip_code.router import router as zip_code_router
 
 # ── TMS Master Data routers (Phase B) ────────────────────────
 from customer.router import router as customer_router
@@ -130,6 +131,7 @@ app.include_router(user_router)
 app.include_router(team_router)
 app.include_router(rbac_router)
 app.include_router(file_router)
+app.include_router(zip_code_router)
 
 # ── TMS Master Data router 등록 (Phase B) ────────────────────
 app.include_router(customer_router)

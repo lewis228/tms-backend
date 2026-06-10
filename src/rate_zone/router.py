@@ -16,7 +16,7 @@ from common.pagination.schemas.sync_response import SyncResponse
 from rate_zone.service import RateZoneService
 from rate_zone.schemas.request import (
     RateZoneCreateRequest, RateZoneUpdateRequest, PaginateRateZoneRequest,
-    RateZoneMembersReplaceRequest,
+    RateZoneMembersReplaceRequest, AddMembersByCityRequest,
 )
 from rate_zone.schemas.response import (
     RateZoneResponseSchema, RateZoneSummarySchema, RateZoneDeleteResponseSchema, RateZoneMembersResponseSchema,
@@ -122,3 +122,19 @@ async def replace_rate_zone_members(
 ):
     """Zone 의 멤버 전체 교체(PUT). 지도 백필/Excel import 결과 반영용."""
     return await RateZoneService(db, team_id).replace_members(zone_id, body, actor_user_id=int(me.id))
+
+
+@router.post("/{zone_id}/members/by-city", response_model=RateZoneMembersResponseSchema)
+async def add_rate_zone_members_by_city(
+    zone_id: int,
+    body: AddMembersByCityRequest,
+    _1: None = Depends(access_token),
+    _2: None = Depends(permission_guard(RATE_ZONE_WRITE)),
+    team_id: int = Depends(get_team_scope),
+    db: AsyncSession = Depends(get_write_db),
+    me: UserResponseSchema = Depends(get_current_user),
+):
+    """도시(city+state)의 모든 zip 을 zip 마스터에서 찾아 멤버에 합집합 추가."""
+    return await RateZoneService(db, team_id).add_members_by_city(
+        zone_id, body.city, body.state, actor_user_id=int(me.id)
+    )

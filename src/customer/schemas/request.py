@@ -23,6 +23,7 @@ class CustomerCreateRequest(RequestSchema):
     insurance_doc_url: str | None = Field(default=None, max_length=500)
     w9_doc_url: str | None = Field(default=None, max_length=500)
     payment_terms_days: int | None = None
+    zip_id: int | None = None
     note: str | None = Field(default=None, max_length=3000)
 
 
@@ -41,6 +42,7 @@ class CustomerUpdateRequest(RequestSchema):
     insurance_doc_url: str | None = Field(default=None, max_length=500)
     w9_doc_url: str | None = Field(default=None, max_length=500)
     payment_terms_days: int | None = None
+    zip_id: int | None = None
     note: str | None = Field(default=None, max_length=3000)
 
 
@@ -73,6 +75,7 @@ class CustomerBulkUpdateItem(RequestSchema):
     dot_number: str | None = Field(default=None, max_length=32)
     insurance_expires_at: date | None = None
     payment_terms_days: int | None = None
+    zip_id: int | None = None
     note: str | None = Field(default=None, max_length=3000)
 
 

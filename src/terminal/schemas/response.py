@@ -12,6 +12,7 @@ class TerminalResponseSchema(ResponseSchema):
     address: str | None = None
     latitude: Decimal | None = None
     longitude: Decimal | None = None
+    zip_id: int | None = None
     note: str | None = None
     is_active: bool
 

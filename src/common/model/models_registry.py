@@ -18,6 +18,7 @@ from rbac.model import (  # noqa: F401
     PermissionGroupPermission,
 )
 from file.model import FileAssetModel  # noqa: F401
+from zip_code.model import ZipCodeModel  # noqa: F401  (전역 zip 마스터)
 
 # ── TMS Master Data (Phase B) ────────────────────────────────
 from customer.model import CustomerModel  # noqa: F401

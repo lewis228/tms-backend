@@ -13,6 +13,7 @@ class TerminalCreateRequest(RequestSchema):
     address: str | None = Field(default=None, max_length=500)
     latitude: Decimal | None = None
     longitude: Decimal | None = None
+    zip_id: int | None = None
     note: str | None = Field(default=None, max_length=3000)
 
 
@@ -22,6 +23,7 @@ class TerminalUpdateRequest(RequestSchema):
     address: str | None = Field(default=None, max_length=500)
     latitude: Decimal | None = None
     longitude: Decimal | None = None
+    zip_id: int | None = None
     note: str | None = Field(default=None, max_length=3000)
 
 
@@ -43,6 +45,7 @@ class TerminalBulkUpdateItem(RequestSchema):
     address: str | None = Field(default=None, max_length=500)
     latitude: Decimal | None = None
     longitude: Decimal | None = None
+    zip_id: int | None = None
     note: str | None = Field(default=None, max_length=3000)
 
 

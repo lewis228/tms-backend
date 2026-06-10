@@ -24,6 +24,7 @@ class CustomerResponseSchema(ResponseSchema):
     insurance_doc_url: str | None = None
     w9_doc_url: str | None = None
     payment_terms_days: int | None = None
+    zip_id: int | None = None
     note: str | None = None
     is_active: bool
 

@@ -15,6 +15,7 @@ class LocationCreateRequest(RequestSchema):
     latitude: Decimal | None = None
     longitude: Decimal | None = None
     customer_id: int | None = None
+    zip_id: int | None = None       # 전역 zip 마스터 참조(정산 dest 자동채움)
     note: str | None = Field(default=None, max_length=3000)
 
 
@@ -25,6 +26,7 @@ class LocationUpdateRequest(RequestSchema):
     latitude: Decimal | None = None
     longitude: Decimal | None = None
     customer_id: int | None = None
+    zip_id: int | None = None
     note: str | None = Field(default=None, max_length=3000)
 
 

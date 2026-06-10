@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    String, Integer, Date, Text,
+    String, Integer, Date, Text, ForeignKey,
     Index, UniqueConstraint, Enum as SAEnum,
 )
 
@@ -38,6 +38,10 @@ class CustomerModel(Base, TeamScopedMixin):
     w9_doc_url:          Mapped[str | None]  = mapped_column(String(500), nullable=True)
     payment_terms_days:  Mapped[int | None]  = mapped_column(Integer, nullable=True)
 
+    # 배송지 zip(전역 마스터) — 정산 dest 자동채움
+    zip_id: Mapped[int | None] = mapped_column(
+        ForeignKey("zip_code.id", ondelete="SET NULL"), nullable=True,
+    )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
@@ -47,4 +51,5 @@ class CustomerModel(Base, TeamScopedMixin):
         Index("ix_customer_team_kind",       "team_id", "kind"),
         Index("ix_customer_team_name",       "team_id", "name"),
         Index("ix_customer_team_updated_at", "team_id", "updated_at"),
+        Index("ix_customer_team_zip", "team_id", "zip_id"),
     )

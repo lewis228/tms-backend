@@ -36,6 +36,12 @@ class RateZoneMembersReplaceRequest(RequestSchema):
     members: List[RateZoneMemberItem] = Field(default_factory=list, max_length=5000)
 
 
+class AddMembersByCityRequest(RequestSchema):
+    """(city, state) 의 모든 zip 을 멤버로 합집합 추가. 도시명 비유일 → state 필수."""
+    city: str = Field(min_length=1, max_length=120)
+    state: str = Field(min_length=2, max_length=8)
+
+
 class PaginateRateZoneRequest(BasePaginationSchema):
     order__id: Optional[Literal['ASC', 'DESC']] = 'ASC'
 

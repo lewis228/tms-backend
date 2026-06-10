@@ -25,6 +25,10 @@ class LegCreateRequest(RequestSchema):
     from_location_type: PointType | None = None
     to_location_type: PointType | None = None
     move_code: LegMoveCode | None = None
+    # 도착지 정산 입력 — 미지정 시 to_point 마스터의 zip_id 에서 자동 스냅샷(override 가능).
+    dest_zip: str | None = Field(default=None, max_length=16)
+    dest_city: str | None = Field(default=None, max_length=120)
+    dest_state: str | None = Field(default=None, max_length=8)
     driver_id: int | None = None
     truck_id: int | None = None
     chassis_id: int | None = None

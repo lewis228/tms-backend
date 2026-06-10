@@ -14,6 +14,7 @@ class LocationResponseSchema(ResponseSchema):
     latitude: Decimal | None = None
     longitude: Decimal | None = None
     customer_id: int | None = None
+    zip_id: int | None = None
     note: str | None = None
     is_active: bool
 

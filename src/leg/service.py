@@ -57,6 +57,52 @@ class LegService:
             if pt is not None:
                 data[type_key] = pt
 
+    async def _autofill_dest_from_point(self, data: dict) -> None:
+        """to_point 마스터(terminal/location/customer)의 zip_id → zip_code 조회 →
+        dest_zip/city/state 자동 스냅샷. 명시 입력값(override)은 안 덮는다.
+        도착지 마스터에 zip 없으면 폴백(수동). 정산(ZONE/CITY)의 dest 입력."""
+        if any(data.get(k) for k in ("dest_zip", "dest_city", "dest_state")):
+            return  # override 우선
+        to_pid = data.get("to_point_id")
+        if to_pid is None:
+            return
+        from sqlalchemy import select
+        from container_stop.model import ContainerStopModel
+        from leg.const.status import PointType
+        from zip_code.model import ZipCodeModel
+
+        stop = (await self.db.execute(select(ContainerStopModel).where(
+            ContainerStopModel.team_id == self.team_id,
+            ContainerStopModel.id == to_pid,
+        ))).scalar_one_or_none()
+        if stop is None:
+            return
+
+        zip_id = None
+        if stop.point_type == PointType.TERMINAL and stop.terminal_id:
+            from terminal.model import TerminalModel
+            zip_id = (await self.db.execute(select(TerminalModel.zip_id).where(
+                TerminalModel.team_id == self.team_id, TerminalModel.id == stop.terminal_id,
+            ))).scalar_one_or_none()
+        elif stop.point_type == PointType.YARD and stop.location_id:
+            from location.model import LocationModel
+            zip_id = (await self.db.execute(select(LocationModel.zip_id).where(
+                LocationModel.team_id == self.team_id, LocationModel.id == stop.location_id,
+            ))).scalar_one_or_none()
+        elif stop.point_type == PointType.CUSTOMER and stop.customer_id:
+            from customer.model import CustomerModel
+            zip_id = (await self.db.execute(select(CustomerModel.zip_id).where(
+                CustomerModel.team_id == self.team_id, CustomerModel.id == stop.customer_id,
+            ))).scalar_one_or_none()
+        if not zip_id:
+            return
+
+        zc = (await self.db.execute(select(ZipCodeModel).where(ZipCodeModel.id == zip_id))).scalar_one_or_none()
+        if zc is not None:
+            data["dest_zip"] = zc.zip
+            data["dest_city"] = zc.city
+            data["dest_state"] = zc.state
+
     # ═══════════════════════════════════════════════════════════════
     # Create (단건)
     # ═══════════════════════════════════════════════════════════════
@@ -68,6 +114,7 @@ class LegService:
     ) -> LegResponseSchema:
         data = payload.model_dump()
         await self._snapshot_point_types(data)
+        await self._autofill_dest_from_point(data)
         row = await self.repo.create(
             data,
             actor_user_id=actor_user_id,
@@ -109,6 +156,7 @@ class LegService:
         for item in payload.items:
             data = item.model_dump()
             await self._snapshot_point_types(data)
+            await self._autofill_dest_from_point(data)
             row = await self.repo.create(
                 data,
                 actor_user_id=actor_user_id,

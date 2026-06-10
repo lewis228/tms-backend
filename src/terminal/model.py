@@ -1,7 +1,7 @@
 # src/terminal/model.py
 from __future__ import annotations
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Numeric, Text, Index, UniqueConstraint
+from sqlalchemy import String, Numeric, Text, Index, UniqueConstraint, ForeignKey
 from decimal import Decimal
 
 from common.model.base_model import Base
@@ -17,6 +17,9 @@ class TerminalModel(Base, TeamScopedMixin):
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7), nullable=True)
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7), nullable=True)
+    zip_id: Mapped[int | None] = mapped_column(
+        ForeignKey("zip_code.id", ondelete="SET NULL"), nullable=True,
+    )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
@@ -25,4 +28,5 @@ class TerminalModel(Base, TeamScopedMixin):
         Index("ix_terminal_team_active_id", "team_id", "is_active", "id"),
         Index("ix_terminal_team_name",       "team_id", "name"),
         Index("ix_terminal_team_updated_at", "team_id", "updated_at"),
+        Index("ix_terminal_team_zip", "team_id", "zip_id"),
     )

@@ -30,6 +30,10 @@ class LocationModel(Base, TeamScopedMixin):
         ForeignKey("customer.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # 전역 zip 마스터 참조 — 정산 dest 자동채움(city/state 조인)에 사용
+    zip_id: Mapped[int | None] = mapped_column(
+        ForeignKey("zip_code.id", ondelete="SET NULL"), nullable=True,
+    )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
@@ -39,4 +43,5 @@ class LocationModel(Base, TeamScopedMixin):
         Index("ix_location_team_customer", "team_id", "customer_id"),
         Index("ix_location_team_name",       "team_id", "name"),
         Index("ix_location_team_updated_at", "team_id", "updated_at"),
+        Index("ix_location_team_zip", "team_id", "zip_id"),
     )

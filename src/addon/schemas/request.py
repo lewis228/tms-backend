@@ -2,7 +2,7 @@
 from __future__ import annotations
 from decimal import Decimal
 from typing import Optional, Literal
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
@@ -51,3 +51,13 @@ class AddonDriverRateUpsertRequest(RequestSchema):
     amount: Decimal | None = None
     percent: Decimal | None = None
     note: str | None = Field(default=None, max_length=300)
+
+    @model_validator(mode="after")
+    def _validate_value(self):
+        if self.amount is None and self.percent is None:
+            raise ValueError("amount 또는 percent 중 하나는 필요합니다.")
+        if self.amount is not None and self.amount < 0:
+            raise ValueError("amount 는 0 이상이어야 합니다.")
+        if self.percent is not None and self.percent < 0:
+            raise ValueError("percent 는 0 이상이어야 합니다.")
+        return self

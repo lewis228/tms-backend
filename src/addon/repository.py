@@ -64,11 +64,21 @@ class AddonRepository(TeamScopedRepoMixin):
         ).order_by(AddonDriverRateModel.id.asc())
         return list((await self.db.execute(q)).scalars().all())
 
+    async def _get_driver_rate_any(self, addon_id: int, driver_id: int) -> Optional[AddonDriverRateModel]:
+        """is_active 무관 조회 — uq(team, addon, driver) 가 비활성 행도 점유하므로 업서트는 이걸 쓴다."""
+        q = select(AddonDriverRateModel).where(
+            AddonDriverRateModel.team_id == self._require_team(),
+            AddonDriverRateModel.addon_id == addon_id,
+            AddonDriverRateModel.driver_id == driver_id,
+        )
+        return (await self.db.execute(q)).scalar_one_or_none()
+
     async def upsert_driver_rate(
         self, addon_id: int, driver_id: int, *, amount, percent, note: str | None,
         actor_user_id: int | None = None,
     ) -> AddonDriverRateModel:
-        row = await self.get_driver_rate(addon_id, driver_id)
+        # 소프트삭제된 행이 유니크 키를 점유 중일 수 있어 비활성 행도 찾아 되살린다(INSERT 충돌 방지).
+        row = await self._get_driver_rate_any(addon_id, driver_id)
         if row is None:
             row = AddonDriverRateModel(
                 team_id=self._require_team(), addon_id=addon_id, driver_id=driver_id,
@@ -77,6 +87,7 @@ class AddonRepository(TeamScopedRepoMixin):
             self.db.add(row)
         else:
             row.amount, row.percent, row.note = amount, percent, note
+            row.is_active = True  # 소프트삭제됐던 행이면 되살림
             if actor_user_id is not None:
                 row.updated_by_user_id = actor_user_id
         await self.db.flush()
@@ -110,7 +121,7 @@ class AddonRepository(TeamScopedRepoMixin):
         if not row:
             return None
         for k, v in payload.items():
-            if k in {"id", "team_id", "is_active", "created_at", "created_by_user_id", "code", "driver_id"}:
+            if k in {"id", "team_id", "is_active", "created_at", "created_by_user_id", "code"}:
                 continue
             setattr(row, k, v)
         if actor_user_id is not None:

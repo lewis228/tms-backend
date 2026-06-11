@@ -77,3 +77,9 @@ async def test_driver_rate_upsert_delete_service(db_session):
     out = await svc.delete_driver_rate(ngt.id, drv.id)
     assert out.deleted
     assert await svc.list_driver_rates(ngt.id) == []
+    # 소프트삭제 후 재업서트 — 비활성 행이 유니크 키를 점유해도 충돌 없이 되살아나야 함(HIGH 회귀 방지)
+    r3 = await svc.upsert_driver_rate(ngt.id, drv.id,
+                                      AddonDriverRateUpsertRequest(amount=Decimal("70")))
+    assert r3.id == r1.id and r3.amount == Decimal("70.00")  # 같은 행 revive
+    rates = await svc.list_driver_rates(ngt.id)
+    assert len(rates) == 1 and rates[0].amount == Decimal("70.00")

@@ -77,7 +77,7 @@ async def _resolve(db, team, driver, *, from_zip=None, dest_zip=None,
     from rate_sheet.resolve import RateResolver
     from rate_sheet.const.status import RateMoveType, RateServiceType
     return await RateResolver(db, team.id).resolve(
-        driver_id=driver.id, work_date=WD,
+        driver_id=driver.id if driver is not None else None, work_date=WD,
         move_type=RateMoveType.LOAD, service_type=RateServiceType.LIVE,
         from_zip=from_zip, dest_zip=dest_zip,
         from_city=from_city, from_state=from_state,
@@ -240,12 +240,21 @@ async def test_unassigned_driver_falls_back_to_zip_default(db_session):
 
     r = await _resolve(db_session, team, drv, from_zip="90731", dest_zip="92335")
     assert r.found and r.base_amount == Decimal("310.00") and r.assignment_fallback is True
+    # 유효기간 노출 (조회 화면 표시용)
+    assert r.effective_from == JAN and r.effective_to is None
 
-    # ZIP 디폴트가 없는 팀 → 실패 메시지
+    # 기사 미지정(driver_id=None — 디스패처 조회 화면) → 동일하게 ZIP 디폴트
+    r_anon = await _resolve(db_session, team, None, from_zip="90731", dest_zip="92335")
+    assert r_anon.found and r_anon.base_amount == Decimal("310.00")
+    assert r_anon.assignment_fallback is True
+
+    # ZIP 디폴트가 없는 팀 → 실패 메시지 (기사 지정/미지정 모두)
     team2 = await make_team(db_session)
     drv2 = await make_driver(db_session, team=team2)
     r2 = await _resolve(db_session, team2, drv2, from_zip="90731", dest_zip="92335")
     assert r2.found is False and "배정이 없고" in (r2.message or "")
+    r3 = await _resolve(db_session, team2, None, from_zip="90731", dest_zip="92335")
+    assert r3.found is False and "기사 미지정" in (r3.message or "")
 
 
 @pytest.mark.asyncio

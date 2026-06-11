@@ -40,6 +40,7 @@ RATE_SHEET_WRITE      = "RATE_SHEET_WRITE"       # 요율표 슬롯/셀(유효�
 ADDON_WRITE           = "ADDON_WRITE"            # 부가요금(addon) 타입 마스터 등록/수정/삭제
 RATE_GROUP_WRITE      = "RATE_GROUP_WRITE"       # 정산/요율 그룹 등록/수정/삭제 (재설계)
 DRIVER_RATE_WRITE     = "DRIVER_RATE_WRITE"      # 드라이버↔요율그룹 배정 등록/수정/삭제 (재설계)
+SERVICE_AREA_WRITE    = "SERVICE_AREA_WRITE"     # 영업권역(Service Area) 선언 추가/삭제
 INVOICE_WRITE         = "INVOICE_WRITE"          # 고객 인보이스 생성/라인 수정/삭제 (재설계 2c)
 INVOICE_ISSUE         = "INVOICE_ISSUE"          # 인보이스 발행/수금/취소 (lifecycle, 재설계 2c)
 
@@ -84,6 +85,7 @@ ALL_PERMISSION_CODES = _unique([
     SETTLEMENT_UNAPPROVE, RATE_SETTING_WRITE, RATE_WRITE,
     RATE_ZONE_WRITE,
     RATE_SHEET_WRITE, RATE_GROUP_WRITE, DRIVER_RATE_WRITE, ADDON_WRITE,
+    SERVICE_AREA_WRITE,
     INVOICE_WRITE, INVOICE_ISSUE,
     # Notification
     NOTIFICATION_WRITE,
@@ -154,6 +156,7 @@ CUSTOMIZABLE_CODES = [
     # Rate
     RATE_WRITE, RATE_ZONE_WRITE, RATE_SHEET_WRITE,
     RATE_GROUP_WRITE, DRIVER_RATE_WRITE, ADDON_WRITE,
+    SERVICE_AREA_WRITE,
     # Invoice
     INVOICE_WRITE, INVOICE_ISSUE,
 ]

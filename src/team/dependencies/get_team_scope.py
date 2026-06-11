@@ -96,3 +96,24 @@ async def get_team_scope(
     await w_redis.set(member_key, "1", ex=_MEMBER_TTL)
 
     return x_team_id
+
+
+async def get_team_scope_optional(
+    request: Request,
+    x_team_id: int | None = Header(None, alias="X-Team-Id"),
+    r_redis: Redis = Depends(get_read_redis),
+    w_redis: Redis = Depends(get_write_redis),
+    db: AsyncSession = Depends(get_read_db),
+) -> int | None:
+    """팀 컨텍스트가 '선택'인 엔드포인트용 — 헤더/claim 없으면 None (400 대신).
+
+    전역 reference 조회(zip 검색 등)처럼 팀 없이도 동작하되, 팀이 있으면
+    팀별 부가 기능(영업권역 필터 등)을 켜는 경우에 사용. 헤더가 있으면
+    get_team_scope 와 동일한 멤버십 검증을 거친다.
+    """
+    if x_team_id is None:
+        payload = getattr(request.state, "payload", None)
+        if isinstance(payload, dict) and payload.get("team_id") is not None:
+            return int(payload["team_id"])
+        return None
+    return await get_team_scope(request, x_team_id, r_redis, w_redis, db)

@@ -53,6 +53,7 @@ class DriverUpdateRequest(RequestSchema):
 class PaginateDriverRequest(BasePaginationSchema):
     order__id: Optional[Literal['ASC', 'DESC']] = 'ASC'
     include_inactive: bool = False
+    where__name__i_like: Optional[str] = None  # 기사 이름 검색 (FE SearchableSelect)
     where__license_number__i_like: Optional[str] = None
     where__employment_kind__equal: Optional[EmploymentKind] = None
     where__carrier_id__equal: Optional[int] = None

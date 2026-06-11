@@ -1,7 +1,9 @@
 # tests/integration/conftest.py
 """Integration 테스트용 fixture.
 
-전제: alembic upgrade head 가 사전에 실행됨 (pytest 실행 전 또는 CI 단계).
+테스트 DB: 항상 전용 DB `tms_test` (tests/conftest.py 가 DB_DATABASE 강제).
+세션 시작 시 _prepare_test_db 가 (1) DB 없으면 생성 (2) alembic upgrade head 로
+스키마 최신화 — dev DB(tms) 는 더 이상 건드리지 않는다.
 
 격리 전략:
   - 각 테스트 함수 시작 전 모든 테이블 TRUNCATE (FK_CHECKS=0).
@@ -15,8 +17,15 @@ Pool 전략:
 """
 from __future__ import annotations
 
+import asyncio
+import os
+import subprocess
+import sys
+from pathlib import Path
 from typing import AsyncIterator
+from urllib.parse import quote_plus
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -29,14 +38,63 @@ from database.mysql_connection import build_mysql_dsn
 from common.const.settings import settings
 
 
-# prod 데이터 보호 — 화이트리스트에 있는 DB 이름만 TRUNCATE 허용.
-# 신규 DB 추가 시 명시적으로 여기 등록해야 통과.
-_TEST_DB_ALLOWLIST = frozenset({"tms", "tms_test"})
+# prod/dev 데이터 보호 — 전용 테스트 DB 만 TRUNCATE 허용.
+_TEST_DB_ALLOWLIST = frozenset({"tms_test"})
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _make_test_engine():
     dsn = build_mysql_dsn(settings.DB_HOST)
     return create_async_engine(dsn, echo=False, poolclass=NullPool)
+
+
+async def _create_database_if_missing() -> None:
+    """서버 레벨 접속(DB 미지정)으로 tms_test 생성."""
+    host = settings.DB_HOST
+    if host in ("localhost", "::1"):
+        host = "127.0.0.1"
+    server_dsn = (
+        f"mysql+aiomysql://{settings.DB_USERNAME}:{quote_plus(settings.DB_PASSWORD)}"
+        f"@{host}:{settings.DB_PORT}/?charset=utf8mb4"
+    )
+    engine = create_async_engine(server_dsn, poolclass=NullPool)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                f"CREATE DATABASE IF NOT EXISTS `{settings.DB_DATABASE}` "
+                "CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
+            ))
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _prepare_test_db() -> None:
+    """세션 1회 — tms_test 생성 + alembic upgrade head 로 스키마 최신화.
+
+    alembic 은 subprocess 로 실행: env.py 가 settings(env var) 에서 URL 을 만들고,
+    이 프로세스의 DB_DATABASE=tms_test 가 상속되므로 정확히 테스트 DB 만 마이그레이션된다.
+    (동기 픽스처 + asyncio.run — pytest-asyncio 세션 스코프 루프 이슈 회피)
+    """
+    if settings.DB_DATABASE not in _TEST_DB_ALLOWLIST:
+        raise RuntimeError(
+            f"테스트 DB 가 전용 DB 가 아닙니다: '{settings.DB_DATABASE}' "
+            f"(허용 = {sorted(_TEST_DB_ALLOWLIST)}). tests/conftest.py 가 "
+            "DB_DATABASE 를 강제하는지 확인하세요."
+        )
+    asyncio.run(_create_database_if_missing())
+    # DATABASE_URL 이 셸에 있으면 migrations/env.py 가 settings 보다 그걸 우선시해
+    # tms_test 강제를 우회한다 — subprocess env 에서 제거해 테스트 DB 만 마이그레이션.
+    sub_env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+    proc = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=_REPO_ROOT, env=sub_env, capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"테스트 DB(alembic upgrade head) 실패:\n{proc.stdout}\n{proc.stderr}"
+        )
 
 
 @pytest_asyncio.fixture

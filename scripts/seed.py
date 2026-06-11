@@ -443,8 +443,17 @@ async def seed(db: AsyncSession):
         db.add(DriverRateAssignmentModel(team_id=tid, driver_id=_drv.id, rate_group_id=_grp.id,
                                          effective_from=JAN, created_by_user_id=aid))
     await db.flush()
+
+    # 영업권역(Service Area) — SoCal 드레이 데모: 3자리 ZIP prefix 4건 (설계 §8 방어 1)
+    from service_area.model import ServiceAreaModel
+    from service_area.const.status import ServiceAreaKind
+    for _prefix in ["902", "907", "917", "923"]:
+        db.add(ServiceAreaModel(team_id=tid, kind=ServiceAreaKind.ZIP3,
+                                state="CA", value=_prefix, created_by_user_id=aid))
+    await db.flush()
     print("  글로벌 존×7 + 스코프 존(Reefer)×1 + 도시존×1, 그룹×9 (방식별 디폴트 + 상속/빈), "
-          "양방향 삼각 충진 + 사다리 ①/② 데모 셀, assignment×3 (+미배정 폴백 데모)")
+          "양방향 삼각 충진 + 사다리 ①/② 데모 셀, assignment×3 (+미배정 폴백 데모), "
+          "영업권역 ZIP3×4 (902/907/917/923)")
 
     # ── 5. Load Type 템플릿 (시스템 시드) ─────────────────────
     banner("Load Type 템플릿")

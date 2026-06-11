@@ -84,6 +84,7 @@ class RateLookupResultSchema(ResponseSchema):
     per_unit: Decimal | None = None
     rate_entry_id: int | None = None
     effective_from: date | None = None
+    effective_to: date | None = None  # None = 현재 유효(무제한)
     message: str | None = None
 
 
@@ -107,5 +108,7 @@ class RateResolveResultSchema(ResponseSchema):
     base_amount: Decimal | None = None   # 최종 산출 (정산 base)
     match_step: str | None = None        # 사다리 단계 (ATOM_ATOM/ATOM_ZONE/ZONE_ZONE/UNIT)
     via_default_group: bool = False      # 사다리 ④ — 디폴트 그룹 폴백으로 해석됨
-    assignment_fallback: bool = False    # 기사 미배정 → ZIP 디폴트 그룹 적용됨
+    assignment_fallback: bool = False    # 기사 미배정/미지정 → ZIP 디폴트 그룹 적용됨
+    effective_from: date | None = None   # 매칭된 요율 버전의 유효 시작일
+    effective_to: date | None = None     # None = 현재 유효
     message: str | None = None

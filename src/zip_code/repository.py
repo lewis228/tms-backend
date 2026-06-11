@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import List, Optional
 
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, func, distinct, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zip_code.model import ZipCodeModel
@@ -25,8 +25,14 @@ class ZipCodeRepository:
             select(ZipCodeModel).where(ZipCodeModel.zip == zip_str.strip()).limit(1)
         )).scalar_one_or_none()
 
-    async def search(self, q: str | None, state: str | None, limit: int = 20) -> List[ZipCodeModel]:
-        """zip 또는 city 부분일치 검색 (마스터폼 picker / 존 도시 autocomplete 공용)."""
+    async def search(
+        self, q: str | None, state: str | None, limit: int = 20,
+        scope_conds: list | None = None,
+    ) -> List[ZipCodeModel]:
+        """zip 또는 city 부분일치 검색 (마스터폼 picker / 존 도시 autocomplete 공용).
+
+        scope_conds: 영업권역(Service Area) OR 조건 리스트 — 있으면 권역 내로 제한.
+        """
         stmt = select(ZipCodeModel)
         if q:
             like = f"{q}%"
@@ -35,6 +41,8 @@ class ZipCodeRepository:
             )
         if state:
             stmt = stmt.where(ZipCodeModel.state == state.upper())
+        if scope_conds:
+            stmt = stmt.where(or_(*scope_conds))
         stmt = stmt.order_by(ZipCodeModel.state.asc(), ZipCodeModel.city.asc(), ZipCodeModel.zip.asc()).limit(limit)
         return list((await self.db.execute(stmt)).scalars().all())
 
@@ -50,12 +58,17 @@ class ZipCodeRepository:
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
-    async def search_cities(self, q: str | None, state: str | None, limit: int = 20) -> List[tuple[str, str]]:
-        """distinct (city, state) 자동완성용."""
+    async def search_cities(
+        self, q: str | None, state: str | None, limit: int = 20,
+        scope_conds: list | None = None,
+    ) -> List[tuple[str, str]]:
+        """distinct (city, state) 자동완성용. scope_conds 있으면 영업권역 내로 제한."""
         stmt = select(distinct(ZipCodeModel.city), ZipCodeModel.state)
         if q:
             stmt = stmt.where(ZipCodeModel.city.ilike(f"{q}%"))
         if state:
             stmt = stmt.where(ZipCodeModel.state == state.upper())
+        if scope_conds:
+            stmt = stmt.where(or_(*scope_conds))
         stmt = stmt.order_by(ZipCodeModel.city.asc()).limit(limit)
         return [(c, s) for c, s in (await self.db.execute(stmt)).all()]

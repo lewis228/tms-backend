@@ -52,6 +52,7 @@ from rate_group.model import RateGroupModel  # noqa: F401
 from driver_rate_assignment.model import DriverRateAssignmentModel  # noqa: F401
 from rate_zone.model import RateZoneModel, RateZoneMemberModel  # noqa: F401
 from rate_sheet.model import RateSheetModel, RateEntryModel, RateEntryHistoryModel  # noqa: F401
+from service_area.model import ServiceAreaModel  # noqa: F401
 from load_type_template.model import LoadTypeTemplateModel, LoadTypeTemplateStepModel  # noqa: F401
 from addon.model import AddonModel, AddonDriverRateModel  # noqa: F401
 from audit_log.model import AuditLogModel  # noqa: F401

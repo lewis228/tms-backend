@@ -97,8 +97,9 @@ class RateResolvePreviewRequest(RequestSchema):
     - MILE: miles 필요 / HOURLY: hours 필요
     - ZIP: move_type + from_zip + dest_zip
     - CITY: move_type + from_city + dest_city(+state) (없으면 zip 에서 파생)
+    driver_id 미지정 시 ZIP 방식 디폴트 그룹으로 해석(디스패처 조회 화면의 기사 미선택).
     """
-    driver_id: int
+    driver_id: int | None = None
     work_date: date
     move_type: RateMoveType | None = None
     service_type: RateServiceType | None = None

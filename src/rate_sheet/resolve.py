@@ -53,16 +53,20 @@ class RateResolver:
         self.dra_svc = DriverRateAssignmentService(db, team_id)
 
     async def resolve(
-        self, *, driver_id: int, work_date: date,
+        self, *, driver_id: int | None, work_date: date,
         move_type: RateMoveType | None = None,
         service_type: RateServiceType | None = None,
         from_zip: str | None = None, from_city: str | None = None, from_state: str | None = None,
         dest_zip: str | None = None, dest_city: str | None = None, dest_state: str | None = None,
         miles: Decimal | None = None, hours: Decimal | None = None,
     ) -> RateResolveResultSchema:
-        # 1) 드라이버 → 그룹 (배정 없으면 ZIP 디폴트 그룹 폴백 — 설계 §9)
+        # 1) 드라이버 → 그룹 (배정 없음/기사 미지정이면 ZIP 디폴트 그룹 폴백 — 설계 §9)
+        #    driver_id=None 은 디스패처 조회 화면의 "기사 미선택" 케이스.
         assignment_fallback = False
-        assign = await self.dra_svc.get_active_for_driver(driver_id, work_date)
+        assign = (
+            await self.dra_svc.get_active_for_driver(driver_id, work_date)
+            if driver_id is not None else None
+        )
         if assign is not None:
             group = await self.group_repo.get(assign.rate_group_id)
             if group is None:
@@ -70,10 +74,9 @@ class RateResolver:
         else:
             group = await self.group_repo.get_default_for_method(RateMethod.ZIP)
             if group is None:
-                return _fail(
-                    f"드라이버(id={driver_id}) 의 {work_date.isoformat()} 기준 요율그룹 배정이 없고 "
-                    "ZIP 방식 디폴트 그룹도 없습니다."
-                )
+                who = f"드라이버(id={driver_id}) 의 {work_date.isoformat()} 기준 요율그룹 배정이 없고" \
+                    if driver_id is not None else "기사 미지정 조회인데"
+                return _fail(f"{who} ZIP 방식 디폴트 그룹도 없습니다.")
             assignment_fallback = True
 
         # 2) 그룹 체인 — 배정 그룹 → (상속형 커스텀이면) 같은 방식의 디폴트 그룹 (사다리 ④)
@@ -116,6 +119,7 @@ class RateResolver:
                     rate_entry_id=lk.rate_entry_id, per_unit=lk.per_unit, quantity=q, base_amount=base,
                     match_step="UNIT", via_default_group=(idx > 0),
                     assignment_fallback=assignment_fallback,
+                    effective_from=lk.effective_from, effective_to=lk.effective_to,
                 )
             last_fail_kw["rate_sheet_id"] = sheet.id
         return _fail(f"{method.value} 단가 미등록 (사다리 ④까지 미해석).", **last_fail_kw)
@@ -204,6 +208,7 @@ class RateResolver:
                         amount=lk.amount, base_amount=lk.amount.quantize(Decimal("0.01")),
                         match_step=step, via_default_group=(idx > 0),
                         assignment_fallback=assignment_fallback,
+                        effective_from=lk.effective_from, effective_to=lk.effective_to,
                     )
 
         return _fail(

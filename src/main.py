@@ -61,6 +61,7 @@ from driver_rate_assignment.router import router as driver_rate_assignment_route
 from rate_zone.router import router as rate_zone_router
 from rate_sheet.router import router as rate_sheet_router
 from rate_import.router import router as rate_import_router
+from service_area.router import router as service_area_router
 from load_type_template.router import router as load_type_template_router
 from addon.router import router as addon_router
 from audit_log.router import router as audit_log_router
@@ -147,6 +148,7 @@ app.include_router(driver_rate_assignment_router)
 app.include_router(rate_zone_router)
 app.include_router(rate_sheet_router)
 app.include_router(rate_import_router)
+app.include_router(service_area_router)
 app.include_router(load_type_template_router)
 app.include_router(addon_router)
 app.include_router(audit_log_router)

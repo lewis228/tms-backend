@@ -28,4 +28,5 @@ async def resolve_cell(
         per_unit=entry.per_unit,
         rate_entry_id=entry.id,
         effective_from=entry.effective_from,
+        effective_to=entry.effective_to,
     )

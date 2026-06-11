@@ -12,7 +12,7 @@ from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
 from common.const.settings import settings
 from rate_sheet.const.status import (
-    SheetKind, RateMoveType, RateServiceType, RateContainerSize, RateEntrySource, RateEntryAction,
+    SheetKind, RateMoveType, RateServiceType, RateEntrySource, RateEntryAction,
 )
 
 
@@ -68,7 +68,7 @@ class RateEntryModel(Base, TeamScopedMixin):
 
     하나의 (sheet, 셀 좌표) 에 대해 effective_from 별로 여러 버전이 누적된다.
     절대 UPDATE 하지 않고 close(effective_to) + 새 row insert 로 버전 관리.
-    셀 좌표 = (from_zone_id→to_zone_id) ZONE | (from_city/state→to_city/state) CITY + container_size.
+    셀 좌표 = (from_zone_id→to_zone_id) ZONE | (from_city/state→to_city/state) CITY.
     MILE/HOURLY 시트는 좌표 없이 per_unit 단일 셀.
     """
     __tablename__ = "rate_entry"
@@ -83,9 +83,6 @@ class RateEntryModel(Base, TeamScopedMixin):
     from_state: Mapped[str | None] = mapped_column(String(8), nullable=True)
     to_city:    Mapped[str | None] = mapped_column(String(120), nullable=True)
     to_state:   Mapped[str | None] = mapped_column(String(8), nullable=True)
-    container_size: Mapped[RateContainerSize | None] = mapped_column(
-        SAEnum(RateContainerSize, name="rate_container_size"), nullable=True,
-    )
 
     # ── 값 ─────────────────────────────────────────────────────
     amount:   Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)  # 매트릭스/Point×Point
@@ -120,8 +117,8 @@ class RateEntryModel(Base, TeamScopedMixin):
             name="fk_rate_entry_sheet_team_id_id",
         ),
         Index("ix_rate_entry_team_id_id", "team_id", "id"),
-        # 핫패스: 시트+from존+to존+사이즈+유효시작일 lookup
-        Index("ix_rate_entry_lookup", "team_id", "rate_sheet_id", "from_zone_id", "to_zone_id", "container_size", "effective_from"),
+        # 핫패스: 시트+from존+to존+유효시작일 lookup
+        Index("ix_rate_entry_lookup", "team_id", "rate_sheet_id", "from_zone_id", "to_zone_id", "effective_from"),
         Index("ix_rate_entry_team_sheet", "team_id", "rate_sheet_id"),
         Index("ix_rate_entry_team_city", "team_id", "from_city", "from_state", "to_city", "to_state"),
         Index("ix_rate_entry_team_active", "team_id", "is_active"),
@@ -143,9 +140,6 @@ class RateEntryHistoryModel(Base, TeamScopedMixin):
     from_state: Mapped[str | None] = mapped_column(String(8), nullable=True)
     to_city:    Mapped[str | None] = mapped_column(String(120), nullable=True)
     to_state:   Mapped[str | None] = mapped_column(String(8), nullable=True)
-    container_size: Mapped[RateContainerSize | None] = mapped_column(
-        SAEnum(RateContainerSize, name="rate_container_size_hist"), nullable=True,
-    )
 
     old_amount:   Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     new_amount:   Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)

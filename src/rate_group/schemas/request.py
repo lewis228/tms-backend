@@ -8,7 +8,7 @@ from pydantic import Field, model_validator
 from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
 from rate_group.const.status import RateMethod
-from rate_sheet.const.status import RateMoveType, RateServiceType, RateContainerSize, RateEntrySource
+from rate_sheet.const.status import RateMoveType, RateServiceType, RateEntrySource
 
 
 class RateGroupCreateRequest(RequestSchema):
@@ -55,7 +55,6 @@ class FlatRateEntryRequest(RequestSchema):
     from_state: str | None = Field(default=None, max_length=8)
     to_city: str | None = Field(default=None, max_length=120)
     to_state: str | None = Field(default=None, max_length=8)
-    container_size: RateContainerSize | None = None
     amount: Decimal | None = None
     per_unit: Decimal | None = None
     effective_from: date

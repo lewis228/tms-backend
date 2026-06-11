@@ -34,13 +34,6 @@ class RateServiceType(StrEnum):
     NONE = "NONE"   # Bobtail/Shunt/Failed
 
 
-class RateContainerSize(StrEnum):
-    """요율 배율 기준 컨테이너 사이즈 (40ft 기준)."""
-    SIZE_20 = "SIZE_20"   # 40ft × 0.85 (기본)
-    SIZE_40 = "SIZE_40"   # 기준
-    SIZE_45 = "SIZE_45"   # 40ft × 1.0 (기본)
-
-
 class RateEntrySource(StrEnum):
     """요율 셀(rate_entry) 의 출처."""
     SHEET       = "SHEET"        # 그리드 수기 입력 (매트릭스)

@@ -6,7 +6,7 @@ from typing import Literal, List
 
 from common.schemas.base import ResponseSchema
 from rate_group.const.status import RateMethod
-from rate_sheet.const.status import SheetKind, RateMoveType, RateServiceType, RateContainerSize
+from rate_sheet.const.status import SheetKind, RateMoveType, RateServiceType
 
 
 class RateGroupResponseSchema(ResponseSchema):
@@ -40,7 +40,6 @@ class FlatRateEntrySchema(ResponseSchema):
     from_state: str | None = None
     to_city: str | None = None
     to_state: str | None = None
-    container_size: RateContainerSize | None = None
     amount: Decimal | None = None
     per_unit: Decimal | None = None
     effective_from: date

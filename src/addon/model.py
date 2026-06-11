@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    String, Numeric, Integer, Boolean, ForeignKey,
+    String, Numeric, Integer, Boolean, ForeignKey, ForeignKeyConstraint,
     Index, UniqueConstraint, Enum as SAEnum,
 )
 
@@ -13,10 +13,10 @@ from addon.const.status import AddonCategory, AddonUnit
 
 
 class AddonModel(Base, TeamScopedMixin):
-    """부가요금 규칙 마스터 (자동가산/수동). 정산 시 이 정의의 값을 snapshot 한다.
+    """부가요금 타입 마스터 (순수 카탈로그 — 자동가산/수동). 정산 시 이 정의의 값을 snapshot 한다.
 
-    driver_id 가 있으면 그 드라이버 전용 override(예: 드라이버별 Fuel %).
-    driver_id NULL = 팀 전역 기본.
+    기사별 금액 차등은 라인 테이블 addon_driver_rate 가 담당
+    (마스터 = 단위/분류/청구분기 등 '정의', 기사별 행 = '금액'만 override).
     """
     __tablename__ = "addon"
 
@@ -40,17 +40,43 @@ class AddonModel(Base, TeamScopedMixin):
     is_billable_to_customer: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1", nullable=False)
     is_payable_to_driver:    Mapped[bool] = mapped_column(Boolean, default=True, server_default="1", nullable=False)
 
-    driver_id: Mapped[int | None] = mapped_column(
-        ForeignKey("driver.id", ondelete="CASCADE"), nullable=True,  # per-driver override
-    )
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("team_id", "id", name="uq_addon_team_id_id"),
-        UniqueConstraint("team_id", "code", "driver_id", name="uq_addon_code_driver"),
+        UniqueConstraint("team_id", "code", name="uq_addon_team_code"),
         Index("ix_addon_team_active_id", "team_id", "is_active", "id"),
         Index("ix_addon_team_category", "team_id", "category"),
-        Index("ix_addon_team_code", "team_id", "code"),
-        Index("ix_addon_team_driver", "team_id", "driver_id"),
         Index("ix_addon_team_updated_at", "team_id", "updated_at"),
+    )
+
+
+class AddonDriverRateModel(Base, TeamScopedMixin):
+    """기사별 add-on 금액 override (라인) — 마스터 정의는 그대로, 금액(amount/percent)만 기사별로.
+
+    정산 해석: 마스터(code) 조회 → (addon_id, driver_id) 행 있으면 그 금액, 없으면 마스터 기본값.
+    """
+    __tablename__ = "addon_driver_rate"
+    __with_team_rel__ = False
+
+    addon_id:  Mapped[int] = mapped_column(Integer, nullable=False)
+    driver_id: Mapped[int] = mapped_column(
+        ForeignKey("driver.id", ondelete="CASCADE"), nullable=False,
+    )
+    amount:  Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    percent: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("team_id", "id", name="uq_addon_driver_rate_team_id_id"),
+        UniqueConstraint("team_id", "addon_id", "driver_id", name="uq_addon_driver_rate"),
+        ForeignKeyConstraint(
+            ["team_id", "addon_id"],
+            ["addon.team_id", "addon.id"],
+            ondelete="CASCADE",
+            name="fk_addon_driver_rate_addon_team_id_id",
+        ),
+        Index("ix_addon_driver_rate_team_id_id", "team_id", "id"),
+        Index("ix_addon_driver_rate_team_addon", "team_id", "addon_id"),
+        Index("ix_addon_driver_rate_team_driver", "team_id", "driver_id"),
     )

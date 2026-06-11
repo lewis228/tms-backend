@@ -38,7 +38,7 @@ async def test_leg_create_autofill_then_resolve(db_session):
     from rate_group.const.status import RateMethod
     from rate_zone.model import RateZoneModel, RateZoneMemberModel
     from rate_sheet.model import RateSheetModel, RateEntryModel
-    from rate_sheet.const.status import SheetKind, RateMoveType, RateServiceType, RateContainerSize
+    from rate_sheet.const.status import SheetKind, RateMoveType, RateServiceType
     from driver_rate_assignment.model import DriverRateAssignmentModel
     from payroll.resolve import resolve_leg_rate
     from sqlalchemy import select
@@ -74,8 +74,7 @@ async def test_leg_create_autofill_then_resolve(db_session):
     db_session.add(sheet)
     await db_session.flush()
     db_session.add(RateEntryModel(team_id=team.id, rate_sheet_id=sheet.id,
-                                  from_zone_id=z_port.id, to_zone_id=z_ie.id,
-                                  container_size=RateContainerSize.SIZE_40, amount=Decimal("300"),
+                                  from_zone_id=z_port.id, to_zone_id=z_ie.id, amount=Decimal("300"),
                                   effective_from=date(2026, 1, 1)))
 
     cont = ContainerModel(team_id=team.id, delivery_order_id=do.id, sequence_no=1,

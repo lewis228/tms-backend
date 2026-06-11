@@ -21,7 +21,6 @@ class AddonResponseSchema(ResponseSchema):
     is_system: bool
     is_billable_to_customer: bool = True
     is_payable_to_driver: bool = True
-    driver_id: int | None = None
     note: str | None = None
     is_active: bool
 
@@ -36,3 +35,18 @@ class AddonDeleteResponseSchema(ResponseSchema):
 class AddonSeedResultSchema(ResponseSchema):
     created: int
     skipped: int
+
+
+class AddonDriverRateResponseSchema(ResponseSchema):
+    id: int
+    addon_id: int
+    driver_id: int
+    amount: Decimal | None = None
+    percent: Decimal | None = None
+    note: str | None = None
+
+
+class AddonDriverRateDeleteResponseSchema(ResponseSchema):
+    addon_id: int
+    driver_id: int
+    deleted: bool = True

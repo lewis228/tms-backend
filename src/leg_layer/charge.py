@@ -1,5 +1,5 @@
 # src/leg_layer/charge.py
-"""Add-on 기본 단가 산출 — addon 마스터(code + driver override)에서.
+"""Add-on 기본 단가 산출 — addon 마스터(code) + 기사별 금액 override(addon_driver_rate).
 
 컨플루언스 재정의: leg 의 추가요금은 모두 Add-on. 생성 시 시스템이 기본 금액을 채우고,
 사용자가 수정/삭제 가능. 단가 출처 = addon 마스터(code 일치, driver override 우선).
@@ -28,15 +28,24 @@ async def resolve_addon_amount(
     addon 정의 없으면 None.
     """
     acc = AddonRepository(db, team_id)
-    rule = await acc.find_for_code(code, driver_id)
+    rule = await acc.find_for_code(code)
     if rule is None:
         return None
-    if rule.unit == AddonUnit.PERCENT and rule.percent is not None:
+    # 기사별 금액 override(addon_driver_rate): 행이 있으면 그 amount/percent 가 마스터 기본값을 대체.
+    eff_amount, eff_percent = rule.amount, rule.percent
+    if driver_id is not None:
+        ovr = await acc.get_driver_rate(rule.id, driver_id)
+        if ovr is not None:
+            if ovr.amount is not None:
+                eff_amount = ovr.amount
+            if ovr.percent is not None:
+                eff_percent = ovr.percent
+    if rule.unit == AddonUnit.PERCENT and eff_percent is not None:
         if base_amount is None:
             return None
-        return ((base_amount * rule.percent).quantize(_Q), None, Decimal("1"))
-    if rule.unit == AddonUnit.MILE and rule.amount is not None and rate_miles is not None:
-        return ((rule.amount * rate_miles).quantize(_Q), rule.amount, rate_miles)
-    if rule.amount is not None:
-        return (rule.amount.quantize(_Q), rule.amount, Decimal("1"))
+        return ((base_amount * eff_percent).quantize(_Q), None, Decimal("1"))
+    if rule.unit == AddonUnit.MILE and eff_amount is not None and rate_miles is not None:
+        return ((eff_amount * rate_miles).quantize(_Q), eff_amount, rate_miles)
+    if eff_amount is not None:
+        return (eff_amount.quantize(_Q), eff_amount, Decimal("1"))
     return None

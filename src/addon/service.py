@@ -9,10 +9,11 @@ from common.pagination.schemas.pagination_response import CursorPaginationResult
 from addon.repository import AddonRepository
 from addon.const.status import AddonCategory, AddonUnit
 from addon.schemas.request import (
-    AddonCreateRequest, AddonUpdateRequest, PaginateAddonRequest,
+    AddonCreateRequest, AddonUpdateRequest, PaginateAddonRequest, AddonDriverRateUpsertRequest,
 )
 from addon.schemas.response import (
     AddonResponseSchema, AddonDeleteResponseSchema, AddonSeedResultSchema,
+    AddonDriverRateResponseSchema, AddonDriverRateDeleteResponseSchema,
 )
 
 _LABEL = "Addon"
@@ -42,9 +43,9 @@ class AddonService:
         self.repo = AddonRepository(db, team_id)
 
     async def create(self, payload: AddonCreateRequest, actor_user_id: int | None = None) -> AddonResponseSchema:
-        dup = await self.repo.find_for_code(payload.code, payload.driver_id)
-        if dup is not None and dup.driver_id == payload.driver_id:
-            raise ConflictException(f"이미 존재하는 부가요금 코드: {payload.code} (driver={payload.driver_id})")
+        dup = await self.repo.find_for_code(payload.code)
+        if dup is not None:
+            raise ConflictException(f"이미 존재하는 부가요금 코드: {payload.code}")
         row = await self.repo.create(payload.model_dump(), actor_user_id=actor_user_id)
         return AddonResponseSchema.model_validate(row)
 
@@ -54,8 +55,8 @@ class AddonService:
             raise NotFoundException(_LABEL)
         return AddonResponseSchema.model_validate(row)
 
-    async def get_for_code(self, code: str, driver_id: int | None = None) -> AddonResponseSchema | None:
-        row = await self.repo.find_for_code(code, driver_id)
+    async def get_for_code(self, code: str) -> AddonResponseSchema | None:
+        row = await self.repo.find_for_code(code)
         return AddonResponseSchema.model_validate(row) if row else None
 
     async def list_paginated(self, request: PaginateAddonRequest) -> CursorPaginationResult[AddonResponseSchema]:
@@ -77,10 +78,10 @@ class AddonService:
         return AddonDeleteResponseSchema(id=acc_id, deleted=True, soft_deleted=True)
 
     async def seed_defaults(self, actor_user_id: int | None = None) -> AddonSeedResultSchema:
-        """시스템 기본 부가요금 타입 시드(이미 있는 code 는 건너뜀, 팀 전역=driver_id NULL)."""
+        """시스템 기본 부가요금 타입 시드(이미 있는 code 는 건너뜀)."""
         created = skipped = 0
         for code, name, cat, unit, amount, percent in _SEED:
-            if await self.repo.find_for_code(code, None) is not None:
+            if await self.repo.find_for_code(code) is not None:
                 skipped += 1
                 continue
             await self.repo.create({
@@ -96,3 +97,31 @@ class AddonService:
         result = await self.repo.sync_delta(since)
         result.items = [AddonResponseSchema.model_validate(r) for r in result.items]
         return result
+
+    # ── 기사별 금액 override ─────────────────────────────────────
+    async def list_driver_rates(self, addon_id: int) -> list[AddonDriverRateResponseSchema]:
+        if not await self.repo.get(addon_id):
+            raise NotFoundException(_LABEL)
+        rows = await self.repo.list_driver_rates(addon_id)
+        return [AddonDriverRateResponseSchema.model_validate(r) for r in rows]
+
+    async def upsert_driver_rate(
+        self, addon_id: int, driver_id: int, payload: AddonDriverRateUpsertRequest,
+        actor_user_id: int | None = None,
+    ) -> AddonDriverRateResponseSchema:
+        if not await self.repo.get(addon_id):
+            raise NotFoundException(_LABEL)
+        row = await self.repo.upsert_driver_rate(
+            addon_id, driver_id,
+            amount=payload.amount, percent=payload.percent, note=payload.note,
+            actor_user_id=actor_user_id,
+        )
+        return AddonDriverRateResponseSchema.model_validate(row)
+
+    async def delete_driver_rate(
+        self, addon_id: int, driver_id: int, actor_user_id: int | None = None,
+    ) -> AddonDriverRateDeleteResponseSchema:
+        ok = await self.repo.delete_driver_rate(addon_id, driver_id, actor_user_id=actor_user_id)
+        if not ok:
+            raise NotFoundException("Addon Driver Rate")
+        return AddonDriverRateDeleteResponseSchema(addon_id=addon_id, driver_id=driver_id, deleted=True)

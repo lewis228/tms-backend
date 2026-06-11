@@ -2,7 +2,7 @@
 """요율 종합 해석 엔진 — driver → 유효 요율그룹 → method 분기 → 단가 산출.
 
 payroll/invoice 가 정산·청구 시점에 사용. payroll.resolve.resolve_leg_rate 가 leg 의
-(driver, work_date, move_type, origin/dest zip·city, container_size, miles/hours) 를
+(driver, work_date, move_type, origin/dest zip·city, miles/hours) 를
 뽑아 이 RateResolver.resolve 를 호출하고, 결과 base 를 payroll_line 에 snapshot 동결한다.
 """
 from __future__ import annotations
@@ -13,12 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from rate_sheet.repository import RateSheetRepository, _CELL_KEYS
 from rate_sheet import lookup
-from rate_sheet.const.status import SheetKind, RateMoveType, RateServiceType, RateContainerSize
+from rate_sheet.const.status import SheetKind, RateMoveType, RateServiceType
 from rate_sheet.schemas.response import RateResolveResultSchema
 from rate_group.repository import RateGroupRepository
 from rate_group.const.status import RateMethod
 from rate_zone.repository import RateZoneRepository
-from rate_multiplier.service import RateMultiplierService
 from driver_rate_assignment.service import DriverRateAssignmentService
 
 
@@ -33,7 +32,6 @@ class RateResolver:
         self.sheet_repo = RateSheetRepository(db, team_id)
         self.group_repo = RateGroupRepository(db, team_id)
         self.zone_repo = RateZoneRepository(db, team_id)
-        self.mult_svc = RateMultiplierService(db, team_id)
         self.dra_svc = DriverRateAssignmentService(db, team_id)
 
     async def resolve(
@@ -42,7 +40,6 @@ class RateResolver:
         service_type: RateServiceType | None = None,
         from_zip: str | None = None, from_city: str | None = None, from_state: str | None = None,
         dest_zip: str | None = None, dest_city: str | None = None, dest_state: str | None = None,
-        container_size: RateContainerSize | None = None,
         miles: Decimal | None = None, hours: Decimal | None = None,
     ) -> RateResolveResultSchema:
         # 1) 드라이버 → 유효 요율그룹
@@ -107,29 +104,17 @@ class RateResolver:
                      "from_city": from_city, "from_state": from_state,
                      "to_city": dest_city, "to_state": dest_state}
 
-        # 사이즈 해석: ① 요청 사이즈 셀(오버라이드/정확값) 우선 → 그대로 사용(배율 1.0)
-        #             ② 없으면 40ft 마스터 셀 × 배율(20/45). Bobtail(size=None) 은 배율 미적용.
-        exact = await lookup.resolve_cell(self.sheet_repo, sheet.id, {**coord, "container_size": container_size}, work_date)
-        if exact.found and exact.amount is not None:
-            base = exact.amount.quantize(Decimal("0.01"))
+        # 셀 조회 — 컨테이너 사이즈는 정산에 무관(폐기): (move, service, from→to) 만으로 결정.
+        cell = await lookup.resolve_cell(self.sheet_repo, sheet.id, coord, work_date)
+        if cell.found and cell.amount is not None:
+            base = cell.amount.quantize(Decimal("0.01"))
             return RateResolveResultSchema(
                 found=True, method=method.value, rate_group_id=gid, rate_sheet_id=sheet.id,
-                rate_entry_id=exact.rate_entry_id, zone_id=zone_id, amount=exact.amount,
-                multiplier=Decimal("1.00"), base_amount=base,
+                rate_entry_id=cell.rate_entry_id, zone_id=zone_id, amount=cell.amount,
+                base_amount=base,
             )
 
-        if container_size is not None and container_size != RateContainerSize.SIZE_40:
-            master = await lookup.resolve_cell(self.sheet_repo, sheet.id, {**coord, "container_size": RateContainerSize.SIZE_40}, work_date)
-            if master.found and master.amount is not None:
-                factor = await self.mult_svc.get_factor(container_size, gid)
-                base = (master.amount * factor).quantize(Decimal("0.01"))
-                return RateResolveResultSchema(
-                    found=True, method=method.value, rate_group_id=gid, rate_sheet_id=sheet.id,
-                    rate_entry_id=master.rate_entry_id, zone_id=zone_id, amount=master.amount,
-                    multiplier=factor, base_amount=base,
-                )
-
         return _fail(
-            f"요율 미등록 (sheet={sheet.id}, size={container_size}, date={work_date.isoformat()}).",
+            f"요율 미등록 (sheet={sheet.id}, date={work_date.isoformat()}).",
             method=method.value, rate_group_id=gid, rate_sheet_id=sheet.id, zone_id=zone_id,
         )

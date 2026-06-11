@@ -74,15 +74,14 @@ async def seed(db: AsyncSession):
     from chassis.model import ChassisModel
     from chassis.const.status import ChassisSize, ChassisOwnerKind, ChassisStatus
     from addon.service import AddonService
-    from addon.model import AddonModel
+    from addon.model import AddonModel, AddonDriverRateModel
     from addon.const.status import AddonCategory, AddonUnit
     from rate_zone.model import RateZoneModel, RateZoneMemberModel
     from rate_group.model import RateGroupModel
     from rate_group.const.status import RateMethod
     from rate_group.entry_service import RateGroupEntryService
     from rate_group.schemas.request import FlatRateEntryRequest
-    from rate_multiplier.model import RateMultiplierModel
-    from rate_sheet.const.status import RateMoveType, RateServiceType, RateContainerSize
+    from rate_sheet.const.status import RateMoveType, RateServiceType
     from driver_rate_assignment.model import DriverRateAssignmentModel
     from load_type_template.service import LoadTypeTemplateService
     from delivery_order.model import DeliveryOrderModel, DeliveryOrderAddonModel
@@ -270,14 +269,17 @@ async def seed(db: AsyncSession):
     banner("Add-on 마스터")
     await AddonService(db, tid).seed_defaults(actor_user_id=aid)
     await db.flush()
-    db.add(AddonModel(team_id=tid, code="FUEL", name="Fuel (Driver Override)", category=AddonCategory.FUEL,
-                      unit=AddonUnit.PERCENT, percent=D("0.18"), driver_id=drivers[0].id,
-                      is_billable_to_customer=True, is_payable_to_driver=True, created_by_user_id=aid))
+    # 기사별 금액 override — 분리 테이블(addon_driver_rate): FUEL 팀 기본 20%, driver0 만 18%
+    fuel_row = (await db.execute(text(
+        "SELECT id FROM addon WHERE team_id=:t AND code='FUEL' LIMIT 1"
+    ), {"t": tid})).first()
+    db.add(AddonDriverRateModel(team_id=tid, addon_id=fuel_row[0], driver_id=drivers[0].id,
+                                percent=D("0.18"), note="driver0 개인 유류할증", created_by_user_id=aid))
     await db.flush()
     addon_ngt = (await db.execute(text(
-        "SELECT id, code FROM addon WHERE team_id=:t AND code='NGT' AND driver_id IS NULL LIMIT 1"
+        "SELECT id, code FROM addon WHERE team_id=:t AND code='NGT' LIMIT 1"
     ), {"t": tid})).first()
-    print("  addon seed_defaults + FUEL per-driver override")
+    print("  addon seed_defaults + FUEL driver-rate override (분리 테이블)")
 
     # ── 4. 요율 서브시스템 ────────────────────────────────────
     banner("요율 (rate_*)")
@@ -332,71 +334,54 @@ async def seed(db: AsyncSession):
     grp_hour_tm = _grp("Team Driver Hourly", RateMethod.HOURLY, "팀 드라이버 시간 단가")
     await db.flush()
 
-    # 멀티플라이어: 팀 전역(폴백) + Default ZONE 전용
-    db.add_all([
-        RateMultiplierModel(team_id=tid, rate_group_id=None, container_size=RateContainerSize.SIZE_20,
-                            factor=D("0.85"), note="20ft 전역 할인", created_by_user_id=aid),
-        RateMultiplierModel(team_id=tid, rate_group_id=None, container_size=RateContainerSize.SIZE_45,
-                            factor=D("1.15"), note="45ft 전역 할증", created_by_user_id=aid),
-        RateMultiplierModel(team_id=tid, rate_group_id=grp_zone.id, container_size=RateContainerSize.SIZE_20,
-                            factor=D("0.80"), note="Default ZONE 20ft", created_by_user_id=aid),
-        RateMultiplierModel(team_id=tid, rate_group_id=grp_zone.id, container_size=RateContainerSize.SIZE_45,
-                            factor=D("1.20"), note="Default ZONE 45ft", created_by_user_id=aid),
-    ])
-    await db.flush()
-
     # ── 요율 셀: UI 와 동일한 RateGroupEntryService.set_entry 경로(시트 자동 생성/라우팅) ──
     rate_svc = RateGroupEntryService(db, tid)
     L, E = RateMoveType.LOAD, RateMoveType.EMPTY
     LV, DR = RateServiceType.LIVE, RateServiceType.DROP
-    S40, S20 = RateContainerSize.SIZE_40, RateContainerSize.SIZE_20
     JAN = date(2026, 1, 1)
 
     def _round5(v):
         return str(int(round(v / 5.0) * 5))
 
-    async def zcell(grp, mv, sv, fz, tz, size, amt, eff=JAN):
+    async def zcell(grp, mv, sv, fz, tz, amt, eff=JAN):
         await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
             move_type=mv, service_type=sv, from_zone_id=fz.id, to_zone_id=tz.id,
-            container_size=size, amount=D(amt), effective_from=eff), actor_user_id=aid)
+            amount=D(amt), effective_from=eff), actor_user_id=aid)
 
-    async def ccell(grp, mv, sv, fc, tc, size, amt, eff=JAN):
+    async def ccell(grp, mv, sv, fc, tc, amt, eff=JAN):
         await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
             move_type=mv, service_type=sv, from_city=fc, from_state="CA", to_city=tc, to_state="CA",
-            container_size=size, amount=D(amt), effective_from=eff), actor_user_id=aid)
+            amount=D(amt), effective_from=eff), actor_user_id=aid)
 
     async def ucell(grp, per_unit, eff=JAN):
         await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
             per_unit=D(per_unit), effective_from=eff), actor_user_id=aid)
 
-    # 모든 (move, service) 9조합 × 모든 사이즈 → 어떤 선택이든 매트릭스가 꽉 차게.
+    # 모든 (move, service) 9조합 → 어떤 선택이든 매트릭스가 꽉 차게. (사이즈는 정산 무관 — 폐기)
     N_M, N_S = RateMoveType.NONE, RateServiceType.NONE
-    S45 = RateContainerSize.SIZE_45
     ALL_COMBOS = [
         (L, LV, 1.00), (L, DR, 0.92), (L, N_S, 0.85),
         (E, LV, 0.55), (E, DR, 0.45), (E, N_S, 0.40),
         (N_M, LV, 0.35), (N_M, DR, 0.30), (N_M, N_S, 0.25),
     ]
-    SIZES_F = [(S20, 0.85), (S40, 1.00), (S45, 1.15)]  # 사이즈별 배율
 
     async def fill_zone_matrix(grp, group_mult):
-        """그룹의 모든 (move,service)×사이즈×from≠to 를 채움(완전 충진)."""
+        """그룹의 모든 (move,service)×from≠to 를 채움(완전 충진)."""
         for mv, sv, ms in ALL_COMBOS:
-            for sz, sf in SIZES_F:
-                for fz in ZONES:
-                    for tz in ZONES:
-                        if fz is tz:
-                            continue
-                        dist = abs(ZIDX[tz] - ZIDX[fz])
-                        await zcell(grp, mv, sv, fz, tz, sz,
-                                    _round5((90 + dist * 2.6) * group_mult * ms * sf))
+            for fz in ZONES:
+                for tz in ZONES:
+                    if fz is tz:
+                        continue
+                    dist = abs(ZIDX[tz] - ZIDX[fz])
+                    await zcell(grp, mv, sv, fz, tz,
+                                _round5((90 + dist * 2.6) * group_mult * ms))
 
     await fill_zone_matrix(grp_zone, 1.00)
     await fill_zone_matrix(grp_zone_rf, 1.40)
     await fill_zone_matrix(grp_zone_ow, 1.55)
     # PORT→IE LOAD/LIVE 40 = 285→310 버전 2개로 오버라이드(payroll/e2e 정합)
-    await zcell(grp_zone, L, LV, z_port, z_ie, S40, "285")
-    await zcell(grp_zone, L, LV, z_port, z_ie, S40, "310", eff=date(2026, 6, 1))
+    await zcell(grp_zone, L, LV, z_port, z_ie, "285")
+    await zcell(grp_zone, L, LV, z_port, z_ie, "310", eff=date(2026, 6, 1))
 
     # City 매트릭스 — 대표 도시 6개(zip 마스터 표기와 일치)
     CITIES = [("San Pedro", 0), ("Long Beach", 10), ("Los Angeles", 25),
@@ -404,13 +389,12 @@ async def seed(db: AsyncSession):
 
     async def fill_city_matrix(grp, group_mult):
         for mv, sv, ms in ALL_COMBOS:
-            for sz, sf in SIZES_F:
-                for fc, fi in CITIES:
-                    for tc, ti in CITIES:
-                        if fc == tc:
-                            continue
-                        await ccell(grp, mv, sv, fc, tc, sz,
-                                    _round5((95 + abs(ti - fi) * 3.0) * group_mult * ms * sf))
+            for fc, fi in CITIES:
+                for tc, ti in CITIES:
+                    if fc == tc:
+                        continue
+                    await ccell(grp, mv, sv, fc, tc,
+                                _round5((95 + abs(ti - fi) * 3.0) * group_mult * ms))
 
     await fill_city_matrix(grp_city, 1.00)
     await fill_city_matrix(grp_city_ex, 1.25)
@@ -429,8 +413,8 @@ async def seed(db: AsyncSession):
         db.add(DriverRateAssignmentModel(team_id=tid, driver_id=_drv.id, rate_group_id=_grp.id,
                                          effective_from=JAN, created_by_user_id=aid))
     await db.flush()
-    print("  zone×7 + member×17, group×12 (ZONE/CITY/MILE/HOURLY 각 3), multiplier×4, "
-          "rate_entry 5800+ (9 move×service × 3사이즈 × 전 from→to, 완전 충진), assignment×3")
+    print("  zone×7 + member×17, group×12 (ZONE/CITY/MILE/HOURLY 각 3), "
+          "rate_entry 1900+ (9 move×service × 전 from→to, 사이즈 차원 폐기), assignment×3")
 
     # ── 5. Load Type 템플릿 (시스템 시드) ─────────────────────
     banner("Load Type 템플릿")

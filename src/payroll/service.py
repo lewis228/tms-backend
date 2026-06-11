@@ -28,7 +28,6 @@ def _snapshot(res) -> dict:
         "method": res.method, "amount": str(res.amount) if res.amount is not None else None,
         "per_unit": str(res.per_unit) if res.per_unit is not None else None,
         "quantity": str(res.quantity) if res.quantity is not None else None,
-        "multiplier": str(res.multiplier) if res.multiplier is not None else None,
         "base_amount": str(res.base_amount) if res.base_amount is not None else None,
         "rate_sheet_id": res.rate_sheet_id, "rate_entry_id": res.rate_entry_id,
         "zone_id": res.zone_id, "rate_group_id": res.rate_group_id,

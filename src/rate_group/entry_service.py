@@ -35,20 +35,17 @@ def _cell_from_flat(row: FlatRateEntryRequest, kind: SheetKind) -> dict:
         return {
             "from_zone_id": row.from_zone_id, "to_zone_id": row.to_zone_id,
             "from_city": None, "from_state": None, "to_city": None, "to_state": None,
-            "container_size": row.container_size,
         }
     if kind == SheetKind.CITY:
         return {
             "from_zone_id": None, "to_zone_id": None,
             "from_city": row.from_city, "from_state": row.from_state,
             "to_city": row.to_city, "to_state": row.to_state,
-            "container_size": row.container_size,
         }
     # MILE / HOURLY
     return {
         "from_zone_id": None, "to_zone_id": None,
         "from_city": None, "from_state": None, "to_city": None, "to_state": None,
-        "container_size": row.container_size,
     }
 
 
@@ -100,7 +97,6 @@ class RateGroupEntryService:
             from_zone_id=entry.from_zone_id, to_zone_id=entry.to_zone_id,
             from_city=entry.from_city, from_state=entry.from_state,
             to_city=entry.to_city, to_state=entry.to_state,
-            container_size=entry.container_size,
             amount=entry.amount, per_unit=entry.per_unit,
             effective_from=entry.effective_from, effective_to=entry.effective_to,
         )
@@ -125,8 +121,7 @@ class RateGroupEntryService:
                     from_zone_id=e.from_zone_id, to_zone_id=e.to_zone_id,
                     from_city=e.from_city, from_state=e.from_state,
                     to_city=e.to_city, to_state=e.to_state,
-                    container_size=e.container_size,
-                    amount=e.amount, per_unit=e.per_unit,
+                            amount=e.amount, per_unit=e.per_unit,
                     effective_from=e.effective_from, effective_to=e.effective_to,
                 ))
         return RateGroupEntriesResponse(rate_group_id=group_id, method=method, rows=rows)

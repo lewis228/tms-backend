@@ -21,7 +21,6 @@ class AddonCreateRequest(RequestSchema):
     auto_apply: bool = False
     is_billable_to_customer: bool = True
     is_payable_to_driver: bool = True
-    driver_id: int | None = None
     note: str | None = Field(default=None, max_length=300)
 
 
@@ -44,5 +43,11 @@ class PaginateAddonRequest(BasePaginationSchema):
     include_inactive: bool = False
     where__category__equal: Optional[AddonCategory] = None
     where__auto_apply__equal: Optional[bool] = None
-    where__driver_id__equal: Optional[int] = None
     where__code__i_like: Optional[str] = None
+
+
+class AddonDriverRateUpsertRequest(RequestSchema):
+    """기사별 add-on 금액 override 업서트 — 마스터 정의는 그대로, 금액만."""
+    amount: Decimal | None = None
+    percent: Decimal | None = None
+    note: str | None = Field(default=None, max_length=300)

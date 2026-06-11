@@ -20,16 +20,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from common.exceptions.base import NotFoundException
 from rate_sheet.repository import RateSheetRepository
 from rate_sheet import versioning
-from rate_sheet.const.status import RateContainerSize, RateEntrySource, RateMoveType, RateServiceType
+from rate_sheet.const.status import RateEntrySource, RateMoveType, RateServiceType
 from rate_zone.repository import RateZoneRepository
 from rate_import.schemas.response import CsvImportReport, ImportRowError
 
 _ENTRY_HEADER = ["from_zone_id", "to_zone_id", "from_city", "from_state", "to_city", "to_state",
-                 "container_size", "amount", "per_unit", "effective_from"]
+                 "amount", "per_unit", "effective_from"]
 # 그룹 단위 플랫 행(이미지3 표준): move/service 컬럼 포함
 _GROUP_HEADER = ["move_type", "service_type", "from_zone_id", "to_zone_id",
                  "from_city", "from_state", "to_city", "to_state",
-                 "container_size", "amount", "per_unit", "effective_from"]
+                 "amount", "per_unit", "effective_from"]
 _MEMBER_HEADER = ["zip_code", "city", "state"]
 
 
@@ -62,8 +62,6 @@ class RateImportService:
         reader = csv.DictReader(io.StringIO(csv_text))
         for i, raw in enumerate(reader, start=1):
             try:
-                size = (raw.get("container_size") or "").strip() or None
-                cs = RateContainerSize(size) if size else None
                 eff = (raw.get("effective_from") or "").strip()
                 if not eff:
                     raise ValueError("effective_from 필수")
@@ -79,7 +77,6 @@ class RateImportService:
                         "from_state": (raw.get("from_state") or "").strip() or None,
                         "to_city": (raw.get("to_city") or "").strip() or None,
                         "to_state": (raw.get("to_state") or "").strip() or None,
-                        "container_size": cs,
                     },
                     "amount": amount, "per_unit": per_unit,
                     "effective_from": date.fromisoformat(eff),
@@ -118,7 +115,6 @@ class RateImportService:
             w.writerow([
                 e.from_zone_id or "", e.to_zone_id or "", e.from_city or "", e.from_state or "",
                 e.to_city or "", e.to_state or "",
-                e.container_size.value if e.container_size else "",
                 e.amount if e.amount is not None else "", e.per_unit if e.per_unit is not None else "",
                 e.effective_from.isoformat(),
             ])
@@ -138,7 +134,6 @@ class RateImportService:
                     raise ValueError("effective_from 필수")
                 mv = (raw.get("move_type") or "").strip() or None
                 sv = (raw.get("service_type") or "").strip() or None
-                size = (raw.get("container_size") or "").strip() or None
                 rows.append(FlatRateEntryRequest(
                     move_type=RateMoveType(mv) if mv else None,
                     service_type=RateServiceType(sv) if sv else None,
@@ -148,7 +143,6 @@ class RateImportService:
                     from_state=(raw.get("from_state") or "").strip() or None,
                     to_city=(raw.get("to_city") or "").strip() or None,
                     to_state=(raw.get("to_state") or "").strip() or None,
-                    container_size=RateContainerSize(size) if size else None,
                     amount=_opt_dec(raw.get("amount")),
                     per_unit=_opt_dec(raw.get("per_unit")),
                     effective_from=date.fromisoformat(eff),
@@ -182,7 +176,6 @@ class RateImportService:
                 r.move_type.value if r.move_type else "", r.service_type.value if r.service_type else "",
                 r.from_zone_id or "", r.to_zone_id or "", r.from_city or "", r.from_state or "",
                 r.to_city or "", r.to_state or "",
-                r.container_size.value if r.container_size else "",
                 r.amount if r.amount is not None else "", r.per_unit if r.per_unit is not None else "",
                 r.effective_from.isoformat(),
             ])

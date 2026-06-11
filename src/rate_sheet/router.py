@@ -17,7 +17,6 @@ from common.pagination.schemas.pagination_response import CursorPaginationResult
 from common.pagination.schemas.sync_response import SyncResponse
 from rate_sheet.service import RateSheetService
 from rate_sheet.resolve import RateResolver
-from rate_sheet.const.status import RateContainerSize
 from rate_sheet.schemas.request import (
     RateSheetCreateRequest, RateSheetUpdateRequest, PaginateRateSheetRequest,
     SetRateEntryRequest, BulkSetRateEntryRequest, RateResolvePreviewRequest,
@@ -179,7 +178,6 @@ async def lookup_rate_entry(
     from_state: Optional[str] = Query(default=None),
     to_city: Optional[str] = Query(default=None),
     to_state: Optional[str] = Query(default=None),
-    container_size: Optional[RateContainerSize] = Query(default=None),
     _1: None = Depends(access_token),
     team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_read_db),
@@ -188,6 +186,6 @@ async def lookup_rate_entry(
     cell = {
         "from_zone_id": from_zone_id, "to_zone_id": to_zone_id,
         "from_city": from_city, "from_state": from_state,
-        "to_city": to_city, "to_state": to_state, "container_size": container_size,
+        "to_city": to_city, "to_state": to_state,
     }
     return await RateSheetService(db, team_id).lookup(sheet_id, cell, work_date)

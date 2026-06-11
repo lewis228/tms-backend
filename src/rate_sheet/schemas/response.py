@@ -6,7 +6,7 @@ from typing import Literal, List
 
 from common.schemas.base import ResponseSchema
 from rate_sheet.const.status import (
-    SheetKind, RateMoveType, RateServiceType, RateContainerSize, RateEntrySource, RateEntryAction, SheetStatus,
+    SheetKind, RateMoveType, RateServiceType, RateEntrySource, RateEntryAction, SheetStatus,
 )
 
 
@@ -32,7 +32,6 @@ class RateEntryResponseSchema(ResponseSchema):
     from_state: str | None = None
     to_city: str | None = None
     to_state: str | None = None
-    container_size: RateContainerSize | None = None
     amount: Decimal | None = None
     per_unit: Decimal | None = None
     effective_from: date
@@ -64,7 +63,6 @@ class RateEntryHistoryResponseSchema(ResponseSchema):
     from_state: str | None = None
     to_city: str | None = None
     to_state: str | None = None
-    container_size: RateContainerSize | None = None
     old_amount: Decimal | None = None
     new_amount: Decimal | None = None
     old_per_unit: Decimal | None = None
@@ -88,7 +86,7 @@ class RateLookupResultSchema(ResponseSchema):
 class RateResolveResultSchema(ResponseSchema):
     """요율 종합 해석 결과 — 정산 snapshot 의 원천.
 
-    base_amount = (MILE/HOURLY: per_unit×quantity) | (ZONE/CITY: amount×multiplier).
+    base_amount = (MILE/HOURLY: per_unit×quantity) | (ZONE/CITY: 매트릭스 셀 amount).
     found=False 면 message 로 사유(그룹 미배정 / 시트 없음 / zip→zone 실패 / 요율 미등록).
     """
     found: bool
@@ -100,6 +98,5 @@ class RateResolveResultSchema(ResponseSchema):
     amount: Decimal | None = None        # 매트릭스 셀 원단가
     per_unit: Decimal | None = None      # MILE/HOURLY 단가
     quantity: Decimal | None = None      # miles / hours
-    multiplier: Decimal | None = None    # 컨테이너 배율
     base_amount: Decimal | None = None   # 최종 산출 (정산 base)
     message: str | None = None

@@ -8,7 +8,7 @@ from pydantic import Field, model_validator
 from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
 from rate_sheet.const.status import (
-    SheetKind, RateMoveType, RateServiceType, RateContainerSize, RateEntrySource,
+    SheetKind, RateMoveType, RateServiceType, RateEntrySource,
 )
 
 
@@ -53,8 +53,8 @@ class SetRateEntryRequest(RequestSchema):
     """요율 셀 값 등록/변경 (유효일자 버전 추가) — from→to 좌표.
 
     셀 좌표는 시트 kind 에 맞게:
-    - ZONE: from_zone_id → to_zone_id (+ container_size)
-    - CITY: from_city/from_state → to_city/to_state (+ container_size)
+    - ZONE: from_zone_id → to_zone_id
+    - CITY: from_city/from_state → to_city/to_state
     - MILE/HOURLY: 좌표 없음, per_unit
     값은 amount(매트릭스) 또는 per_unit(MILE/HOURLY) 중 하나.
     """
@@ -64,7 +64,6 @@ class SetRateEntryRequest(RequestSchema):
     from_state: str | None = Field(default=None, max_length=8)
     to_city: str | None = Field(default=None, max_length=120)
     to_state: str | None = Field(default=None, max_length=8)
-    container_size: RateContainerSize | None = None
 
     amount: Decimal | None = None
     per_unit: Decimal | None = None
@@ -94,8 +93,8 @@ class RateResolvePreviewRequest(RequestSchema):
 
     driver_id → 유효 요율그룹 → method 분기로 단가 해석.
     - MILE: miles 필요 / HOURLY: hours 필요
-    - ZONE: move_type + from_zip + dest_zip + container_size
-    - CITY: move_type + from_city + dest_city(+state) + container_size
+    - ZONE: move_type + from_zip + dest_zip
+    - CITY: move_type + from_city + dest_city(+state)
     """
     driver_id: int
     work_date: date
@@ -107,6 +106,5 @@ class RateResolvePreviewRequest(RequestSchema):
     dest_zip: str | None = None
     dest_city: str | None = None
     dest_state: str | None = None
-    container_size: RateContainerSize | None = None
     miles: Decimal | None = None
     hours: Decimal | None = None

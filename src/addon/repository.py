@@ -8,7 +8,7 @@ from sqlalchemy import select, update, func
 from common.repository.team_scoped import TeamScopedRepoMixin
 from common.pagination.service import CommonService
 from common.pagination.schemas.pagination_response import CursorPaginationResult
-from addon.model import AddonModel
+from addon.model import AddonModel, AddonDriverRateModel
 from addon.schemas.request import PaginateAddonRequest
 from addon.schemas.response import AddonResponseSchema
 
@@ -37,25 +37,61 @@ class AddonRepository(TeamScopedRepoMixin):
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
-    async def find_for_code(self, code: str, driver_id: int | None = None) -> Optional[AddonModel]:
-        """code 의 정의를 조회 — driver override 우선, 없으면 전역."""
-        if driver_id is not None:
-            q = select(AddonModel).where(
-                AddonModel.team_id == self._require_team(),
-                AddonModel.code == code,
-                AddonModel.driver_id == driver_id,
-                AddonModel.is_active.is_(True),
-            )
-            row = (await self.db.execute(q)).scalar_one_or_none()
-            if row is not None:
-                return row
+    async def find_for_code(self, code: str) -> Optional[AddonModel]:
+        """code 의 마스터 정의 조회 (팀당 code 유일)."""
         q = select(AddonModel).where(
             AddonModel.team_id == self._require_team(),
             AddonModel.code == code,
-            AddonModel.driver_id.is_(None),
             AddonModel.is_active.is_(True),
         )
         return (await self.db.execute(q)).scalar_one_or_none()
+
+    # ── 기사별 금액 override (addon_driver_rate) ────────────────
+    async def get_driver_rate(self, addon_id: int, driver_id: int) -> Optional[AddonDriverRateModel]:
+        q = select(AddonDriverRateModel).where(
+            AddonDriverRateModel.team_id == self._require_team(),
+            AddonDriverRateModel.addon_id == addon_id,
+            AddonDriverRateModel.driver_id == driver_id,
+            AddonDriverRateModel.is_active.is_(True),
+        )
+        return (await self.db.execute(q)).scalar_one_or_none()
+
+    async def list_driver_rates(self, addon_id: int) -> List[AddonDriverRateModel]:
+        q = select(AddonDriverRateModel).where(
+            AddonDriverRateModel.team_id == self._require_team(),
+            AddonDriverRateModel.addon_id == addon_id,
+            AddonDriverRateModel.is_active.is_(True),
+        ).order_by(AddonDriverRateModel.id.asc())
+        return list((await self.db.execute(q)).scalars().all())
+
+    async def upsert_driver_rate(
+        self, addon_id: int, driver_id: int, *, amount, percent, note: str | None,
+        actor_user_id: int | None = None,
+    ) -> AddonDriverRateModel:
+        row = await self.get_driver_rate(addon_id, driver_id)
+        if row is None:
+            row = AddonDriverRateModel(
+                team_id=self._require_team(), addon_id=addon_id, driver_id=driver_id,
+                amount=amount, percent=percent, note=note, created_by_user_id=actor_user_id,
+            )
+            self.db.add(row)
+        else:
+            row.amount, row.percent, row.note = amount, percent, note
+            if actor_user_id is not None:
+                row.updated_by_user_id = actor_user_id
+        await self.db.flush()
+        await self.db.refresh(row)
+        return row
+
+    async def delete_driver_rate(self, addon_id: int, driver_id: int, actor_user_id: int | None = None) -> bool:
+        row = await self.get_driver_rate(addon_id, driver_id)
+        if row is None:
+            return False
+        row.is_active = False
+        if actor_user_id is not None:
+            row.updated_by_user_id = actor_user_id
+        await self.db.flush()
+        return True
 
     async def get_paginated(self, request: PaginateAddonRequest):
         team_id = self._require_team()

@@ -15,7 +15,7 @@ from rate_group.const.status import RateMethod
 from driver_rate_assignment.model import DriverRateAssignmentModel
 from rate_zone.model import RateZoneModel, RateZoneMemberModel
 from rate_sheet.model import RateSheetModel, RateEntryModel
-from rate_sheet.const.status import SheetKind, RateMoveType, RateServiceType, RateContainerSize
+from rate_sheet.const.status import SheetKind, RateMoveType, RateServiceType
 from rate_sheet.resolve import RateResolver
 
 from tests.integration.factories import make_team, make_driver
@@ -47,18 +47,16 @@ async def test_service_type_differentiates_rate(db_session):
     await db_session.flush()
 
     db_session.add(RateEntryModel(team_id=team.id, rate_sheet_id=sheet_live.id,
-                                  from_zone_id=from_zone.id, to_zone_id=to_zone.id,
-                                  container_size=RateContainerSize.SIZE_40, amount=Decimal("1000"),
+                                  from_zone_id=from_zone.id, to_zone_id=to_zone.id, amount=Decimal("1000"),
                                   effective_from=date(2026, 1, 1)))
     db_session.add(RateEntryModel(team_id=team.id, rate_sheet_id=sheet_drop.id,
-                                  from_zone_id=from_zone.id, to_zone_id=to_zone.id,
-                                  container_size=RateContainerSize.SIZE_40, amount=Decimal("800"),
+                                  from_zone_id=from_zone.id, to_zone_id=to_zone.id, amount=Decimal("800"),
                                   effective_from=date(2026, 1, 1)))
     await db_session.commit()
 
     resolver = RateResolver(db_session, team.id)
     common = dict(driver_id=driver.id, work_date=date(2026, 5, 9), move_type=RateMoveType.LOAD,
-                  from_zip="90001", dest_zip="90210", container_size=RateContainerSize.SIZE_40)
+                  from_zip="90001", dest_zip="90210")
 
     live = await resolver.resolve(service_type=RateServiceType.LIVE, **common)
     drop = await resolver.resolve(service_type=RateServiceType.DROP, **common)

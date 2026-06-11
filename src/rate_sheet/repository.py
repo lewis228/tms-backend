@@ -11,13 +11,13 @@ from common.repository.team_scoped import TeamScopedRepoMixin
 from common.pagination.service import CommonService
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from rate_sheet.model import RateSheetModel, RateEntryModel, RateEntryHistoryModel
-from rate_sheet.const.status import SheetKind, RateMoveType, RateContainerSize, RateEntryAction
+from rate_sheet.const.status import SheetKind, RateMoveType, RateEntryAction
 from rate_sheet.schemas.request import PaginateRateSheetRequest
 from rate_sheet.schemas.response import RateSheetResponseSchema
 
 
-# 셀 좌표 키 (rate_entry 컬럼명과 동일) — from→to (zone/city) + size
-_CELL_KEYS = ("from_zone_id", "to_zone_id", "from_city", "from_state", "to_city", "to_state", "container_size")
+# 셀 좌표 키 (rate_entry 컬럼명과 동일) — from→to (zone/city). 사이즈는 정산에 무관(폐기).
+_CELL_KEYS = ("from_zone_id", "to_zone_id", "from_city", "from_state", "to_city", "to_state")
 
 
 def _cell_conditions(cell: dict):
@@ -234,7 +234,6 @@ class RateSheetRepository(TeamScopedRepoMixin):
             from_zone_id=cell.get("from_zone_id"), to_zone_id=cell.get("to_zone_id"),
             from_city=cell.get("from_city"), from_state=cell.get("from_state"),
             to_city=cell.get("to_city"), to_state=cell.get("to_state"),
-            container_size=cell.get("container_size"),
             old_amount=old_amount, new_amount=new_amount,
             old_per_unit=old_per_unit, new_per_unit=new_per_unit,
             effective_from=effective_from, action=action, reason=reason,

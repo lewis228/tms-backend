@@ -15,7 +15,7 @@ from rate_group.const.status import RateMethod
 from rate_group.entry_service import RateGroupEntryService
 from rate_group.schemas.request import FlatRateEntryRequest
 from rate_zone.model import RateZoneModel
-from rate_sheet.const.status import RateMoveType, RateServiceType, RateContainerSize
+from rate_sheet.const.status import RateMoveType, RateServiceType
 
 from tests.integration.factories import make_team
 
@@ -34,13 +34,13 @@ async def test_flat_entry_routes_to_sheets_and_lists(db_session):
     # (LOAD, LIVE) z1→z2 = 100
     await svc.set_entry(group.id, FlatRateEntryRequest(
         move_type=RateMoveType.LOAD, service_type=RateServiceType.LIVE,
-        from_zone_id=z1.id, to_zone_id=z2.id, container_size=RateContainerSize.SIZE_40,
+        from_zone_id=z1.id, to_zone_id=z2.id,
         amount=Decimal("100"), effective_from=date(2026, 1, 1),
     ))
     # (EMPTY, DROP) z1→z2 = 40 → 다른 시트로 라우팅
     await svc.set_entry(group.id, FlatRateEntryRequest(
         move_type=RateMoveType.EMPTY, service_type=RateServiceType.DROP,
-        from_zone_id=z1.id, to_zone_id=z2.id, container_size=RateContainerSize.SIZE_40,
+        from_zone_id=z1.id, to_zone_id=z2.id,
         amount=Decimal("40"), effective_from=date(2026, 1, 1),
     ))
 
@@ -57,7 +57,7 @@ async def test_flat_entry_routes_to_sheets_and_lists(db_session):
     # 같은 셀 재등록(다른 effective_from) → append-only, 현재 유효 셀 수는 그대로 2
     await svc.set_entry(group.id, FlatRateEntryRequest(
         move_type=RateMoveType.LOAD, service_type=RateServiceType.LIVE,
-        from_zone_id=z1.id, to_zone_id=z2.id, container_size=RateContainerSize.SIZE_40,
+        from_zone_id=z1.id, to_zone_id=z2.id,
         amount=Decimal("120"), effective_from=date(2026, 6, 1),
     ))
     resp2 = await svc.list_entries(group.id)

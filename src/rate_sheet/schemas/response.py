@@ -26,6 +26,8 @@ class RateSheetResponseSchema(ResponseSchema):
 class RateEntryResponseSchema(ResponseSchema):
     id: int
     rate_sheet_id: int
+    from_zip: str | None = None
+    to_zip: str | None = None
     from_zone_id: int | None = None
     to_zone_id: int | None = None
     from_city: str | None = None
@@ -57,6 +59,8 @@ class RateEntryHistoryResponseSchema(ResponseSchema):
     id: int
     rate_sheet_id: int
     rate_entry_id: int | None = None
+    from_zip: str | None = None
+    to_zip: str | None = None
     from_zone_id: int | None = None
     to_zone_id: int | None = None
     from_city: str | None = None
@@ -86,8 +90,10 @@ class RateLookupResultSchema(ResponseSchema):
 class RateResolveResultSchema(ResponseSchema):
     """요율 종합 해석 결과 — 정산 snapshot 의 원천.
 
-    base_amount = (MILE/HOURLY: per_unit×quantity) | (ZONE/CITY: 매트릭스 셀 amount).
-    found=False 면 message 로 사유(그룹 미배정 / 시트 없음 / zip→zone 실패 / 요율 미등록).
+    base_amount = (MILE/HOURLY: per_unit×quantity) | (ZIP/CITY: 매트릭스 셀 amount).
+    found=False 면 message 로 사유(디폴트 그룹 없음 / 시트 없음 / 사다리 미해석 등).
+    match_step = 해석 사다리 단계 기록(정산 근거 스냅샷·preview 표시용):
+    ATOM_ATOM(①) | ATOM_ZONE(②) | ZONE_ZONE(③) | UNIT(MILE/HOURLY).
     """
     found: bool
     method: str | None = None
@@ -99,4 +105,7 @@ class RateResolveResultSchema(ResponseSchema):
     per_unit: Decimal | None = None      # MILE/HOURLY 단가
     quantity: Decimal | None = None      # miles / hours
     base_amount: Decimal | None = None   # 최종 산출 (정산 base)
+    match_step: str | None = None        # 사다리 단계 (ATOM_ATOM/ATOM_ZONE/ZONE_ZONE/UNIT)
+    via_default_group: bool = False      # 사다리 ④ — 디폴트 그룹 폴백으로 해석됨
+    assignment_fallback: bool = False    # 기사 미배정 → ZIP 디폴트 그룹 적용됨
     message: str | None = None

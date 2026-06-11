@@ -6,13 +6,13 @@ from enum import StrEnum
 class SheetKind(StrEnum):
     """Rate Sheet(요율표 슬롯) 종류 = rate_group.method 와 동일(denormalize).
 
-    재설계(Zone×Zone):
-    - ZONE   : from_zone → to_zone 매트릭스 (가장 일반)
-    - CITY   : from_city/state → to_city/state 매트릭스 (zip 마스터 도시명)
+    원자+존 레이어 모델 — 셀은 전부 양방향(↔, 저장 시 정규화):
+    - ZIP    : zip ↔ zip 구간 매트릭스. 셀 좌표는 양측 각각 zip|zone (혼합 허용)
+    - CITY   : 도시 ↔ 도시 구간 매트릭스. 셀 좌표는 양측 각각 city|존(도시존)
     - MILE   : 거리 × per_unit (좌표 없이 per_unit 단일 셀)
     - HOURLY : 시간 × per_unit (좌표 없이 per_unit 단일 셀)
     """
-    ZONE   = "ZONE"
+    ZIP    = "ZIP"
     CITY   = "CITY"
     MILE   = "MILE"
     HOURLY = "HOURLY"

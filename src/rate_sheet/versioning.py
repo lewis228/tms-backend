@@ -7,6 +7,7 @@
   같은 시작일이면 기존 버전을 supersede(is_active=False) 후 새 버전 insert.
 - 미래에 이미 등록된 버전이 있으면 새 버전의 effective_to 를 그 전날로 capping.
 - 공백 구간(요율 미등록일) 은 lookup 에서 found=False → 정산 시 "미등록" 경고.
+- 셀은 양방향(↔) — 진입 시 lane.normalize_cell 로 정규화하므로 역순 입력도 같은 셀.
 """
 from __future__ import annotations
 from datetime import date, timedelta
@@ -14,6 +15,7 @@ from decimal import Decimal
 
 from rate_sheet.repository import RateSheetRepository
 from rate_sheet.model import RateEntryModel
+from rate_sheet.lane import normalize_cell
 from rate_sheet.const.status import RateEntrySource, RateEntryAction
 
 
@@ -29,6 +31,8 @@ async def set_rate(
     reason: str | None,
     actor_user_id: int | None,
 ) -> RateEntryModel:
+    # 0) 양방향 정규화 — 어느 방향으로 입력해도 같은 셀로 수렴 (이중 입력 차단)
+    cell = normalize_cell(cell)
     # 1) effective_from 시점에 유효한 기존 버전 찾기
     existing = await repo.find_open_entry(sheet_id, cell, effective_from)
     old_amount = existing.amount if existing else None

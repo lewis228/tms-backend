@@ -16,8 +16,13 @@ from rate_sheet.schemas.request import PaginateRateSheetRequest
 from rate_sheet.schemas.response import RateSheetResponseSchema
 
 
-# 셀 좌표 키 (rate_entry 컬럼명과 동일) — from→to (zone/city). 사이즈는 정산에 무관(폐기).
-_CELL_KEYS = ("from_zone_id", "to_zone_id", "from_city", "from_state", "to_city", "to_state")
+# 셀 좌표 키 (rate_entry 컬럼명과 동일) — 양측 각각 zip|zone|city 중 1개, 혼합 허용.
+# 구간은 양방향(↔): 저장/조회 전 lane.normalize_cell 로 정규화된 형태만 DB 에 존재.
+_CELL_KEYS = (
+    "from_zip", "to_zip",
+    "from_zone_id", "to_zone_id",
+    "from_city", "from_state", "to_city", "to_state",
+)
 
 
 def _cell_conditions(cell: dict):
@@ -231,6 +236,7 @@ class RateSheetRepository(TeamScopedRepoMixin):
         h = RateEntryHistoryModel(
             team_id=self._require_team(),
             rate_sheet_id=sheet_id, rate_entry_id=rate_entry_id,
+            from_zip=cell.get("from_zip"), to_zip=cell.get("to_zip"),
             from_zone_id=cell.get("from_zone_id"), to_zone_id=cell.get("to_zone_id"),
             from_city=cell.get("from_city"), from_state=cell.get("from_state"),
             to_city=cell.get("to_city"), to_state=cell.get("to_state"),

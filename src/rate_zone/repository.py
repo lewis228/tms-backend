@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import select, update, delete, func, or_, and_
 from sqlalchemy.orm import selectinload
 
 from common.repository.team_scoped import TeamScopedRepoMixin
@@ -44,6 +44,8 @@ class RateZoneRepository(TeamScopedRepoMixin):
                 team_id=team_id,
                 zone_id=zone.id,
                 zip_code=m.get("zip_code"),
+                city=m.get("city"),
+                state=m.get("state"),
                 created_by_user_id=actor_user_id,
             ))
         await self.db.flush()
@@ -99,21 +101,98 @@ class RateZoneRepository(TeamScopedRepoMixin):
         )
         return list((await self.db.execute(q)).scalars().all())
 
-    async def resolve_zone_id_by_zip(self, zip_code: str) -> Optional[int]:
-        """zip → 활성 zone_id (정산/요율 조회 진입점). 매칭 없으면 None."""
+    def _scoped_zone_query(self, rate_group_id: int | None):
+        """원자→zone 조회 공통: 그룹 스코프 존 우선, 없으면 글로벌(NULL) 존.
+
+        rate_group_id 가 None 이면 글로벌 존만 본다.
+        """
+        scope_cond = (
+            RateZoneModel.rate_group_id.is_(None)
+            if rate_group_id is None
+            else or_(
+                RateZoneModel.rate_group_id == rate_group_id,
+                RateZoneModel.rate_group_id.is_(None),
+            )
+        )
         q = (
             select(RateZoneMemberModel.zone_id)
             .join(RateZoneModel, RateZoneModel.id == RateZoneMemberModel.zone_id)
             .where(
                 RateZoneMemberModel.team_id == self._require_team(),
-                RateZoneMemberModel.zip_code == zip_code,
                 RateZoneModel.is_active.is_(True),
+                scope_cond,
             )
-            # zip 이 (실수로) 여러 존에 들어가도 결정적으로 가장 작은 zone_id 선택.
-            .order_by(RateZoneMemberModel.zone_id.asc())
+            # 그룹 스코프 존(NULL 아님) 먼저, 그 안에선 결정적으로 가장 작은 zone_id.
+            .order_by(
+                RateZoneModel.rate_group_id.is_(None).asc(),
+                RateZoneMemberModel.zone_id.asc(),
+            )
             .limit(1)
         )
+        return q
+
+    async def resolve_zone_id_for_zip(
+        self, zip_code: str, rate_group_id: int | None = None
+    ) -> Optional[int]:
+        """zip → 활성 zone_id (해석 진입점). 그룹 스코프 존 > 글로벌 존."""
+        q = self._scoped_zone_query(rate_group_id).where(
+            RateZoneMemberModel.zip_code == zip_code,
+        )
         return (await self.db.execute(q)).scalar_one_or_none()
+
+    async def resolve_zone_id_for_city(
+        self, city: str, state: str | None, rate_group_id: int | None = None
+    ) -> Optional[int]:
+        """(city,state) → 활성 zone_id (CITY 방식 도시존). 그룹 스코프 존 > 글로벌 존."""
+        conds = [func.lower(RateZoneMemberModel.city) == city.lower()]
+        if state:
+            conds.append(RateZoneMemberModel.state == state.upper())
+        q = self._scoped_zone_query(rate_group_id).where(*conds)
+        return (await self.db.execute(q)).scalar_one_or_none()
+
+    async def list_conflicting_atoms(
+        self, zone_id: int | None, scope_group_id: int | None,
+        zips: List[str], cities: List[tuple[str, str | None]],
+    ) -> List[tuple[str, str]]:
+        """같은 스코프(글로벌 / 특정 그룹)의 *다른* 활성 존에 이미 속한 원자들.
+
+        제약 "같은 스코프 안에서 원자당 존 1개" 의 앱 레벨 검사
+        (MySQL 유니크는 NULL 스코프를 표현 못 함). 반환 = [(원자 라벨, 존 이름)].
+        """
+        if not zips and not cities:
+            return []
+        scope_cond = (
+            RateZoneModel.rate_group_id.is_(None)
+            if scope_group_id is None
+            else RateZoneModel.rate_group_id == scope_group_id
+        )
+        atom_conds = []
+        if zips:
+            atom_conds.append(RateZoneMemberModel.zip_code.in_(zips))
+        for c, s in cities:
+            cc = [func.lower(RateZoneMemberModel.city) == c.lower()]
+            if s:
+                cc.append(RateZoneMemberModel.state == s.upper())
+            atom_conds.append(and_(*cc))
+        conds = [
+            RateZoneMemberModel.team_id == self._require_team(),
+            RateZoneModel.is_active.is_(True),
+            scope_cond,
+            or_(*atom_conds),
+        ]
+        if zone_id is not None:
+            conds.append(RateZoneModel.id != zone_id)
+        q = (
+            select(RateZoneMemberModel, RateZoneModel.name)
+            .join(RateZoneModel, RateZoneModel.id == RateZoneMemberModel.zone_id)
+            .where(*conds)
+        )
+        rows = (await self.db.execute(q)).all()
+        out: List[tuple[str, str]] = []
+        for member, zone_name in rows:
+            label = member.zip_code if member.zip_code else f"{member.city}, {member.state or ''}".rstrip(", ")
+            out.append((label, zone_name))
+        return out
 
     # ── Update ──────────────────────────────────────────────────
     async def update_header(
@@ -148,6 +227,8 @@ class RateZoneRepository(TeamScopedRepoMixin):
                 team_id=team_id,
                 zone_id=zone_id,
                 zip_code=m.get("zip_code"),
+                city=m.get("city"),
+                state=m.get("state"),
                 created_by_user_id=actor_user_id,
             ))
         await self.db.flush()

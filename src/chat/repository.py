@@ -40,7 +40,7 @@ class ChatMessageRepository(TeamScopedRepoMixin):
             model=ChatMessageModel,
             session=self.db,
             base_query=base,
-            path=f"driver/chat/messages",
+            path="driver/chat/messages",
         )
 
     async def count_unread_for_driver(self, driver_user_id: int) -> int:

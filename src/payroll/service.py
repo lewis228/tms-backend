@@ -18,6 +18,7 @@ from payroll.schemas.response import (
     PayrollSummarySchema, PayrollDetailSchema, PayrollDeleteResponseSchema,
     PayrollLineResponseSchema, PayrollChargeResponseSchema,
     PayrollPreviewSchema, PayrollPreviewLine,
+    PayrollBuildPeriodResultSchema, PayrollPeriodSummarySchema,
 )
 
 _LABEL = "Payroll Settlement"
@@ -31,6 +32,10 @@ def _snapshot(res) -> dict:
         "base_amount": str(res.base_amount) if res.base_amount is not None else None,
         "rate_sheet_id": res.rate_sheet_id, "rate_entry_id": res.rate_entry_id,
         "zone_id": res.zone_id, "rate_group_id": res.rate_group_id,
+        # 해석 사다리 근거 (컨플루언스 v12) — "왜 이 금액인가" 감사 추적
+        "match_step": res.match_step,
+        "via_default_group": res.via_default_group,
+        "assignment_fallback": res.assignment_fallback,
     }
 
 
@@ -89,11 +94,8 @@ class PayrollService:
         return await self._to_detail(header.id)
 
     # ── Bi-weekly 일괄 생성 + 집계 (재설계 2c) ──────────────────
-    async def build_period(self, req, actor_user_id: int | None = None) -> "PayrollBuildPeriodResultSchema":
+    async def build_period(self, req, actor_user_id: int | None = None) -> PayrollBuildPeriodResultSchema:
         """기간 내 대상 leg 있는 드라이버 전체(또는 지정)에 대해 정산 일괄 생성."""
-        from payroll.schemas.request import PayrollBuildRequest
-        from payroll.schemas.response import PayrollBuildPeriodResultSchema
-
         if req.driver_ids:
             driver_ids = list(dict.fromkeys(req.driver_ids))  # 중복 제거, 순서 유지
         else:
@@ -116,8 +118,7 @@ class PayrollService:
             built_count=len(built), skipped_drivers=skipped, settlements=built,
         )
 
-    async def period_summary(self, start: date, end: date) -> "PayrollPeriodSummarySchema":
-        from payroll.schemas.response import PayrollPeriodSummarySchema
+    async def period_summary(self, start: date, end: date) -> PayrollPeriodSummarySchema:
         agg = await self.repo.aggregate_period(start, end)
         return PayrollPeriodSummarySchema(period_start=start, period_end=end, **agg)
 

@@ -23,7 +23,7 @@ from tests.integration.factories import make_team
 @pytest.mark.asyncio
 async def test_flat_entry_routes_to_sheets_and_lists(db_session):
     team = await make_team(db_session)
-    group = RateGroupModel(team_id=team.id, name="Z", method=RateMethod.ZONE)
+    group = RateGroupModel(team_id=team.id, name="Z", method=RateMethod.ZIP)
     z1 = RateZoneModel(team_id=team.id, name="A", code="A")
     z2 = RateZoneModel(team_id=team.id, name="B", code="B")
     db_session.add_all([group, z1, z2])
@@ -45,7 +45,7 @@ async def test_flat_entry_routes_to_sheets_and_lists(db_session):
     ))
 
     resp = await svc.list_entries(group.id)
-    assert resp.method == RateMethod.ZONE
+    assert resp.method == RateMethod.ZIP
     assert len(resp.rows) == 2
     # 두 행은 서로 다른 시트(move/service 분리)
     sheet_ids = {r.rate_sheet_id for r in resp.rows}

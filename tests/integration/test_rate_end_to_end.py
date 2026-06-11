@@ -60,7 +60,7 @@ async def test_leg_create_autofill_then_resolve(db_session):
     # zone (zip→zone) + 매트릭스
     z_port = RateZoneModel(team_id=team.id, name="Port", code="PORT")
     z_ie = RateZoneModel(team_id=team.id, name="IE", code="IE")
-    group = RateGroupModel(team_id=team.id, name="Z", method=RateMethod.ZONE)
+    group = RateGroupModel(team_id=team.id, name="Z", method=RateMethod.ZIP)
     db_session.add_all([z_port, z_ie, group])
     await db_session.flush()
     db_session.add_all([
@@ -69,7 +69,7 @@ async def test_leg_create_autofill_then_resolve(db_session):
         DriverRateAssignmentModel(team_id=team.id, driver_id=driver.id,
                                   rate_group_id=group.id, effective_from=date(2026, 1, 1)),
     ])
-    sheet = RateSheetModel(team_id=team.id, rate_group_id=group.id, kind=SheetKind.ZONE,
+    sheet = RateSheetModel(team_id=team.id, rate_group_id=group.id, kind=SheetKind.ZIP,
                            move_type=RateMoveType.LOAD, service_type=RateServiceType.LIVE)
     db_session.add(sheet)
     await db_session.flush()
@@ -105,3 +105,6 @@ async def test_leg_create_autofill_then_resolve(db_session):
     assert result.found
     assert result.base_amount == Decimal("300.00")
     assert result.zone_id == z_ie.id  # 도착존
+    assert result.match_step == "ZONE_ZONE"  # 사다리 ③
+    assert result.via_default_group is False
+    assert result.assignment_fallback is False

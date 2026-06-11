@@ -26,7 +26,7 @@ async def test_service_type_differentiates_rate(db_session):
     team = await make_team(db_session)
     driver = await make_driver(db_session, team=team)
 
-    group = RateGroupModel(team_id=team.id, name="LA Zone", method=RateMethod.ZONE)
+    group = RateGroupModel(team_id=team.id, name="LA Zone", method=RateMethod.ZIP)
     from_zone = RateZoneModel(team_id=team.id, name="LA Terminal Zone")
     to_zone = RateZoneModel(team_id=team.id, name="SoCal")
     db_session.add_all([group, from_zone, to_zone])
@@ -39,9 +39,9 @@ async def test_service_type_differentiates_rate(db_session):
         team_id=team.id, driver_id=driver.id, rate_group_id=group.id, effective_from=date(2026, 1, 1),
     ))
     # 같은 (LOAD, from→to) 슬롯, service_type 만 다른 두 시트
-    sheet_live = RateSheetModel(team_id=team.id, rate_group_id=group.id, kind=SheetKind.ZONE,
+    sheet_live = RateSheetModel(team_id=team.id, rate_group_id=group.id, kind=SheetKind.ZIP,
                                 move_type=RateMoveType.LOAD, service_type=RateServiceType.LIVE)
-    sheet_drop = RateSheetModel(team_id=team.id, rate_group_id=group.id, kind=SheetKind.ZONE,
+    sheet_drop = RateSheetModel(team_id=team.id, rate_group_id=group.id, kind=SheetKind.ZIP,
                                 move_type=RateMoveType.LOAD, service_type=RateServiceType.DROP)
     db_session.add_all([sheet_live, sheet_drop])
     await db_session.flush()

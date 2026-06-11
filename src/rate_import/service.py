@@ -24,10 +24,12 @@ from rate_sheet.const.status import RateEntrySource, RateMoveType, RateServiceTy
 from rate_zone.repository import RateZoneRepository
 from rate_import.schemas.response import CsvImportReport, ImportRowError
 
-_ENTRY_HEADER = ["from_zone_id", "to_zone_id", "from_city", "from_state", "to_city", "to_state",
+_ENTRY_HEADER = ["from_zip", "to_zip", "from_zone_id", "to_zone_id",
+                 "from_city", "from_state", "to_city", "to_state",
                  "amount", "per_unit", "effective_from"]
-# 그룹 단위 플랫 행(이미지3 표준): move/service 컬럼 포함
-_GROUP_HEADER = ["move_type", "service_type", "from_zone_id", "to_zone_id",
+# 그룹 단위 플랫 행 표준: move/service 컬럼 포함. 좌표는 양방향(↔) — 순서 무관.
+_GROUP_HEADER = ["move_type", "service_type", "from_zip", "to_zip",
+                 "from_zone_id", "to_zone_id",
                  "from_city", "from_state", "to_city", "to_state",
                  "amount", "per_unit", "effective_from"]
 _MEMBER_HEADER = ["zip_code", "city", "state"]
@@ -71,6 +73,8 @@ class RateImportService:
                     raise ValueError("amount 또는 per_unit 필요")
                 rows.append({
                     "cell": {
+                        "from_zip": (raw.get("from_zip") or "").strip() or None,
+                        "to_zip": (raw.get("to_zip") or "").strip() or None,
                         "from_zone_id": _opt_int(raw.get("from_zone_id")),
                         "to_zone_id": _opt_int(raw.get("to_zone_id")),
                         "from_city": (raw.get("from_city") or "").strip() or None,
@@ -113,6 +117,7 @@ class RateImportService:
         w.writerow(_ENTRY_HEADER)
         for e in entries:
             w.writerow([
+                e.from_zip or "", e.to_zip or "",
                 e.from_zone_id or "", e.to_zone_id or "", e.from_city or "", e.from_state or "",
                 e.to_city or "", e.to_state or "",
                 e.amount if e.amount is not None else "", e.per_unit if e.per_unit is not None else "",
@@ -137,6 +142,8 @@ class RateImportService:
                 rows.append(FlatRateEntryRequest(
                     move_type=RateMoveType(mv) if mv else None,
                     service_type=RateServiceType(sv) if sv else None,
+                    from_zip=(raw.get("from_zip") or "").strip() or None,
+                    to_zip=(raw.get("to_zip") or "").strip() or None,
                     from_zone_id=_opt_int(raw.get("from_zone_id")),
                     to_zone_id=_opt_int(raw.get("to_zone_id")),
                     from_city=(raw.get("from_city") or "").strip() or None,
@@ -174,6 +181,7 @@ class RateImportService:
         for r in resp.rows:
             w.writerow([
                 r.move_type.value if r.move_type else "", r.service_type.value if r.service_type else "",
+                r.from_zip or "", r.to_zip or "",
                 r.from_zone_id or "", r.to_zone_id or "", r.from_city or "", r.from_state or "",
                 r.to_city or "", r.to_state or "",
                 r.amount if r.amount is not None else "", r.per_unit if r.per_unit is not None else "",
@@ -190,8 +198,11 @@ class RateImportService:
             zip_code = (raw.get("zip_code") or "").strip() or None
             city = (raw.get("city") or "").strip() or None
             state = (raw.get("state") or "").strip() or None
-            if not zip_code and not city:
-                errors.append(ImportRowError(row=i, message="zip_code 또는 city 필요"))
+            if bool(zip_code) == bool(city):
+                errors.append(ImportRowError(row=i, message="zip_code 또는 (city,state) 중 정확히 하나 필요"))
+                continue
+            if city and not state:
+                errors.append(ImportRowError(row=i, message="city 멤버는 state 가 필요합니다"))
                 continue
             rows.append({"zip_code": zip_code, "city": city, "state": state})
         return rows, errors

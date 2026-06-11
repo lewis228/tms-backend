@@ -68,7 +68,9 @@ class RateEntryModel(Base, TeamScopedMixin):
 
     하나의 (sheet, 셀 좌표) 에 대해 effective_from 별로 여러 버전이 누적된다.
     절대 UPDATE 하지 않고 close(effective_to) + 새 row insert 로 버전 관리.
-    셀 좌표 = (from_zone_id→to_zone_id) ZONE | (from_city/state→to_city/state) CITY.
+    셀 좌표 = 양측(from/to) 각각 원자 1개 — ZIP 방식: zip|zone, CITY 방식: city|zone.
+    혼합 허용(예: from_zip + to_zone_id = 사다리 ② 원자↔존 셀).
+    구간은 양방향(↔) — 저장 전 lane.normalize_cell 로 무순서 쌍을 정규형으로 고정.
     MILE/HOURLY 시트는 좌표 없이 per_unit 단일 셀.
     """
     __tablename__ = "rate_entry"
@@ -76,7 +78,9 @@ class RateEntryModel(Base, TeamScopedMixin):
 
     rate_sheet_id: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # ── 셀 좌표 (kind 에 따라 zone 쌍 또는 city 쌍 사용; MILE/HOURLY 는 둘 다 NULL) ──
+    # ── 셀 좌표 (양측 각각 zip|zone|city 중 1개; MILE/HOURLY 는 전부 NULL) ──
+    from_zip: Mapped[str | None] = mapped_column(String(16), nullable=True)   # ZIP 원자
+    to_zip:   Mapped[str | None] = mapped_column(String(16), nullable=True)
     from_zone_id: Mapped[int | None] = mapped_column(ForeignKey("rate_zone.id", ondelete="SET NULL"), nullable=True)
     to_zone_id:   Mapped[int | None] = mapped_column(ForeignKey("rate_zone.id", ondelete="SET NULL"), nullable=True)
     from_city:  Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -119,6 +123,7 @@ class RateEntryModel(Base, TeamScopedMixin):
         Index("ix_rate_entry_team_id_id", "team_id", "id"),
         # 핫패스: 시트+from존+to존+유효시작일 lookup
         Index("ix_rate_entry_lookup", "team_id", "rate_sheet_id", "from_zone_id", "to_zone_id", "effective_from"),
+        Index("ix_rate_entry_team_zip", "team_id", "rate_sheet_id", "from_zip", "to_zip", "effective_from"),
         Index("ix_rate_entry_team_sheet", "team_id", "rate_sheet_id"),
         Index("ix_rate_entry_team_city", "team_id", "from_city", "from_state", "to_city", "to_state"),
         Index("ix_rate_entry_team_active", "team_id", "is_active"),
@@ -134,6 +139,8 @@ class RateEntryHistoryModel(Base, TeamScopedMixin):
     rate_entry_id:  Mapped[int | None] = mapped_column(Integer, nullable=True)  # 새로 생성/대상 셀 id
 
     # 셀 좌표 (스냅샷)
+    from_zip: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    to_zip:   Mapped[str | None] = mapped_column(String(16), nullable=True)
     from_zone_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     to_zone_id:   Mapped[int | None] = mapped_column(Integer, nullable=True)
     from_city:  Mapped[str | None] = mapped_column(String(120), nullable=True)

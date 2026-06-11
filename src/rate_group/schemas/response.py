@@ -15,6 +15,7 @@ class RateGroupResponseSchema(ResponseSchema):
     name: str
     method: RateMethod
     is_default: bool
+    inherits_default: bool
     is_template: bool
     description: str | None = None
     is_active: bool
@@ -34,6 +35,8 @@ class FlatRateEntrySchema(ResponseSchema):
     kind: SheetKind
     move_type: RateMoveType | None = None
     service_type: RateServiceType | None = None
+    from_zip: str | None = None
+    to_zip: str | None = None
     from_zone_id: int | None = None
     to_zone_id: int | None = None
     from_city: str | None = None

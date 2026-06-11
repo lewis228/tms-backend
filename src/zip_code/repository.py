@@ -19,6 +19,12 @@ class ZipCodeRepository:
             select(ZipCodeModel).where(ZipCodeModel.id == zip_id)
         )).scalar_one_or_none()
 
+    async def get_by_zip(self, zip_str: str) -> Optional[ZipCodeModel]:
+        """zip 문자열 정확 매칭 — 해석 시 city 파생(zip→도시) 용."""
+        return (await self.db.execute(
+            select(ZipCodeModel).where(ZipCodeModel.zip == zip_str.strip()).limit(1)
+        )).scalar_one_or_none()
+
     async def search(self, q: str | None, state: str | None, limit: int = 20) -> List[ZipCodeModel]:
         """zip 또는 city 부분일치 검색 (마스터폼 picker / 존 도시 autocomplete 공용)."""
         stmt = select(ZipCodeModel)

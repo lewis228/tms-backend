@@ -46,6 +46,20 @@ class RateGroupRepository(TeamScopedRepoMixin):
         )
         return (await self.db.execute(q)).scalar_one_or_none()
 
+    async def get_default_for_method(self, method: RateMethod) -> Optional[RateGroupModel]:
+        """방식의 활성 디폴트 그룹 — 해석 사다리 ④(상속 폴백)·미배정 기사 폴백 진입점."""
+        q = (
+            select(RateGroupModel)
+            .where(
+                RateGroupModel.team_id == self._require_team(),
+                RateGroupModel.method == method,
+                RateGroupModel.is_default.is_(True),
+                RateGroupModel.is_active.is_(True),
+            )
+            .limit(1)
+        )
+        return (await self.db.execute(q)).scalar_one_or_none()
+
     async def get_many(self, group_ids: List[int]) -> List[RateGroupModel]:
         if not group_ids:
             return []

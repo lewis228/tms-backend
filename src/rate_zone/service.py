@@ -28,14 +28,42 @@ class RateZoneService:
     """
     def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
+        self.team_id = team_id
         self.repo = RateZoneRepository(db, team_id)
+
+    # ── 내부 검증 ────────────────────────────────────────────────
+    async def _validate_group(self, rate_group_id: int | None) -> None:
+        """그룹 스코프 존이면 그룹 존재 확인 (ste 규약: 다른 도메인 Repository 직접 주입)."""
+        if rate_group_id is None:
+            return
+        from rate_group.repository import RateGroupRepository
+        group = await RateGroupRepository(self.db, self.team_id).get(rate_group_id)
+        if group is None:
+            raise NotFoundException("Rate Group")
+
+    async def _check_atom_conflicts(
+        self, zone_id: int | None, scope_group_id: int | None, members_data: list[dict]
+    ) -> None:
+        """같은 스코프 내 원자당 존 1개 — 다른 존에 이미 속한 원자가 있으면 409."""
+        zips = [m["zip_code"] for m in members_data if m.get("zip_code")]
+        cities = [(m["city"], m.get("state")) for m in members_data if m.get("city")]
+        conflicts = await self.repo.list_conflicting_atoms(zone_id, scope_group_id, zips, cities)
+        if conflicts:
+            detail = ", ".join(f"{atom} → '{zone}'" for atom, zone in conflicts[:10])
+            raise AppException(
+                code="ZONE_MEMBER_CONFLICT",
+                message=f"같은 스코프의 다른 존에 이미 속한 멤버가 있습니다: {detail}",
+                status_code=409,
+            )
 
     # ── Create ──────────────────────────────────────────────────
     async def create(
         self, payload: RateZoneCreateRequest, actor_user_id: int | None = None
     ) -> RateZoneResponseSchema:
+        await self._validate_group(payload.rate_group_id)
         header = payload.model_dump(exclude={"members"})
         members = [m.model_dump() for m in payload.members]
+        await self._check_atom_conflicts(None, payload.rate_group_id, members)
         zone = await self.repo.create(header, members, actor_user_id=actor_user_id)
         return RateZoneResponseSchema.model_validate(zone)
 
@@ -73,6 +101,8 @@ class RateZoneService:
         self, zone_id: int, payload: RateZoneUpdateRequest, actor_user_id: int | None = None
     ) -> RateZoneResponseSchema:
         data = payload.model_dump(exclude_unset=True)
+        if "rate_group_id" in data:
+            await self._validate_group(data["rate_group_id"])
         zone = await self.repo.update_header(zone_id, data, actor_user_id=actor_user_id)
         if not zone:
             raise NotFoundException(_LABEL)
@@ -85,6 +115,7 @@ class RateZoneService:
         if not zone:
             raise NotFoundException(_LABEL)
         members_data = [m.model_dump() for m in payload.members]
+        await self._check_atom_conflicts(zone_id, zone.rate_group_id, members_data)
         rows = await self.repo.replace_members(zone_id, members_data, actor_user_id=actor_user_id)
         members = [RateZoneMemberResponseSchema.model_validate(r) for r in rows]
         return RateZoneMembersResponseSchema(zone_id=zone_id, members=members, count=len(members))
@@ -92,7 +123,10 @@ class RateZoneService:
     async def add_members_by_city(
         self, zone_id: int, city: str, state: str, actor_user_id: int | None = None
     ) -> RateZoneMembersResponseSchema:
-        """(city, state) 의 모든 zip 을 zip 마스터에서 찾아 기존 멤버에 합집합 추가."""
+        """(city, state) 의 모든 zip 을 zip 마스터에서 찾아 기존 zip 멤버에 합집합 추가.
+
+        기존 city 멤버(도시존)는 그대로 보존한다.
+        """
         zone = await self.repo.get_header(zone_id)
         if not zone:
             raise NotFoundException(_LABEL)
@@ -103,9 +137,14 @@ class RateZoneService:
                 message=f"'{city}, {state}' 에 해당하는 우편번호가 zip 마스터에 없습니다.",
                 status_code=404,
             )
-        existing = {r.zip_code for r in await self.repo.list_members(zone_id)}
-        union = sorted(existing | set(new_zips))
-        members_data = [{"zip_code": z} for z in union]
+        existing_rows = await self.repo.list_members(zone_id)
+        existing_zips = {r.zip_code for r in existing_rows if r.zip_code}
+        city_members = [
+            {"city": r.city, "state": r.state} for r in existing_rows if r.city
+        ]
+        union = sorted(existing_zips | set(new_zips))
+        members_data = [{"zip_code": z} for z in union] + city_members
+        await self._check_atom_conflicts(zone_id, zone.rate_group_id, members_data)
         rows = await self.repo.replace_members(zone_id, members_data, actor_user_id=actor_user_id)
         members = [RateZoneMemberResponseSchema.model_validate(r) for r in rows]
         return RateZoneMembersResponseSchema(zone_id=zone_id, members=members, count=len(members))

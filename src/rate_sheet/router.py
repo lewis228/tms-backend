@@ -16,6 +16,7 @@ from user.schemas.response import UserResponseSchema
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from common.pagination.schemas.sync_response import SyncResponse
 from rate_sheet.service import RateSheetService
+from rate_sheet.lane import normalize_cell
 from rate_sheet.resolve import RateResolver
 from rate_sheet.schemas.request import (
     RateSheetCreateRequest, RateSheetUpdateRequest, PaginateRateSheetRequest,
@@ -172,6 +173,8 @@ async def get_rate_sheet_history(
 async def lookup_rate_entry(
     sheet_id: int,
     work_date: date = Query(..., description="조회 기준일"),
+    from_zip: Optional[str] = Query(default=None),
+    to_zip: Optional[str] = Query(default=None),
     from_zone_id: Optional[int] = Query(default=None),
     to_zone_id: Optional[int] = Query(default=None),
     from_city: Optional[str] = Query(default=None),
@@ -182,10 +185,11 @@ async def lookup_rate_entry(
     team_id: int = Depends(get_team_scope),
     db: AsyncSession = Depends(get_read_db),
 ):
-    """work_date 기준 셀 단가 조회(미등록이면 found=False)."""
-    cell = {
+    """work_date 기준 셀 단가 조회(미등록이면 found=False). 좌표는 양방향(↔) — 순서 무관."""
+    cell = normalize_cell({
+        "from_zip": from_zip, "to_zip": to_zip,
         "from_zone_id": from_zone_id, "to_zone_id": to_zone_id,
         "from_city": from_city, "from_state": from_state,
         "to_city": to_city, "to_state": to_state,
-    }
+    })
     return await RateSheetService(db, team_id).lookup(sheet_id, cell, work_date)

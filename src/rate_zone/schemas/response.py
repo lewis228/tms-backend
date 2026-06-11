@@ -6,8 +6,11 @@ from common.schemas.base import ResponseSchema
 
 
 class RateZoneMemberResponseSchema(ResponseSchema):
+    """멤버 = zip 1개 또는 (city,state) 1쌍."""
     id: int
-    zip_code: str
+    zip_code: str | None = None
+    city: str | None = None
+    state: str | None = None
 
 
 class RateZoneSummarySchema(ResponseSchema):
@@ -16,6 +19,7 @@ class RateZoneSummarySchema(ResponseSchema):
     name: str
     code: str | None = None
     color: str | None = None
+    rate_group_id: int | None = None  # None=팀 공용, 값=그룹 전용 존
     geojson: dict | None = None
     description: str | None = None
     is_active: bool

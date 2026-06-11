@@ -2,7 +2,7 @@
 from __future__ import annotations
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import (
-    String, Text, JSON, Integer,
+    String, Text, JSON, Integer, ForeignKey,
     Index, UniqueConstraint, ForeignKeyConstraint, and_,
 )
 from sqlalchemy.orm import foreign
@@ -13,14 +13,21 @@ from common.const.settings import settings
 
 
 class RateZoneModel(Base, TeamScopedMixin):
-    """요율표의 '열'이 되는 Zone (헤더) — Team-Scoped.
+    """원자(zip/도시)를 묶는 압축 레이어 Zone (헤더) — Team-Scoped.
 
-    컨플루언스 [Terry] 요율표 기획: 고객사가 위치한 지리적 구역(Zone)이 Rate Sheet 의 열.
-    Zone 은 지도 폴리곤(geojson) 으로 시각화하고, 실제 조회는 zip→zone 인덱스(members)로 한다.
+    존은 방식이 아니라 "이 원자들은 요율이 같다" 선언 도구.
+    rate_group_id=NULL 이면 팀 공용(글로벌) 존, 값이 있으면 그 그룹 전용 존
+    (해석 시 그룹 스코프 존이 글로벌 존보다 우선).
+    Zone 은 지도 폴리곤(geojson) 으로 시각화하고, 실제 조회는 원자→zone 인덱스(members)로 한다.
     """
     __tablename__ = "rate_zone"
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    rate_group_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("rate_group.id", ondelete="CASCADE"),
+        nullable=True,  # NULL = 팀 공용 존
+    )
     code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     color: Mapped[str | None] = mapped_column(String(16), nullable=True)        # 지도 표시색 (#RRGGBB)
     geojson: Mapped[dict | None] = mapped_column(JSON, nullable=True)           # 폴리곤(시각화/백필 전용)
@@ -44,22 +51,25 @@ class RateZoneModel(Base, TeamScopedMixin):
         UniqueConstraint("team_id", "name", name="uq_rate_zone_team_name"),
         Index("ix_rate_zone_team_active_id", "team_id", "is_active", "id"),
         Index("ix_rate_zone_team_name",       "team_id", "name"),
+        Index("ix_rate_zone_team_group",      "team_id", "rate_group_id"),
         Index("ix_rate_zone_team_updated_at",  "team_id", "updated_at"),
     )
 
 
 class RateZoneMemberModel(Base, TeamScopedMixin):
-    """Zone 의 zip 멤버 (라인) — zip→zone 조회 인덱스의 진실.
+    """Zone 의 원자 멤버 (라인) — 원자→zone 조회 인덱스의 진실.
 
-    조회는 폴리곤 연산이 아니라 이 테이블의 zip_code 매칭으로 한다.
-    (존 = zip 묶음. 도시별 요율은 CITY 방식의 rate_entry(from_city/to_city) 가 별도 담당.)
-    Excel import 로 대량 채운다.
+    멤버 = zip 1개(ZIP 방식 존) 또는 (city,state) 1개(CITY 방식 도시존).
+    행당 zip_code XOR (city,state) — 앱 레벨 검증(서비스/스키마).
+    조회는 폴리곤 연산이 아니라 이 테이블 매칭으로 한다. Excel import 로 대량 채운다.
     """
     __tablename__ = "rate_zone_member"
     __with_team_rel__ = False  # .team 은 헤더(zone) 통해 접근
 
     zone_id:  Mapped[int] = mapped_column(Integer, nullable=False)
-    zip_code: Mapped[str] = mapped_column(String(16), nullable=False)  # 존 멤버 유일 키(zip 묶음)
+    zip_code: Mapped[str | None] = mapped_column(String(16), nullable=True)   # zip 멤버
+    city:     Mapped[str | None] = mapped_column(String(120), nullable=True)  # city 멤버 (도시존)
+    state:    Mapped[str | None] = mapped_column(String(8), nullable=True)
 
     zone: Mapped["RateZoneModel"] = relationship(
         "RateZoneModel",
@@ -82,4 +92,5 @@ class RateZoneMemberModel(Base, TeamScopedMixin):
         Index("ix_rate_zone_member_team_id_id", "team_id", "id"),
         Index("ix_rate_zone_member_team_zone",  "team_id", "zone_id"),
         Index("ix_rate_zone_member_team_zip",   "team_id", "zip_code"),
+        Index("ix_rate_zone_member_team_city",  "team_id", "city", "state"),
     )

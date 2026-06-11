@@ -22,7 +22,7 @@ _LABEL = "Rate Group"
 
 # group.method ↔ rate_sheet.kind (값 동일)
 _METHOD_TO_KIND = {
-    RateMethod.ZONE: SheetKind.ZONE,
+    RateMethod.ZIP: SheetKind.ZIP,
     RateMethod.CITY: SheetKind.CITY,
     RateMethod.MILE: SheetKind.MILE,
     RateMethod.HOURLY: SheetKind.HOURLY,
@@ -30,20 +30,21 @@ _METHOD_TO_KIND = {
 
 
 def _cell_from_flat(row: FlatRateEntryRequest, kind: SheetKind) -> dict:
-    """플랫 행 → rate_entry 셀 좌표 dict (kind 별 사용 좌표만 채움)."""
-    if kind == SheetKind.ZONE:
+    """플랫 행 → rate_entry 셀 좌표 dict.
+
+    양측 각각 zip|zone|city 혼합 허용 (사다리 ①·② 셀).
+    MILE/HOURLY 는 전 좌표 None. 양방향 정규화는 versioning.set_rate 가 수행.
+    """
+    if kind in (SheetKind.ZIP, SheetKind.CITY):
         return {
+            "from_zip": row.from_zip, "to_zip": row.to_zip,
             "from_zone_id": row.from_zone_id, "to_zone_id": row.to_zone_id,
-            "from_city": None, "from_state": None, "to_city": None, "to_state": None,
-        }
-    if kind == SheetKind.CITY:
-        return {
-            "from_zone_id": None, "to_zone_id": None,
             "from_city": row.from_city, "from_state": row.from_state,
             "to_city": row.to_city, "to_state": row.to_state,
         }
     # MILE / HOURLY
     return {
+        "from_zip": None, "to_zip": None,
         "from_zone_id": None, "to_zone_id": None,
         "from_city": None, "from_state": None, "to_city": None, "to_state": None,
     }
@@ -64,9 +65,9 @@ class RateGroupEntryService:
 
     async def _ensure_sheet(self, group_id: int, kind: SheetKind, row: FlatRateEntryRequest) -> int:
         """(group, kind, move, service) 시트를 찾거나 생성하고 sheet_id 반환."""
-        if kind in (SheetKind.ZONE, SheetKind.CITY):
+        if kind in (SheetKind.ZIP, SheetKind.CITY):
             if row.move_type is None:
-                raise BadRequestException("ZONE/CITY 행은 move_type 이 필요합니다.")
+                raise BadRequestException("ZIP/CITY 행은 move_type 이 필요합니다.")
             move_type: RateMoveType | None = row.move_type
             service_type = row.service_type
         else:  # MILE / HOURLY
@@ -92,8 +93,9 @@ class RateGroupEntryService:
         )
         return FlatRateEntrySchema(
             rate_entry_id=entry.id, rate_sheet_id=sheet_id, kind=kind,
-            move_type=row.move_type if kind in (SheetKind.ZONE, SheetKind.CITY) else None,
-            service_type=row.service_type if kind in (SheetKind.ZONE, SheetKind.CITY) else None,
+            move_type=row.move_type if kind in (SheetKind.ZIP, SheetKind.CITY) else None,
+            service_type=row.service_type if kind in (SheetKind.ZIP, SheetKind.CITY) else None,
+            from_zip=entry.from_zip, to_zip=entry.to_zip,
             from_zone_id=entry.from_zone_id, to_zone_id=entry.to_zone_id,
             from_city=entry.from_city, from_state=entry.from_state,
             to_city=entry.to_city, to_state=entry.to_state,
@@ -118,10 +120,11 @@ class RateGroupEntryService:
                 rows.append(FlatRateEntrySchema(
                     rate_entry_id=e.id, rate_sheet_id=sheet.id, kind=sheet.kind,
                     move_type=sheet.move_type, service_type=sheet.service_type,
+                    from_zip=e.from_zip, to_zip=e.to_zip,
                     from_zone_id=e.from_zone_id, to_zone_id=e.to_zone_id,
                     from_city=e.from_city, from_state=e.from_state,
                     to_city=e.to_city, to_state=e.to_state,
-                            amount=e.amount, per_unit=e.per_unit,
+                    amount=e.amount, per_unit=e.per_unit,
                     effective_from=e.effective_from, effective_to=e.effective_to,
                 ))
         return RateGroupEntriesResponse(rate_group_id=group_id, method=method, rows=rows)

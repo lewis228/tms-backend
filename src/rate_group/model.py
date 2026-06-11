@@ -16,6 +16,8 @@ class RateGroupModel(Base, TeamScopedMixin):
 
     method 별로 하나의 그룹을 기본값(is_default)으로 지정할 수 있고,
     템플릿(is_template)으로 표시해 신규 그룹 생성 시 참조용으로 쓸 수 있다.
+    커스텀 그룹은 inherits_default=True(기본)면 미등록 구간을 같은 방식의
+    디폴트 그룹으로 폴백(해석 사다리 ④)하고, False(빈 그룹)면 폴백 없이 미해석.
     """
     __tablename__ = "rate_group"
 
@@ -26,6 +28,9 @@ class RateGroupModel(Base, TeamScopedMixin):
     )
     is_default: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False,
+    )
+    inherits_default: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="1", nullable=False,
     )
     is_template: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False,

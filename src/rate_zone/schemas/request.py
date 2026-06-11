@@ -1,22 +1,41 @@
 # src/rate_zone/schemas/request.py
 from __future__ import annotations
 from typing import Optional, Literal, List
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
 
 
 class RateZoneMemberItem(RequestSchema):
-    """Zone 멤버 입력 항목. 존 = zip 묶음이므로 zip_code 필수."""
-    zip_code: str = Field(min_length=1, max_length=16)
+    """Zone 멤버 입력 항목 — zip 1개 XOR (city,state) 1쌍.
+
+    ZIP 방식 존은 zip 멤버, CITY 방식 도시존은 city 멤버.
+    """
+    zip_code: str | None = Field(default=None, min_length=1, max_length=16)
+    city: str | None = Field(default=None, min_length=1, max_length=120)
+    state: str | None = Field(default=None, max_length=8)
+
+    @model_validator(mode="after")
+    def _validate_atom(self):
+        if bool(self.zip_code) == bool(self.city):
+            raise ValueError("멤버는 zip_code 또는 (city,state) 중 정확히 하나여야 합니다.")
+        if self.city and not self.state:
+            raise ValueError("city 멤버는 state 가 필요합니다 (도시명 비유일).")
+        if self.zip_code and self.state:
+            raise ValueError("zip 멤버에는 state 를 지정하지 않습니다.")
+        return self
 
 
 class RateZoneCreateRequest(RequestSchema):
-    """Rate Zone 생성 DTO (멤버 인라인 동시 생성 허용)."""
+    """Rate Zone 생성 DTO (멤버 인라인 동시 생성 허용).
+
+    rate_group_id=None 이면 팀 공용(글로벌) 존, 값이 있으면 그 그룹 전용 존.
+    """
     name: str = Field(min_length=1, max_length=120)
     code: str | None = Field(default=None, max_length=32)
     color: str | None = Field(default=None, max_length=16)
+    rate_group_id: int | None = None
     geojson: dict | None = None
     description: str | None = Field(default=None, max_length=3000)
     members: List[RateZoneMemberItem] = Field(default_factory=list, max_length=5000)
@@ -27,6 +46,7 @@ class RateZoneUpdateRequest(RequestSchema):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     code: str | None = Field(default=None, max_length=32)
     color: str | None = Field(default=None, max_length=16)
+    rate_group_id: int | None = None  # 스코프 변경 (None 전달 시 무시 — 글로벌화는 미지원)
     geojson: dict | None = None
     description: str | None = Field(default=None, max_length=3000)
 
@@ -49,3 +69,4 @@ class PaginateRateZoneRequest(BasePaginationSchema):
 
     where__name__i_like: Optional[str] = None
     where__code__i_like: Optional[str] = None
+    where__rate_group_id__equal: Optional[int] = None

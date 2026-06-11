@@ -15,7 +15,7 @@ from rate_sheet.const.status import (
 class RateSheetCreateRequest(RequestSchema):
     """Rate Sheet(슬롯) 생성 DTO — (group, kind, move_type, service_type).
 
-    - ZONE/CITY: move_type 필요 (service_type 선택)
+    - ZIP/CITY: move_type 필요 (service_type 선택)
     - MILE/HOURLY: move_type/service_type 없음(per_unit 단일 셀)
     """
     rate_group_id: int
@@ -26,9 +26,9 @@ class RateSheetCreateRequest(RequestSchema):
 
     @model_validator(mode="after")
     def _validate_kind(self):
-        if self.kind in {SheetKind.ZONE, SheetKind.CITY}:
+        if self.kind in {SheetKind.ZIP, SheetKind.CITY}:
             if self.move_type is None:
-                raise ValueError("ZONE/CITY 시트는 move_type 이 필요합니다.")
+                raise ValueError("ZIP/CITY 시트는 move_type 이 필요합니다.")
         else:  # MILE / HOURLY
             if self.move_type is not None or self.service_type is not None:
                 raise ValueError("MILE/HOURLY 시트는 move_type/service_type 를 가질 수 없습니다.")
@@ -50,14 +50,16 @@ class PaginateRateSheetRequest(BasePaginationSchema):
 
 
 class SetRateEntryRequest(RequestSchema):
-    """요율 셀 값 등록/변경 (유효일자 버전 추가) — from→to 좌표.
+    """요율 셀 값 등록/변경 (유효일자 버전 추가) — 양방향(↔) 구간 좌표.
 
-    셀 좌표는 시트 kind 에 맞게:
-    - ZONE: from_zone_id → to_zone_id
-    - CITY: from_city/from_state → to_city/to_state
+    셀 좌표 = 양측 각각 원자 1개, 혼합 허용:
+    - ZIP:  zip | zone
+    - CITY: city(+state) | zone
     - MILE/HOURLY: 좌표 없음, per_unit
-    값은 amount(매트릭스) 또는 per_unit(MILE/HOURLY) 중 하나.
+    from/to 순서는 의미 없음(저장 시 정규화). 값은 amount 또는 per_unit 중 하나.
     """
+    from_zip: str | None = Field(default=None, max_length=16)
+    to_zip: str | None = Field(default=None, max_length=16)
     from_zone_id: int | None = None
     to_zone_id: int | None = None
     from_city: str | None = Field(default=None, max_length=120)
@@ -93,8 +95,8 @@ class RateResolvePreviewRequest(RequestSchema):
 
     driver_id → 유효 요율그룹 → method 분기로 단가 해석.
     - MILE: miles 필요 / HOURLY: hours 필요
-    - ZONE: move_type + from_zip + dest_zip
-    - CITY: move_type + from_city + dest_city(+state)
+    - ZIP: move_type + from_zip + dest_zip
+    - CITY: move_type + from_city + dest_city(+state) (없으면 zip 에서 파생)
     """
     driver_id: int
     work_date: date

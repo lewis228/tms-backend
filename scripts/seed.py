@@ -180,6 +180,8 @@ async def seed(db: AsyncSession):
     zmap = {z: i for z, i in _zrows}  # zip → zip_code.id
 
     # ── 2. 마스터 데이터 ──────────────────────────────────────
+    # ⚠️ 핵심 불변식: 여기서 쓰는 모든 zip 은 §4 의 ZIP_POINTS 에 반드시 포함.
+    #    (마스터 zip ⊆ 요율 매트릭스 zip → Rate Lookup 이 어떤 출발/도착 조합이든 해석됨)
     banner("마스터 데이터")
     cust = CustomerModel(team_id=tid, name="ACME Importers", code="ACME", kind=PartnerKind.CUSTOMER,
                          contact_name="Amy Chen", contact_email="amy@acme.com", contact_phone="+1-213-555-0101",
@@ -187,10 +189,35 @@ async def seed(db: AsyncSession):
                          zip_id=zmap.get("90021"), created_by_user_id=aid)
     carrier = CustomerModel(team_id=tid, name="Blue Line Carrier", code="BLUE", kind=PartnerKind.CARRIER,
                             mc_number="MC-998877", dot_number="DOT-223344", insurance_expires_at=date(2027, 1, 31),
-                            contact_email="ops@blueline.com", created_by_user_id=aid)
-    broker = CustomerModel(team_id=tid, name="Pacific Broker Group", code="PBG", kind=PartnerKind.BROKER, created_by_user_id=aid)
-    vendor = CustomerModel(team_id=tid, name="Yard Services Vendor", code="YSV", kind=PartnerKind.VENDOR, created_by_user_id=aid)
-    db.add_all([cust, carrier, broker, vendor])
+                            contact_email="ops@blueline.com", zip_id=zmap.get("90745"), created_by_user_id=aid)
+    broker = CustomerModel(team_id=tid, name="Pacific Broker Group", code="PBG", kind=PartnerKind.BROKER,
+                           zip_id=zmap.get("90802"), created_by_user_id=aid)
+    vendor = CustomerModel(team_id=tid, name="Yard Services Vendor", code="YSV", kind=PartnerKind.VENDOR,
+                           zip_id=zmap.get("90744"), created_by_user_id=aid)
+    # 추가 거래처 — 영업권역 zip 전부에 골고루 분포 (Rate Lookup 데모 커버리지)
+    EXTRA_CUSTOMERS = [
+        ("Harbor Seafood Co", "HSF", "90731"),
+        ("South Gate Trading", "SGT", "90001"),
+        ("Vernon Manufacturing", "VMF", "90040"),
+        ("SoCal Foods", "SCF", "92805"),
+        ("Santa Ana Electronics", "SAE", "92701"),
+        ("Fontana Freight Solutions", "FFS", "92335"),
+        ("Pacific Retail DC", "PRD", "91761"),
+        ("Inland Steel Works", "ISW", "92408"),
+        ("Oxnard Produce Partners", "OXP", "93030"),
+        ("Ventura Coastal Goods", "VTG", "93001"),
+        ("Desert Logistics Group", "DLG", "92392"),
+        ("High Desert Supply", "HDS", "92345"),
+        ("San Diego Imports", "SDI", "92101"),
+        ("Border Trade Co", "BTC", "92154"),
+    ]
+    more_custs = [
+        CustomerModel(team_id=tid, name=_n, code=_c, kind=PartnerKind.CUSTOMER,
+                      contact_email=f"ops@{_c.lower()}.example.com", payment_terms_days=30,
+                      zip_id=zmap.get(_z), created_by_user_id=aid)
+        for _n, _c, _z in EXTRA_CUSTOMERS
+    ]
+    db.add_all([cust, carrier, broker, vendor, *more_custs])
     await db.flush()
 
     term1 = TerminalModel(team_id=tid, name="APM Terminals Pier 400", code="APM4",
@@ -199,7 +226,23 @@ async def seed(db: AsyncSession):
     term2 = TerminalModel(team_id=tid, name="LBCT Long Beach", code="LBCT",
                           address="1521 Pier G Ave, Long Beach, CA", latitude=D("33.752"), longitude=D("-118.205"),
                           zip_id=zmap.get("90802"), created_by_user_id=aid)
-    db.add_all([term1, term2])
+    # 추가 터미널 — LA/LB 항만 실제 터미널 구성 (zip 은 전부 매트릭스 안)
+    EXTRA_TERMINALS = [
+        ("Fenix Marine Pier 300", "FMS", "90731", "614 Terminal Island Way, San Pedro, CA"),
+        ("Everport Terminal", "EVP", "90731", "389 Terminal Island Way, San Pedro, CA"),
+        ("Yusen Terminals (YTI)", "YTI", "90731", "701 New Dock St, San Pedro, CA"),
+        ("TraPac Los Angeles", "TRAP", "90744", "630 W Harry Bridges Blvd, Wilmington, CA"),
+        ("West Basin Container Terminal", "WBCT", "90744", "2050 John S Gibson Blvd, Wilmington, CA"),
+        ("ITS Long Beach", "ITS", "90802", "1281 Pier G Way, Long Beach, CA"),
+        ("Pacific Container Terminal", "PCT", "90802", "1521 Pier J Ave, Long Beach, CA"),
+        ("SSA Marine Pier A", "PIERA", "90802", "700 Pier A Plaza, Long Beach, CA"),
+    ]
+    more_terms = [
+        TerminalModel(team_id=tid, name=_n, code=_c, address=_a,
+                      zip_id=zmap.get(_z), created_by_user_id=aid)
+        for _n, _c, _z, _a in EXTRA_TERMINALS
+    ]
+    db.add_all([term1, term2, *more_terms])
 
     ves1 = VesselModel(team_id=tid, name="MAERSK ESSEX", imo_number="9456789", line="Maersk", created_by_user_id=aid)
     ves2 = VesselModel(team_id=tid, name="ONE TRIUMPH", imo_number="9789456", line="ONE", created_by_user_id=aid)
@@ -214,7 +257,29 @@ async def seed(db: AsyncSession):
     loc_port = LocationModel(team_id=tid, name="POLA Gate", kind=LocationKind.PORT,
                              latitude=D("33.742"), longitude=D("-118.272"), created_by_user_id=aid)
     loc_other = LocationModel(team_id=tid, name="Truck Wash Wilmington", kind=LocationKind.OTHER, created_by_user_id=aid)
-    db.add_all([loc_yard, loc_cust, loc_port, loc_other])
+    # 추가 야드 — Lookup 의 Yard 탭 커버리지 (zip 은 전부 매트릭스 안)
+    EXTRA_YARDS = [
+        ("Wilmington Yard", "90744", "1300 E Anaheim St, Wilmington, CA"),
+        ("Compton Empty Depot", "90220", "700 W Victoria St, Compton, CA"),
+        ("Fontana Inland Yard", "92335", "14000 Slover Ave, Fontana, CA"),
+        ("Ontario Container Yard", "91761", "1900 S Grove Ave, Ontario, CA"),
+        ("Otay Mesa Border Yard", "92154", "8500 Siempre Viva Rd, San Diego, CA"),
+    ]
+    more_yards = [
+        LocationModel(team_id=tid, name=_n, kind=LocationKind.YARD, address=_a,
+                      zip_id=zmap.get(_z), created_by_user_id=aid)
+        for _n, _z, _a in EXTRA_YARDS
+    ]
+    # 추가 거래처 납품처 (D/O 스탑 데모 + Customer 위치 다양화)
+    more_cust_locs = [
+        LocationModel(team_id=tid, name="Pacific Retail DC Ontario", kind=LocationKind.CUSTOMER,
+                      address="4500 E Airport Dr, Ontario, CA",
+                      customer_id=more_custs[6].id, zip_id=zmap.get("91761"), created_by_user_id=aid),
+        LocationModel(team_id=tid, name="SoCal Foods Anaheim DC", kind=LocationKind.CUSTOMER,
+                      address="1200 N Tustin Ave, Anaheim, CA",
+                      customer_id=more_custs[3].id, zip_id=zmap.get("92805"), created_by_user_id=aid),
+    ]
+    db.add_all([loc_yard, loc_cust, loc_port, loc_other, *more_yards, *more_cust_locs])
     await db.flush()
 
     pool1 = EquipmentPoolModel(team_id=tid, name="TRAC Pool LA", kind=EquipmentPoolKind.THIRD_PARTY_POOL,
@@ -263,7 +328,8 @@ async def seed(db: AsyncSession):
         drv.default_truck_id = trk.id
         drv.default_chassis_id = chs.id
     await db.flush()
-    print("  customer×4, terminal×2, vessel×2, location×4, pool×2, driver×3, truck×3, chassis×3")
+    print(f"  customer×{4 + len(more_custs)}, terminal×{2 + len(more_terms)}, vessel×2, "
+          f"location×{4 + len(more_yards) + len(more_cust_locs)}, pool×2, driver×3, truck×3, chassis×3")
 
     # ── 3. Add-on 마스터 (시스템 시드 + per-driver override) ───
     banner("Add-on 마스터")
@@ -288,12 +354,16 @@ async def seed(db: AsyncSession):
     #   커스텀 그룹 = 디폴트 상속(+자기 스코프 존으로 묶어서 오버라이드) 또는 빈 그룹(백지).
     #   존은 "요율이 같은 원자 묶음" 입력 도구 — 쓰는 그룹에만 존재.
 
-    # 영업권역 zip 17개 — (zip, 항만 기준 거리지수). 동네 이름은 zip 마스터가 제공
-    # (90731=San Pedro, 90744=Wilmington, 90802=Long Beach, 90001/21/40=LA,
-    #  92805=Anaheim, 92701=Santa Ana, 92335=Fontana, 91761=Ontario, 92408=San Bernardino,
-    #  93030=Oxnard, 93001=Ventura, 92392=Victorville, 92345=Hesperia, 92101/92154=San Diego)
+    # 영업권역 zip 19개 — (zip, 항만 기준 거리지수). 동네 이름은 zip 마스터가 제공
+    # (90731=San Pedro, 90744=Wilmington, 90802=Long Beach, 90745=Carson, 90220=Compton,
+    #  90001/21/40=LA, 92805=Anaheim, 92701=Santa Ana, 92335=Fontana, 91761=Ontario,
+    #  92408=San Bernardino, 93030=Oxnard, 93001=Ventura, 92392=Victorville, 92345=Hesperia,
+    #  92101/92154=San Diego)
+    # ⚠️ 불변식: §2 마스터(터미널/야드/거래처)가 쓰는 zip 은 전부 이 목록에 있어야 한다
+    #    — 디폴트 매트릭스가 풀로 채워지므로 Lookup 이 어떤 조합이든 해석된다.
     ZIP_POINTS = [
         ("90731", 0), ("90744", 2), ("90802", 4),
+        ("90745", 6), ("90220", 14),
         ("90001", 24), ("90021", 25), ("90040", 27),
         ("92805", 34), ("92701", 36),
         ("92335", 58), ("91761", 60), ("92408", 63),
@@ -408,7 +478,7 @@ async def seed(db: AsyncSession):
     ]
 
     # ── ZIP 디폴트: 존 없이 zip↔zip 양방향 풀 매트릭스 ──────────
-    # 무순서 쌍(삼각)이면 충분 — 양방향이라 역방향은 같은 셀. 17개 zip → 136구간 × 9조합.
+    # 무순서 쌍(삼각)이면 충분 — 양방향이라 역방향은 같은 셀. 19개 zip → 171구간 × 9조합.
     async def fill_zip_matrix(grp, group_mult):
         for mv, sv, ms in ALL_COMBOS:
             for i, (fz, fi) in enumerate(ZIP_POINTS):
@@ -441,8 +511,22 @@ async def seed(db: AsyncSession):
     await azcell(grp_zip_spot, E, DR, "92701", "92154", "185")
 
     # ── CITY 디폴트: 존 없이 도시↔도시 양방향 풀 매트릭스 ────────
-    CITIES = [("San Pedro", 0), ("Long Beach", 10), ("Los Angeles", 25),
-              ("Anaheim", 35), ("Santa Ana", 40), ("Fontana", 60)]
+    # 도시 목록은 ZIP_POINTS 의 zip 마스터 도시명에서 파생 — 마스터 위치의 도시가
+    # 빠짐없이 매트릭스에 들어가 CITY 방식 조회도 어떤 조합이든 해석된다.
+    from sqlalchemy import bindparam
+    _city_rows = (await db.execute(
+        text("SELECT zip, city FROM zip_code WHERE zip IN :zips")
+        .bindparams(bindparam("zips", expanding=True)),
+        {"zips": [z for z, _ in ZIP_POINTS]},
+    )).all()
+    _zip_city = {z: c for z, c in _city_rows}
+    CITIES = []
+    _seen_cities = set()
+    for _z, _di in ZIP_POINTS:
+        _c = _zip_city.get(_z)
+        if _c and _c not in _seen_cities:
+            _seen_cities.add(_c)
+            CITIES.append((_c, _di))
 
     async def fill_city_matrix(grp, group_mult):
         for mv, sv, ms in ALL_COMBOS:
@@ -482,9 +566,10 @@ async def seed(db: AsyncSession):
         db.add(ServiceAreaModel(team_id=tid, kind=ServiceAreaKind.ZIP3,
                                 state="CA", value=_prefix, created_by_user_id=aid))
     await db.flush()
-    print("  ZIP 디폴트 = zip↔zip 양방향 풀(136구간×9) + 285→310 버전 / "
+    _np = len(ZIP_POINTS)
+    print(f"  ZIP 디폴트 = zip↔zip 양방향 풀({_np * (_np - 1) // 2}구간×9) + 285→310 버전 / "
           "Reefer(상속+전용존 2) · Overweight(상속+공용존 2) · Spot(빈) / "
-          "CITY 디폴트 풀 + Express(상속+도시존) / MILE·HOURLY 각 3그룹 / "
+          f"CITY 디폴트 풀({len(CITIES)}도시) + Express(상속+도시존) / MILE·HOURLY 각 3그룹 / "
           "배정 3 (ZIP·Reefer·MILE) / 권역 STATE CA + ZIP3 907·923")
 
     # ── 5. Load Type 템플릿 (시스템 시드) ─────────────────────

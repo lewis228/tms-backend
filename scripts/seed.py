@@ -330,25 +330,28 @@ async def seed(db: AsyncSession):
     await db.flush()
 
     # ── 존 — 묶음이 필요한 그룹에만 ──────────────────────────────
-    def _zone(name, code, color, desc, group_id=None):
-        z = RateZoneModel(team_id=tid, name=name, code=code, color=color,
+    from rate_zone.const.status import ZoneKind
+
+    def _zone(name, code, color, desc, group_id=None, kind=ZoneKind.ZIP):
+        z = RateZoneModel(team_id=tid, name=name, code=code, color=color, kind=kind,
                           rate_group_id=group_id, description=desc, created_by_user_id=aid)
         db.add(z)
         return z
 
-    # 팀 공용(글로벌) 존 2개 — Overweight 그룹이 사용 (다른 그룹도 쓸 수 있음)
+    # 팀 공용(글로벌) ZIP존 2개 — Overweight 그룹이 사용 (다른 그룹도 쓸 수 있음)
     z_g_port = _zone("Harbor Area", "HBR", "#0ea5e9",
-                     "항만권 zip 묶음 (San Pedro·Wilmington·Long Beach)")
+                     "항만권 zip 묶음 (San Pedro·Wilmington·Long Beach)", kind=ZoneKind.ZIP)
     z_g_ie = _zone("Inland Empire", "IE", "#3b82f6",
-                   "내륙권 zip 묶음 (Fontana·Ontario·San Bernardino)")
-    # Reefer 전용 스코프 존 2개 — 같은 zip 이라도 글로벌 존과 별개 스코프라 공존 가능
+                   "내륙권 zip 묶음 (Fontana·Ontario·San Bernardino)", kind=ZoneKind.ZIP)
+    # Reefer 전용 스코프 ZIP존 2개 — 같은 zip 이라도 글로벌 존과 별개 스코프라 공존 가능
     z_rf_cold = _zone("Cold Chain Inland", "COLD", "#22d3ee",
-                      "리퍼 전용: 냉동창고 밀집 내륙 zip", group_id=grp_zip_rf.id)
+                      "리퍼 전용: 냉동창고 밀집 내륙 zip", group_id=grp_zip_rf.id, kind=ZoneKind.ZIP)
     z_rf_pick = _zone("Reefer Harbor Pickup", "RHPU", "#06b6d4",
-                      "리퍼 전용: 항만 픽업 zip", group_id=grp_zip_rf.id)
-    # Express City 전용 도시존 — 도시 멤버 (디폴트 CITY 매트릭스 축을 오염시키지 않음)
+                      "리퍼 전용: 항만 픽업 zip", group_id=grp_zip_rf.id, kind=ZoneKind.ZIP)
+    # Express City 전용 도시존 — 도시 멤버만 (CITY 방식 전용)
     z_city_port = _zone("Harbor Cities", "HARBC", "#0284c7",
-                        "항만권 도시존 (San Pedro·Long Beach)", group_id=grp_city_ex.id)
+                        "항만권 도시존 (San Pedro·Long Beach)", group_id=grp_city_ex.id,
+                        kind=ZoneKind.CITY)
     await db.flush()
     for _z, _zips in [
         (z_g_port, ["90731", "90744", "90802"]),

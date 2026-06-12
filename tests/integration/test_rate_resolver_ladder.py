@@ -35,7 +35,9 @@ async def _group(db, team, name, method, *, default=False, inherits=True):
 
 async def _zone(db, team, name, zips=(), cities=(), group_id=None):
     from rate_zone.model import RateZoneModel, RateZoneMemberModel
-    z = RateZoneModel(team_id=team.id, name=name, rate_group_id=group_id)
+    from rate_zone.const.status import ZoneKind
+    kind = ZoneKind.CITY if cities else ZoneKind.ZIP  # 도시 멤버면 도시존
+    z = RateZoneModel(team_id=team.id, name=name, rate_group_id=group_id, kind=kind)
     db.add(z)
     await db.flush()
     for zc in zips:

@@ -3,19 +3,24 @@ from __future__ import annotations
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import (
     String, Text, JSON, Integer, ForeignKey,
-    Index, UniqueConstraint, ForeignKeyConstraint, and_,
+    Index, UniqueConstraint, ForeignKeyConstraint, and_, Enum as SAEnum,
 )
 from sqlalchemy.orm import foreign
 
 from common.model.base_model import Base
 from common.model.team_scoped_mixin import TeamScopedMixin
 from common.const.settings import settings
+from rate_zone.const.status import ZoneKind
 
 
 class RateZoneModel(Base, TeamScopedMixin):
     """원자(zip/도시)를 묶는 압축 레이어 Zone (헤더) — Team-Scoped.
 
     존은 방식이 아니라 "이 원자들은 요율이 같다" 선언 도구.
+    **존에는 종류(kind)가 있다**: ZIP존(멤버=zip 만 — '도시로 추가'는 그 도시 zip 전부를
+    넣는 확장 단축키) / 도시존(멤버=도시만, CITY 방식 전용). 한 존에 zip·도시 혼합 금지
+    (서비스 레벨 검증 ZONE_KIND_MISMATCH). 해석도 kind 로 필터 — ZIP 방식은 ZIP존만,
+    CITY 방식은 도시존만 매칭.
     rate_group_id=NULL 이면 팀 공용(글로벌) 존, 값이 있으면 그 그룹 전용 존
     (해석 시 그룹 스코프 존이 글로벌 존보다 우선).
     Zone 은 지도 폴리곤(geojson) 으로 시각화하고, 실제 조회는 원자→zone 인덱스(members)로 한다.
@@ -23,6 +28,10 @@ class RateZoneModel(Base, TeamScopedMixin):
     __tablename__ = "rate_zone"
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    kind: Mapped[ZoneKind] = mapped_column(
+        SAEnum(ZoneKind, name="zone_kind"),
+        default=ZoneKind.ZIP, server_default=ZoneKind.ZIP.value, nullable=False,
+    )
     rate_group_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("rate_group.id", ondelete="CASCADE"),

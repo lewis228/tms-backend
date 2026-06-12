@@ -5,6 +5,7 @@ from pydantic import Field, model_validator
 
 from common.schemas.base import RequestSchema
 from common.pagination.schemas.pagination_request import BasePaginationSchema
+from rate_zone.const.status import ZoneKind
 
 
 class RateZoneMemberItem(RequestSchema):
@@ -33,6 +34,7 @@ class RateZoneCreateRequest(RequestSchema):
     rate_group_id=None 이면 팀 공용(글로벌) 존, 값이 있으면 그 그룹 전용 존.
     """
     name: str = Field(min_length=1, max_length=120)
+    kind: ZoneKind = ZoneKind.ZIP  # ZIP존(멤버=zip) | 도시존(멤버=도시, CITY 방식 전용)
     code: str | None = Field(default=None, max_length=32)
     color: str | None = Field(default=None, max_length=16)
     rate_group_id: int | None = None
@@ -44,6 +46,7 @@ class RateZoneCreateRequest(RequestSchema):
 class RateZoneUpdateRequest(RequestSchema):
     """Rate Zone 헤더 수정 DTO (멤버는 /members 로 별도 관리)."""
     name: str | None = Field(default=None, min_length=1, max_length=120)
+    kind: ZoneKind | None = None  # 멤버 0일 때만 변경 가능 (서비스 검증)
     code: str | None = Field(default=None, max_length=32)
     color: str | None = Field(default=None, max_length=16)
     rate_group_id: int | None = None  # 스코프 변경 (None 전달 시 무시 — 글로벌화는 미지원)
@@ -70,3 +73,4 @@ class PaginateRateZoneRequest(BasePaginationSchema):
     where__name__i_like: Optional[str] = None
     where__code__i_like: Optional[str] = None
     where__rate_group_id__equal: Optional[int] = None
+    where__kind__equal: Optional[ZoneKind] = None

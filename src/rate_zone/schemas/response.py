@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Literal, List
 
 from common.schemas.base import ResponseSchema
+from rate_zone.const.status import ZoneKind
 
 
 class RateZoneMemberResponseSchema(ResponseSchema):
@@ -17,6 +18,7 @@ class RateZoneSummarySchema(ResponseSchema):
     """목록/sync 용 — members 미포함 (lazy='raise' 관계 접근 방지)."""
     id: int
     name: str
+    kind: ZoneKind
     code: str | None = None
     color: str | None = None
     rate_group_id: int | None = None  # None=팀 공용, 값=그룹 전용 존

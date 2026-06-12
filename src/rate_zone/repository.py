@@ -10,6 +10,7 @@ from common.repository.team_scoped import TeamScopedRepoMixin
 from common.pagination.service import CommonService
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from rate_zone.model import RateZoneModel, RateZoneMemberModel
+from rate_zone.const.status import ZoneKind
 from rate_zone.schemas.request import PaginateRateZoneRequest
 from rate_zone.schemas.response import RateZoneSummarySchema, RateZoneResponseSchema  # noqa: F401
 
@@ -101,10 +102,11 @@ class RateZoneRepository(TeamScopedRepoMixin):
         )
         return list((await self.db.execute(q)).scalars().all())
 
-    def _scoped_zone_query(self, rate_group_id: int | None):
+    def _scoped_zone_query(self, rate_group_id: int | None, kind):
         """원자→zone 조회 공통: 그룹 스코프 존 우선, 없으면 글로벌(NULL) 존.
 
         rate_group_id 가 None 이면 글로벌 존만 본다.
+        kind 로 존 종류 필터 — ZIP 방식은 ZIP존만, CITY 방식은 도시존만 매칭.
         """
         scope_cond = (
             RateZoneModel.rate_group_id.is_(None)
@@ -120,6 +122,7 @@ class RateZoneRepository(TeamScopedRepoMixin):
             .where(
                 RateZoneMemberModel.team_id == self._require_team(),
                 RateZoneModel.is_active.is_(True),
+                RateZoneModel.kind == kind,
                 scope_cond,
             )
             # 그룹 스코프 존(NULL 아님) 먼저, 그 안에선 결정적으로 가장 작은 zone_id.
@@ -134,8 +137,8 @@ class RateZoneRepository(TeamScopedRepoMixin):
     async def resolve_zone_id_for_zip(
         self, zip_code: str, rate_group_id: int | None = None
     ) -> Optional[int]:
-        """zip → 활성 zone_id (해석 진입점). 그룹 스코프 존 > 글로벌 존."""
-        q = self._scoped_zone_query(rate_group_id).where(
+        """zip → 활성 ZIP존 id (해석 진입점). 그룹 스코프 존 > 글로벌 존."""
+        q = self._scoped_zone_query(rate_group_id, ZoneKind.ZIP).where(
             RateZoneMemberModel.zip_code == zip_code,
         )
         return (await self.db.execute(q)).scalar_one_or_none()
@@ -143,11 +146,11 @@ class RateZoneRepository(TeamScopedRepoMixin):
     async def resolve_zone_id_for_city(
         self, city: str, state: str | None, rate_group_id: int | None = None
     ) -> Optional[int]:
-        """(city,state) → 활성 zone_id (CITY 방식 도시존). 그룹 스코프 존 > 글로벌 존."""
+        """(city,state) → 활성 도시존 id (CITY 방식 전용). 그룹 스코프 존 > 글로벌 존."""
         conds = [func.lower(RateZoneMemberModel.city) == city.lower()]
         if state:
             conds.append(RateZoneMemberModel.state == state.upper())
-        q = self._scoped_zone_query(rate_group_id).where(*conds)
+        q = self._scoped_zone_query(rate_group_id, ZoneKind.CITY).where(*conds)
         return (await self.db.execute(q)).scalar_one_or_none()
 
     async def list_conflicting_atoms(

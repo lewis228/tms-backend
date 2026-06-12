@@ -1,5 +1,5 @@
 # tests/integration/test_rate_zone_members.py
-"""존 멤버 — zip XOR (city,state), 스코프별 원자당 존 1개 제약, CSV city 멤버."""
+"""존 멤버 — 종류(kind) 분리 강제 + zip XOR (city,state) + 스코프별 원자당 존 1개 + CSV."""
 from __future__ import annotations
 
 import pytest
@@ -8,9 +8,19 @@ import pydantic
 from tests.integration.factories import make_team
 
 
+def _zip_master(db, zip_, city, state="CA"):
+    from zip_code.model import ZipCodeModel
+    row = ZipCodeModel(zip=zip_, city=city, state=state)
+    db.add(row)
+    return row
+
+
 @pytest.mark.asyncio
-async def test_city_member_roundtrip_and_xor_validation(db_session):
+async def test_zone_kind_separation_enforced(db_session):
+    """ZIP존=zip 멤버만 / 도시존=도시 멤버만 — 혼합은 양방향 모두 422."""
+    from common.exceptions.base import AppException
     from rate_zone.service import RateZoneService
+    from rate_zone.const.status import ZoneKind
     from rate_zone.schemas.request import (
         RateZoneCreateRequest, RateZoneMemberItem, RateZoneMembersReplaceRequest,
     )
@@ -18,27 +28,98 @@ async def test_city_member_roundtrip_and_xor_validation(db_session):
     team = await make_team(db_session)
     svc = RateZoneService(db_session, team.id)
 
-    # city 멤버 존 생성 → round-trip
-    zone = await svc.create(RateZoneCreateRequest(
-        name="Harbor Cities",
-        members=[RateZoneMemberItem(city="San Pedro", state="CA"),
-                 RateZoneMemberItem(city="Long Beach", state="CA")],
-    ))
-    assert len(zone.members) == 2
-    assert zone.members[0].city == "San Pedro" and zone.members[0].zip_code is None
+    # ZIP존에 도시 멤버 → 422
+    with pytest.raises(AppException) as e1:
+        await svc.create(RateZoneCreateRequest(
+            name="Bad ZIP Zone", kind=ZoneKind.ZIP,
+            members=[RateZoneMemberItem(city="San Pedro", state="CA")]))
+    assert e1.value.code == "ZONE_KIND_MISMATCH"
 
-    # zip 멤버로 교체
-    out = await svc.replace_members(zone.id, RateZoneMembersReplaceRequest(
+    # 도시존에 zip 멤버 → 422
+    with pytest.raises(AppException) as e2:
+        await svc.create(RateZoneCreateRequest(
+            name="Bad City Zone", kind=ZoneKind.CITY,
+            members=[RateZoneMemberItem(zip_code="90731")]))
+    assert e2.value.code == "ZONE_KIND_MISMATCH"
+
+    # 정상 생성 — ZIP존(zip), 도시존(도시)
+    zz = await svc.create(RateZoneCreateRequest(
+        name="Harbor ZIPs", kind=ZoneKind.ZIP,
         members=[RateZoneMemberItem(zip_code="90731")]))
-    assert out.count == 1 and out.members[0].zip_code == "90731"
+    cz = await svc.create(RateZoneCreateRequest(
+        name="Harbor Cities", kind=ZoneKind.CITY,
+        members=[RateZoneMemberItem(city="San Pedro", state="CA")]))
+    assert zz.kind == ZoneKind.ZIP and cz.kind == ZoneKind.CITY
 
-    # XOR 검증 — 둘 다/둘 다 없음/city 인데 state 없음 → ValidationError
+    # replace 로 혼합 시도 → 422
+    with pytest.raises(AppException) as e3:
+        await svc.replace_members(cz.id, RateZoneMembersReplaceRequest(
+            members=[RateZoneMemberItem(zip_code="90744")]))
+    assert e3.value.code == "ZONE_KIND_MISMATCH"
+
+    # '도시로 추가'(zip 확장)는 ZIP존 전용 — 도시존이면 422
+    _zip_master(db_session, "90731", "San Pedro")
+    await db_session.flush()
+    with pytest.raises(AppException) as e4:
+        await svc.add_members_by_city(cz.id, "San Pedro", "CA")
+    assert e4.value.code == "ZONE_KIND_MISMATCH"
+    # ZIP존에서는 정상 동작 (도시의 zip 전부 확장)
+    out = await svc.add_members_by_city(zz.id, "San Pedro", "CA")
+    assert all(m.zip_code for m in out.members)
+
+    # kind 변경은 멤버가 있으면 409, 비우면 허용
+    from rate_zone.schemas.request import RateZoneUpdateRequest
+    with pytest.raises(AppException) as e5:
+        await svc.update(zz.id, RateZoneUpdateRequest(kind=ZoneKind.CITY))
+    assert e5.value.code == "ZONE_KIND_LOCKED"
+    await svc.replace_members(zz.id, RateZoneMembersReplaceRequest(members=[]))
+    changed = await svc.update(zz.id, RateZoneUpdateRequest(kind=ZoneKind.CITY))
+    assert changed.kind == ZoneKind.CITY
+
+
+@pytest.mark.asyncio
+async def test_member_xor_validation(db_session):
+    """멤버 = zip XOR (city,state) — 스키마 검증."""
+    from rate_zone.schemas.request import RateZoneMemberItem
+
     with pytest.raises(pydantic.ValidationError):
         RateZoneMemberItem(zip_code="90731", city="San Pedro", state="CA")
     with pytest.raises(pydantic.ValidationError):
         RateZoneMemberItem()
     with pytest.raises(pydantic.ValidationError):
-        RateZoneMemberItem(city="San Pedro")
+        RateZoneMemberItem(city="San Pedro")  # state 누락
+
+
+@pytest.mark.asyncio
+async def test_resolver_filters_by_zone_kind(db_session):
+    """해석 kind 필터 — zip 은 도시존에 안 잡히고, 도시는 ZIP존에 안 잡힌다."""
+    from rate_zone.model import RateZoneModel, RateZoneMemberModel
+    from rate_zone.repository import RateZoneRepository
+    from rate_zone.const.status import ZoneKind
+
+    team = await make_team(db_session)
+    # 비정상 데이터를 일부러 직접 삽입(서비스 우회) — 해석 필터가 막아주는지 확인
+    z_zip = RateZoneModel(team_id=team.id, name="Z-ZIP", kind=ZoneKind.ZIP)
+    z_city = RateZoneModel(team_id=team.id, name="Z-CITY", kind=ZoneKind.CITY)
+    db_session.add_all([z_zip, z_city])
+    await db_session.flush()
+    db_session.add_all([
+        RateZoneMemberModel(team_id=team.id, zone_id=z_zip.id, zip_code="90731"),
+        # 도시존에 zip 멤버가 (우회로) 들어가 있어도:
+        RateZoneMemberModel(team_id=team.id, zone_id=z_city.id, zip_code="92335"),
+        RateZoneMemberModel(team_id=team.id, zone_id=z_city.id, city="San Pedro", state="CA"),
+        # ZIP존에 city 멤버가 들어가 있어도:
+        RateZoneMemberModel(team_id=team.id, zone_id=z_zip.id, city="Fontana", state="CA"),
+    ])
+    await db_session.flush()
+
+    repo = RateZoneRepository(db_session, team.id)
+    # zip 해석은 ZIP존만 — 도시존의 zip 멤버(92335)는 무시
+    assert await repo.resolve_zone_id_for_zip("90731") == z_zip.id
+    assert await repo.resolve_zone_id_for_zip("92335") is None
+    # 도시 해석은 도시존만 — ZIP존의 city 멤버(Fontana)는 무시
+    assert await repo.resolve_zone_id_for_city("San Pedro", "CA") == z_city.id
+    assert await repo.resolve_zone_id_for_city("Fontana", "CA") is None
 
 
 @pytest.mark.asyncio
@@ -48,6 +129,7 @@ async def test_atom_per_zone_per_scope_conflict(db_session):
     from rate_group.model import RateGroupModel
     from rate_group.const.status import RateMethod
     from rate_zone.service import RateZoneService
+    from rate_zone.const.status import ZoneKind
     from rate_zone.schemas.request import RateZoneCreateRequest, RateZoneMemberItem
 
     team = await make_team(db_session)
@@ -78,35 +160,48 @@ async def test_atom_per_zone_per_scope_conflict(db_session):
             members=[RateZoneMemberItem(zip_code="90731")]))
     assert ei2.value.code == "ZONE_MEMBER_CONFLICT"
 
-    # city 원자도 동일 제약
+    # city 원자도 동일 제약 (도시존끼리)
     await svc.create(RateZoneCreateRequest(
-        name="Harbor", members=[RateZoneMemberItem(city="San Pedro", state="CA")]))
+        name="Harbor", kind=ZoneKind.CITY,
+        members=[RateZoneMemberItem(city="San Pedro", state="CA")]))
     with pytest.raises(AppException) as ei3:
         await svc.create(RateZoneCreateRequest(
-            name="Harbor2", members=[RateZoneMemberItem(city="san pedro", state="CA")]))
+            name="Harbor2", kind=ZoneKind.CITY,
+            members=[RateZoneMemberItem(city="san pedro", state="CA")]))
     assert ei3.value.code == "ZONE_MEMBER_CONFLICT"
 
 
 @pytest.mark.asyncio
-async def test_zone_member_csv_with_city_rows(db_session):
-    """멤버 CSV import/export — city 행 지원 (export 잠재 크래시 회귀 방지)."""
+async def test_zone_member_csv_respects_kind(db_session):
+    """멤버 CSV — 존 종류에 맞는 행만 허용, 어긋나면 422."""
+    from common.exceptions.base import AppException
     from rate_zone.service import RateZoneService
+    from rate_zone.const.status import ZoneKind
     from rate_zone.schemas.request import RateZoneCreateRequest, RateZoneMemberItem
     from rate_import.service import RateImportService
 
     team = await make_team(db_session)
-    zone = await RateZoneService(db_session, team.id).create(RateZoneCreateRequest(
-        name="Mixed", members=[RateZoneMemberItem(zip_code="90731")]))
-
+    svc = RateZoneService(db_session, team.id)
     imp = RateImportService(db_session, team.id)
-    csv_text = "zip_code,city,state\n90744,,\n,Fontana,CA\n"
-    report = await imp.import_zone_members(zone.id, csv_text, dry_run=False, actor_user_id=None)
-    assert report.ok and report.applied == 2
 
-    out = await imp.export_zone_members(zone.id)
-    assert "90744" in out and "Fontana,CA" in out
+    # ZIP존 — zip 행 임포트 OK, 도시 행 포함 시 422
+    zz = await svc.create(RateZoneCreateRequest(
+        name="Zips", kind=ZoneKind.ZIP,
+        members=[RateZoneMemberItem(zip_code="90731")]))
+    report = await imp.import_zone_members(zz.id, "zip_code,city,state\n90744,,\n", dry_run=False, actor_user_id=None)
+    assert report.ok and report.applied == 1
+    with pytest.raises(AppException) as e1:
+        await imp.import_zone_members(zz.id, "zip_code,city,state\n,Fontana,CA\n", dry_run=False, actor_user_id=None)
+    assert e1.value.code == "ZONE_KIND_MISMATCH"
 
-    # 불량 행 — zip 과 city 동시 / city 인데 state 없음
+    # 도시존 — 도시 행 임포트 OK + export 에 도시 표기
+    cz = await svc.create(RateZoneCreateRequest(name="Cities", kind=ZoneKind.CITY))
+    report2 = await imp.import_zone_members(cz.id, "zip_code,city,state\n,Fontana,CA\n,Ontario,CA\n", dry_run=False, actor_user_id=None)
+    assert report2.ok and report2.applied == 2
+    out = await imp.export_zone_members(cz.id)
+    assert "Fontana,CA" in out and "Ontario,CA" in out
+
+    # 불량 행 — zip+city 동시 / city 인데 state 없음 → 행 단위 에러 리포트
     bad = "zip_code,city,state\n90731,Fontana,CA\n,Ontario,\n"
-    report2 = await imp.import_zone_members(zone.id, bad, dry_run=True, actor_user_id=None)
-    assert report2.ok is False and len(report2.errors) == 2
+    report3 = await imp.import_zone_members(cz.id, bad, dry_run=True, actor_user_id=None)
+    assert report3.ok is False and len(report3.errors) == 2

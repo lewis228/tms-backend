@@ -7,6 +7,7 @@ from common.exceptions.base import NotFoundException, AppException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
 from realtime.emit import emit_entity_event
 from rate_zone.repository import RateZoneRepository
+from rate_zone.const.status import ZoneKind
 from zip_code.repository import ZipCodeRepository
 from rate_zone.schemas.request import (
     RateZoneCreateRequest, RateZoneUpdateRequest, PaginateRateZoneRequest,
@@ -33,6 +34,22 @@ class RateZoneService:
         self.repo = RateZoneRepository(db, team_id)
 
     # ── 내부 검증 ────────────────────────────────────────────────
+    @staticmethod
+    def _check_kind_match(kind, members_data: list[dict]) -> None:
+        """존 종류와 멤버 원자 타입 일치 강제 — 혼합 금지 (사용자 확정).
+
+        ZIP존 = zip 멤버만 / 도시존 = (city,state) 멤버만.
+        """
+        bad = None
+        if kind == ZoneKind.ZIP:
+            if any(m.get("city") for m in members_data):
+                bad = "ZIP존에는 도시 멤버를 넣을 수 없습니다 (도시의 zip 을 넣으려면 '도시로 추가'를 사용)."
+        else:  # CITY
+            if any(m.get("zip_code") for m in members_data):
+                bad = "도시존에는 zip 멤버를 넣을 수 없습니다 (도시존은 CITY 방식 전용 — 도시만)."
+        if bad:
+            raise AppException(code="ZONE_KIND_MISMATCH", message=bad, status_code=422)
+
     async def _validate_group(self, rate_group_id: int | None) -> None:
         """그룹 스코프 존이면 그룹 존재 확인 (ste 규약: 다른 도메인 Repository 직접 주입)."""
         if rate_group_id is None:
@@ -64,6 +81,7 @@ class RateZoneService:
         await self._validate_group(payload.rate_group_id)
         header = payload.model_dump(exclude={"members"})
         members = [m.model_dump() for m in payload.members]
+        self._check_kind_match(payload.kind, members)
         await self._check_atom_conflicts(None, payload.rate_group_id, members)
         zone = await self.repo.create(header, members, actor_user_id=actor_user_id)
         await emit_entity_event("rate_zone.created", self.team_id,
@@ -106,6 +124,17 @@ class RateZoneService:
         data = payload.model_dump(exclude_unset=True)
         if "rate_group_id" in data:
             await self._validate_group(data["rate_group_id"])
+        # kind 변경은 멤버가 비어있을 때만 — 멤버가 있으면 원자 타입과 어긋남
+        if "kind" in data:
+            current = await self.repo.get_header(zone_id)
+            if current and data["kind"] != current.kind:
+                existing_members = await self.repo.list_members(zone_id)
+                if existing_members:
+                    raise AppException(
+                        code="ZONE_KIND_LOCKED",
+                        message="멤버가 있는 존의 종류는 변경할 수 없습니다 — 멤버를 비운 뒤 변경하세요.",
+                        status_code=409,
+                    )
         zone = await self.repo.update_header(zone_id, data, actor_user_id=actor_user_id)
         if not zone:
             raise NotFoundException(_LABEL)
@@ -120,6 +149,7 @@ class RateZoneService:
         if not zone:
             raise NotFoundException(_LABEL)
         members_data = [m.model_dump() for m in payload.members]
+        self._check_kind_match(zone.kind, members_data)
         await self._check_atom_conflicts(zone_id, zone.rate_group_id, members_data)
         rows = await self.repo.replace_members(zone_id, members_data, actor_user_id=actor_user_id)
         members = [RateZoneMemberResponseSchema.model_validate(r) for r in rows]
@@ -132,11 +162,17 @@ class RateZoneService:
     ) -> RateZoneMembersResponseSchema:
         """(city, state) 의 모든 zip 을 zip 마스터에서 찾아 기존 zip 멤버에 합집합 추가.
 
-        기존 city 멤버(도시존)는 그대로 보존한다.
+        **ZIP존 전용** — 도시→zip 확장 단축키. 도시존은 도시 멤버를 직접 추가해야 한다.
         """
         zone = await self.repo.get_header(zone_id)
         if not zone:
             raise NotFoundException(_LABEL)
+        if zone.kind != ZoneKind.ZIP:
+            raise AppException(
+                code="ZONE_KIND_MISMATCH",
+                message="'도시로 추가(zip 확장)'는 ZIP존 전용입니다 — 도시존에는 도시 멤버를 직접 추가하세요.",
+                status_code=422,
+            )
         new_zips = await ZipCodeRepository(self.db).find_zips_by_city(city, state)
         if not new_zips:
             raise AppException(

@@ -214,10 +214,19 @@ class RateImportService:
         return rows, errors
 
     async def import_zone_members(self, zone_id: int, csv_text: str, dry_run: bool, actor_user_id: int | None) -> CsvImportReport:
+        from common.exceptions.base import AppException
+        from rate_zone.const.status import ZoneKind
         zone = await self.zone_repo.get_header(zone_id)
         if not zone:
             raise NotFoundException("Rate Zone")
         rows, errors = self._parse_members(csv_text)
+        # 존 종류 ↔ 멤버 원자 타입 일치 (혼합 금지 — rate_zone 서비스와 동일 규칙)
+        if zone.kind == ZoneKind.ZIP and any(r.get("city") for r in rows):
+            raise AppException(code="ZONE_KIND_MISMATCH",
+                               message="ZIP존에는 도시 멤버를 임포트할 수 없습니다.", status_code=422)
+        if zone.kind == ZoneKind.CITY and any(r.get("zip_code") for r in rows):
+            raise AppException(code="ZONE_KIND_MISMATCH",
+                               message="도시존에는 zip 멤버를 임포트할 수 없습니다.", status_code=422)
         if errors:
             return CsvImportReport(ok=False, total=len(rows) + len(errors), applied=0, dry_run=dry_run, errors=errors)
         if dry_run:

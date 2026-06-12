@@ -490,11 +490,13 @@ async def seed(db: AsyncSession):
     ]
 
     # ── ZIP 디폴트: 존 없이 zip↔zip 양방향 풀 매트릭스 ──────────
-    # 무순서 쌍(삼각)이면 충분 — 양방향이라 역방향은 같은 셀. 19개 zip → 171구간 × 9조합.
+    # 무순서 쌍(삼각)+셀프 레인이면 충분 — 양방향이라 역방향은 같은 셀.
+    # 셀프 레인(zip↔같은 zip)도 포함: 같은 zip 안 위치끼리의 운송이 실제로 있다
+    # (dist=0 → 기본요금이 곧 미니멈 차지). 19개 zip → 171구간+19셀프 × 9조합.
     async def fill_zip_matrix(grp, group_mult):
         for mv, sv, ms in ALL_COMBOS:
             for i, (fz, fi) in enumerate(ZIP_POINTS):
-                for tz, ti in ZIP_POINTS[i + 1:]:
+                for tz, ti in ZIP_POINTS[i:]:
                     dist = abs(ti - fi)
                     await azcell(grp, mv, sv, fz, tz,
                                  _round5((90 + dist * 2.6) * group_mult * ms))
@@ -541,9 +543,10 @@ async def seed(db: AsyncSession):
             CITIES.append((_c, _di))
 
     async def fill_city_matrix(grp, group_mult):
+        # 셀프 레인(도시↔같은 도시) 포함 — ZIP 매트릭스와 동일한 이유.
         for mv, sv, ms in ALL_COMBOS:
             for i, (fc, fi) in enumerate(CITIES):
-                for tc, ti in CITIES[i + 1:]:
+                for tc, ti in CITIES[i:]:
                     await ccell(grp, mv, sv, fc, tc,
                                 _round5((95 + abs(ti - fi) * 3.0) * group_mult * ms))
 
@@ -579,7 +582,7 @@ async def seed(db: AsyncSession):
                                 state="CA", value=_prefix, created_by_user_id=aid))
     await db.flush()
     _np = len(ZIP_POINTS)
-    print(f"  ZIP 디폴트 = zip↔zip 양방향 풀({_np * (_np - 1) // 2}구간×9) + 285→310 버전 / "
+    print(f"  ZIP 디폴트 = zip↔zip 양방향 풀({_np * (_np + 1) // 2}구간(셀프 포함)×9) + 285→310 버전 / "
           "Reefer(상속+전용존 2) · Overweight(상속+공용존 2) · Spot(빈) / "
           f"CITY 디폴트 풀({len(CITIES)}도시) + Express(상속+도시존) / MILE·HOURLY 각 3그룹 / "
           "배정 3 (ZIP·Reefer·MILE) / 권역 STATE CA + ZIP3 907·923")

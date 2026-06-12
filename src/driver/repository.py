@@ -104,6 +104,17 @@ class DriverRepository(TeamScopedRepoMixin):
         result = await self.db.execute(q)
         return list(result.scalars().all())
 
+    async def get_user_info_map(self, user_ids: list[int]) -> dict[int, tuple[str | None, str | None]]:
+        """user_id → (name, email). 기사 응답의 name/email 은 user 테이블 소유 — 배치 조회."""
+        from user.model import UserModel
+        if not user_ids:
+            return {}
+        q = select(UserModel.id, UserModel.name, UserModel.email).where(
+            UserModel.id.in_(list(set(user_ids)))
+        )
+        rows = (await self.db.execute(q)).all()
+        return {uid: (name, email) for uid, name, email in rows}
+
     async def get_paginated(self, request: PaginateDriverRequest) -> CursorPaginationResult[DriverResponseSchema]:
         """
         CommonService를 사용한 커서 기반 페이지네이션

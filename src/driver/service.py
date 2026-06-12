@@ -93,11 +93,30 @@ class DriverService:
     # Read
     # ═══════════════════════════════════════════════════════════════
     
+    async def _enrich_user_info(
+        self, schemas: List[DriverResponseSchema]
+    ) -> List[DriverResponseSchema]:
+        """name/email 은 driver 컬럼이 아니라 연결된 user 의 값 — 응답에 채워넣는다.
+
+        (미적용 시 모든 기사 픽커/목록에 이름이 null 로 나옴.)
+        """
+        ids = [s.user_id for s in schemas if s.user_id is not None]
+        if not ids:
+            return schemas
+        info = await self.repo.get_user_info_map(ids)
+        for s in schemas:
+            name, email = info.get(s.user_id, (None, None))
+            s.name = name
+            s.email = email
+        return schemas
+
     async def get(self, driver_id: int) -> DriverResponseSchema:
         row = await self.repo.get(driver_id)
         if not row:
             raise NotFoundException("거래처")
-        return DriverResponseSchema.model_validate(row)
+        out = DriverResponseSchema.model_validate(row)
+        await self._enrich_user_info([out])
+        return out
 
     async def list_paginated(
         self, request: PaginateDriverRequest
@@ -107,7 +126,8 @@ class DriverService:
           - meta.count / meta.hasMore / data(DriverResponseSchema[])
         """
         result = await self.repo.get_paginated(request)
-        result.data = [DriverResponseSchema.model_validate(r) for r in result.data]
+        # repo 가 이미 DriverResponseSchema 로 변환 — user name/email 만 enrich
+        result.data = await self._enrich_user_info(list(result.data))
         return result
 
     # ═══════════════════════════════════════════════════════════════

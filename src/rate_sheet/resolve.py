@@ -105,6 +105,12 @@ class RateResolver:
     ) -> RateResolveResultSchema:
         kind = SheetKind.MILE if method == RateMethod.MILE else SheetKind.HOURLY
         qty = miles if method == RateMethod.MILE else hours
+        if qty is None:
+            # 0 으로 치환해 "조용한 $0.00 성공"을 만들지 않는다 — 미해석(found=False)으로
+            # 올려 payroll 이 UNRESOLVED 로 잡게 한다 (매트릭스 분기의 입력 가드와 대칭).
+            need = "miles" if method == RateMethod.MILE else "hours"
+            return _fail(f"{method.value} 해석에는 {need} 가 필요합니다.",
+                         method=method.value, rate_group_id=chain[0].id)
         last_fail_kw: dict = {"method": method.value, "rate_group_id": chain[0].id}
         for idx, g in enumerate(chain):
             sheet = await self.sheet_repo.find_slot(g.id, kind, None)
@@ -112,11 +118,10 @@ class RateResolver:
                 continue
             lk = await lookup.resolve_cell(self.sheet_repo, sheet.id, _empty_cell(), work_date)
             if lk.found and lk.per_unit is not None:
-                q = qty if qty is not None else Decimal("0")
-                base = (lk.per_unit * q).quantize(Decimal("0.01"))
+                base = (lk.per_unit * qty).quantize(Decimal("0.01"))
                 return RateResolveResultSchema(
                     found=True, method=method.value, rate_group_id=g.id, rate_sheet_id=sheet.id,
-                    rate_entry_id=lk.rate_entry_id, per_unit=lk.per_unit, quantity=q, base_amount=base,
+                    rate_entry_id=lk.rate_entry_id, per_unit=lk.per_unit, quantity=qty, base_amount=base,
                     match_step="UNIT", via_default_group=(idx > 0),
                     assignment_fallback=assignment_fallback,
                     effective_from=lk.effective_from, effective_to=lk.effective_to,
@@ -178,7 +183,9 @@ class RateResolver:
                 t_atom = {"to_city": dest_city, "to_state": dest_state}
 
             # 사다리 후보 — 양방향이므로 모든 후보를 normalize 후 단일 조회.
-            candidates: list[tuple[str, dict]] = []
+            # 후보마다 "매칭에 실제 사용된 존"을 함께 들고 간다 — 성공 스냅샷의 zone_id 가
+            # match_step 과 모순되지 않도록 (①원자↔원자=None, ②=해당 존, ③=dest 존).
+            candidates: list[tuple[str, dict, int | None]] = []
 
             def _cell(f_part: dict, t_part: dict) -> dict:
                 c = _empty_cell()
@@ -186,16 +193,18 @@ class RateResolver:
                 c.update(t_part)
                 return normalize_cell(c)
 
-            candidates.append(("ATOM_ATOM", _cell(f_atom, t_atom)))                       # ①
+            candidates.append(("ATOM_ATOM", _cell(f_atom, t_atom), None))                          # ①
             if t_zone is not None:
-                candidates.append(("ATOM_ZONE", _cell(f_atom, {"to_zone_id": t_zone})))    # ② 원자↔존
+                candidates.append(("ATOM_ZONE", _cell(f_atom, {"to_zone_id": t_zone}), t_zone))    # ② 원자↔존
             if f_zone is not None:
-                candidates.append(("ATOM_ZONE", _cell({"from_zone_id": f_zone}, t_atom)))  # ② 존↔원자(동단계)
+                candidates.append(("ATOM_ZONE", _cell({"from_zone_id": f_zone}, t_atom), f_zone))  # ② 존↔원자(동단계)
             if f_zone is not None and t_zone is not None:
-                candidates.append(("ZONE_ZONE", _cell({"from_zone_id": f_zone}, {"to_zone_id": t_zone})))  # ③
+                candidates.append(("ZONE_ZONE",
+                                   _cell({"from_zone_id": f_zone}, {"to_zone_id": t_zone}),
+                                   t_zone))                                                        # ③
 
             seen: set[tuple] = set()
-            for step, coord in candidates:
+            for step, coord, matched_zone_id in candidates:
                 key = tuple(coord.get(k) for k in _CELL_KEYS)
                 if key in seen:
                     continue
@@ -204,7 +213,7 @@ class RateResolver:
                 if lk.found and lk.amount is not None:
                     return RateResolveResultSchema(
                         found=True, method=method.value, rate_group_id=g.id, rate_sheet_id=sheet.id,
-                        rate_entry_id=lk.rate_entry_id, zone_id=t_zone,
+                        rate_entry_id=lk.rate_entry_id, zone_id=matched_zone_id,
                         amount=lk.amount, base_amount=lk.amount.quantize(Decimal("0.01")),
                         match_step=step, via_default_group=(idx > 0),
                         assignment_fallback=assignment_fallback,

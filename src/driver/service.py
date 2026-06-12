@@ -1,11 +1,18 @@
 # src/driver/service.py
 from __future__ import annotations
+import secrets
 from typing import List
 from datetime import datetime
+
+import bcrypt
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from common.exceptions.base import NotFoundException
+from common.exceptions.base import ConflictException, NotFoundException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
+from team.model import UserTeamModel
+from user.const.roles import RolesEnum
+from user.model import UserModel
 from driver.repository import DriverRepository
 from driver.schemas.request import (
     DriverCreateRequest, DriverUpdateRequest, PaginateDriverRequest,
@@ -33,52 +40,111 @@ class DriverService:
     """
     def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
+        self.team_id = team_id
         self.repo = DriverRepository(db, team_id)
+
+    # ═══════════════════════════════════════════════════════════════
+    # User 연결 (email/name/phone 은 user 테이블 소유)
+    # ═══════════════════════════════════════════════════════════════
+
+    async def _get_or_create_driver_user(
+        self, email: str, name: str, phone: str | None
+    ) -> UserModel:
+        """기사 생성 시 user 확보: 활성 이메일 유저 재사용 또는 신규 생성 + 팀 멤버십 보장.
+
+        - 신규 user 는 role=DRIVER, 임의 비밀번호(모바일은 phone+OTP 로그인 — 비밀번호 미사용).
+        - 멤버십은 permission_group_id=None (driver 는 role 가드로 제어 — 시드와 동일).
+        """
+        email_lower = email.lower()
+        user = (await self.db.execute(
+            select(UserModel).where(
+                UserModel.email == email_lower,
+                UserModel.is_active.is_(True),
+            )
+        )).scalar_one_or_none()
+
+        if user is None:
+            pw_hash = bcrypt.hashpw(secrets.token_urlsafe(24).encode(), bcrypt.gensalt()).decode()
+            user = UserModel.create_email_user(email=email, password_hash=pw_hash, name=name)
+            user.role = RolesEnum.DRIVER
+            if phone:
+                user.phone = phone
+            self.db.add(user)
+            await self.db.flush()
+        else:
+            # 기존 유저 재사용 — 비어 있는 프로필만 보충 (기존 값 덮어쓰지 않음)
+            if not user.name:
+                user.name = name
+            if phone and not user.phone:
+                user.phone = phone
+
+        membership = (await self.db.execute(
+            select(UserTeamModel).where(
+                UserTeamModel.user_id == user.id,
+                UserTeamModel.team_id == self.team_id,
+            )
+        )).scalar_one_or_none()
+        if membership is None:
+            self.db.add(UserTeamModel(user_id=user.id, team_id=self.team_id, permission_group_id=None))
+            await self.db.flush()
+
+        return user
+
+    async def _create_one(
+        self, payload: DriverCreateRequest, actor_user_id: int | None
+    ) -> DriverResponseSchema:
+        data = payload.model_dump()
+        # user 소유 필드 분리 — DriverModel 컬럼이 아니라 그대로 넘기면 TypeError
+        email = data.pop("email")
+        name = data.pop("name")
+        phone = data.pop("phone", None)
+
+        user = await self._get_or_create_driver_user(email, name, phone)
+        if await self.repo.get_active_by_user_id(user.id):
+            raise ConflictException(f"이미 이 팀에 등록된 기사입니다. (email={email})")
+
+        data["user_id"] = user.id
+        row = await self.repo.create(data, actor_user_id=actor_user_id)
+        out = DriverResponseSchema.model_validate(row)
+        await self._enrich_user_info([out])
+        return out
 
     # ═══════════════════════════════════════════════════════════════
     # Create (단건)
     # ═══════════════════════════════════════════════════════════════
-    
+
     async def create(
         self,
         payload: DriverCreateRequest,
         actor_user_id: int | None = None,
     ) -> DriverResponseSchema:
-        row = await self.repo.create(
-            payload.model_dump(),
-            actor_user_id=actor_user_id,
-        )
-        return DriverResponseSchema.model_validate(row)
+        return await self._create_one(payload, actor_user_id)
 
     # ═══════════════════════════════════════════════════════════════
     # Create (벌크) - 전체 성공 or 전체 실패
     # ═══════════════════════════════════════════════════════════════
-    
+
     async def create_bulk(
         self,
         payload: DriverBulkCreateRequest,
         actor_user_id: int | None = None,
     ) -> DriverBulkCreateResponseSchema:
         """
-        거래처 벌크 생성 - 전체 성공 or 전체 실패
-        
+        기사 벌크 생성 - 전체 성공 or 전체 실패
+
         - 하나라도 실패하면 전체 롤백 (get_write_db 의존성에서 자동 처리)
         - 에러 발생 시 BadRequestException으로 상세 정보 전달
         """
         results: List[BulkResultItem] = []
-        
+
         for item in payload.items:
-            row = await self.repo.create(
-                item.model_dump(),
-                actor_user_id=actor_user_id,
-            )
-            driver = DriverResponseSchema.model_validate(row)
+            driver = await self._create_one(item, actor_user_id)
             results.append(BulkResultItem(
                 id=driver.id,
                 success=True,
                 data=driver,
             ))
-        
+
         # 여기까지 오면 전부 성공 (에러 시 예외 발생 → 전체 롤백)
         return DriverBulkCreateResponseSchema(
             results=results,
@@ -96,7 +162,7 @@ class DriverService:
     async def _enrich_user_info(
         self, schemas: List[DriverResponseSchema]
     ) -> List[DriverResponseSchema]:
-        """name/email 은 driver 컬럼이 아니라 연결된 user 의 값 — 응답에 채워넣는다.
+        """name/email/phone 은 driver 컬럼이 아니라 연결된 user 의 값 — 응답에 채워넣는다.
 
         (미적용 시 모든 기사 픽커/목록에 이름이 null 로 나옴.)
         """
@@ -105,10 +171,22 @@ class DriverService:
             return schemas
         info = await self.repo.get_user_info_map(ids)
         for s in schemas:
-            name, email = info.get(s.user_id, (None, None))
+            name, email, phone = info.get(s.user_id, (None, None, None))
             s.name = name
             s.email = email
+            s.phone = phone
         return schemas
+
+    async def _update_user_fields(self, user_id: int, fields: dict) -> None:
+        """name/phone 수정은 user 테이블에 반영 — driver 에 setattr 하면 조용히 유실된다."""
+        user = (await self.db.execute(
+            select(UserModel).where(UserModel.id == user_id)
+        )).scalar_one_or_none()
+        if user is None:
+            return
+        for k, v in fields.items():
+            setattr(user, k, v)
+        await self.db.flush()
 
     async def get(self, driver_id: int) -> DriverResponseSchema:
         row = await self.repo.get(driver_id)
@@ -143,10 +221,10 @@ class DriverService:
         since = datetime.fromisoformat(since_str.replace("Z", "+00:00"))
         result = await self.repo.sync_delta(since)
 
-        result.items = [
+        result.items = await self._enrich_user_info([
             DriverResponseSchema.model_validate(r)
             for r in result.items
-        ]
+        ])
         return result
 
     # ═══════════════════════════════════════════════════════════════
@@ -163,14 +241,20 @@ class DriverService:
         # - phone: null을 보내면 → {'phone': None} 포함 → DB에서 null로 업데이트
         # - phone 필드를 안 보내면 → dict에서 제외 → DB 값 유지
         data = payload.model_dump(exclude_unset=True)
+        # name/phone 은 user 소유 — driver 컬럼이 아니라서 분리 저장해야 한다
+        user_fields = {k: data.pop(k) for k in ("name", "phone") if k in data}
         row = await self.repo.update(
             driver_id,
             data,
             actor_user_id=actor_user_id,
         )
         if not row:
-            raise NotFoundException("거래처")
-        return DriverResponseSchema.model_validate(row)
+            raise NotFoundException("기사")
+        if user_fields:
+            await self._update_user_fields(row.user_id, user_fields)
+        out = DriverResponseSchema.model_validate(row)
+        await self._enrich_user_info([out])
+        return out
 
     # ═══════════════════════════════════════════════════════════════
     # Update (벌크) - 전체 성공 or 전체 실패
@@ -206,12 +290,17 @@ class DriverService:
             #  exclude_unset=True 사용
             data = item.model_dump(exclude_unset=True)
             data.pop('id', None)  # id는 제외
+            # name/phone 은 user 소유 — 분리 저장 (단건 update 와 동일)
+            user_fields = {k: data.pop(k) for k in ("name", "phone") if k in data}
             row = await self.repo.update(
                 item.id,
                 data,
                 actor_user_id=actor_user_id,
             )
+            if user_fields:
+                await self._update_user_fields(row.user_id, user_fields)
             driver = DriverResponseSchema.model_validate(row)
+            await self._enrich_user_info([driver])
             results.append(BulkResultItem(
                 id=driver.id,
                 success=True,

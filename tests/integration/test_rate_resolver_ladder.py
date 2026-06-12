@@ -292,3 +292,49 @@ async def test_city_method_atoms_zones_and_zip_derivation(db_session):
     # zip 만 주면 zip 마스터에서 도시 파생 → ① 매칭
     r3 = await _resolve(db_session, team, drv, from_zip="90731", dest_zip="92335")
     assert r3.found and r3.base_amount == Decimal("320.00") and r3.match_step == "ATOM_ATOM"
+
+
+@pytest.mark.asyncio
+async def test_unit_method_requires_quantity(db_session):
+    """MILE/HOURLY — miles/hours 미전달은 $0.00 조용한 성공이 아니라 found=False (→ payroll UNRESOLVED)."""
+    from rate_group.const.status import RateMethod
+    from rate_group.schemas.request import FlatRateEntryRequest
+    from rate_sheet.resolve import RateResolver
+
+    team = await make_team(db_session)
+    drv = await make_driver(db_session, team=team)
+    g = await _group(db_session, team, "Mileage", RateMethod.MILE)
+    await _assign(db_session, team, drv, g)
+    await _entry_svc(db_session, team).set_entry(g.id, FlatRateEntryRequest(
+        per_unit=Decimal("2.5"), effective_from=JAN))
+
+    # miles 누락 → 미해석 + 명확한 사유 (0 치환 금지)
+    r = await RateResolver(db_session, team.id).resolve(driver_id=drv.id, work_date=WD)
+    assert r.found is False and "miles" in (r.message or "")
+
+    # miles 전달 → 정상 해석
+    r2 = await RateResolver(db_session, team.id).resolve(
+        driver_id=drv.id, work_date=WD, miles=Decimal("40"))
+    assert r2.found and r2.base_amount == Decimal("100.00") and r2.match_step == "UNIT"
+
+
+@pytest.mark.asyncio
+async def test_match_snapshot_zone_id_follows_match_step(db_session):
+    """성공 스냅샷의 zone_id = 실제 매칭에 쓰인 존 — ①이면 None, from 측 존 매칭(②)이면 그 존."""
+    from rate_group.const.status import RateMethod
+
+    team = await make_team(db_session)
+    drv = await make_driver(db_session, team=team)
+    g = await _group(db_session, team, "ZIP Default", RateMethod.ZIP, default=True)
+    z_ie = await _zone(db_session, team, "IE", zips=["92335", "91761"])
+    await _assign(db_session, team, drv, g)
+
+    await _cell(db_session, team, g, amount="350", from_zip="90731", to_zip="92335")      # ①
+    await _cell(db_session, team, g, amount="330", from_zip="90744", to_zone_id=z_ie.id)  # ②
+
+    # ① 원자↔원자 — dest 가 존(IE)에 속해 있어도 zone_id 는 None
+    r1 = await _resolve(db_session, team, drv, from_zip="90731", dest_zip="92335")
+    assert r1.match_step == "ATOM_ATOM" and r1.zone_id is None
+    # ② 존이 from 측 — dest 원자(90744)는 무존이지만 매칭에 쓰인 IE 존이 기록됨
+    r2 = await _resolve(db_session, team, drv, from_zip="91761", dest_zip="90744")
+    assert r2.match_step == "ATOM_ZONE" and r2.zone_id == z_ie.id

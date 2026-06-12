@@ -24,17 +24,33 @@ from zip_code.model import ZipCodeModel
 GEONAMES_URL = "https://download.geonames.org/export/zip/US.zip"
 
 # 다운로드 실패 시 최소 폴백 (시드 도시 + 인근). 테이블이 비지 않게.
+# ⚠️ 불변식: seed.py ZIP_POINTS 19개 zip 은 전부 여기 포함되어야 한다 —
+#    오프라인 폴백 시에도 마스터 zip_id / 요율 매트릭스 / CITY 파생이 깨지지 않게.
+#    (seed.py 가 zmap 구성 직후 누락 zip 을 fail-fast 단언으로 검증한다.)
 _FALLBACK = [
-    # zip, city, state, county, lat, lng
-    ("90745", "Carson", "CA", "Los Angeles", 33.831, -118.281),
-    ("90802", "Long Beach", "CA", "Los Angeles", 33.768, -118.193),
+    # zip, city, state, county, lat, lng — ZIP_POINTS 19개
     ("90731", "San Pedro", "CA", "Los Angeles", 33.736, -118.292),
-    ("92335", "Fontana", "CA", "San Bernardino", 34.101, -117.459),
-    ("92336", "Fontana", "CA", "San Bernardino", 34.131, -117.459),
-    ("91761", "Ontario", "CA", "San Bernardino", 34.040, -117.612),
-    ("91762", "Ontario", "CA", "San Bernardino", 34.063, -117.652),
+    ("90744", "Wilmington", "CA", "Los Angeles", 33.786, -118.262),
+    ("90802", "Long Beach", "CA", "Los Angeles", 33.768, -118.193),
+    ("90745", "Carson", "CA", "Los Angeles", 33.831, -118.281),
+    ("90220", "Compton", "CA", "Los Angeles", 33.880, -118.240),
+    ("90001", "Los Angeles", "CA", "Los Angeles", 33.973, -118.249),
     ("90021", "Los Angeles", "CA", "Los Angeles", 34.030, -118.236),
-    ("90040", "Commerce", "CA", "Los Angeles", 33.996, -118.154),
+    ("90040", "Los Angeles", "CA", "Los Angeles", 33.996, -118.154),
+    ("92805", "Anaheim", "CA", "Orange", 33.829, -117.905),
+    ("92701", "Santa Ana", "CA", "Orange", 33.749, -117.860),
+    ("92335", "Fontana", "CA", "San Bernardino", 34.087, -117.466),
+    ("91761", "Ontario", "CA", "San Bernardino", 34.040, -117.612),
+    ("92408", "San Bernardino", "CA", "San Bernardino", 34.085, -117.272),
+    ("93030", "Oxnard", "CA", "Ventura", 34.205, -119.175),
+    ("93001", "Ventura", "CA", "Ventura", 34.353, -119.310),
+    ("92392", "Victorville", "CA", "San Bernardino", 34.480, -117.350),
+    ("92345", "Hesperia", "CA", "San Bernardino", 34.413, -117.306),
+    ("92101", "San Diego", "CA", "San Diego", 32.719, -117.163),
+    ("92154", "San Diego", "CA", "San Diego", 32.567, -117.054),
+    # 인근 (ZIP_POINTS 외)
+    ("92336", "Fontana", "CA", "San Bernardino", 34.131, -117.459),
+    ("91762", "Ontario", "CA", "San Bernardino", 34.063, -117.652),
     ("92376", "Rialto", "CA", "San Bernardino", 34.116, -117.384),
 ]
 

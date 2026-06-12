@@ -87,6 +87,9 @@ class RateGroupEntryService:
         _, _method, kind = await self._resolve_kind(group_id)
         sheet_id = await self._ensure_sheet(group_id, kind, row)
         cell = _cell_from_flat(row, kind)
+        # 존 좌표 검증 — 존재/팀/kind/스코프 (죽은 셀 차단). API 직접 호출·CSV import 공통.
+        await versioning.validate_cell_zone_refs(
+            self.db, self.team_id, cell, sheet_kind=kind, rate_group_id=group_id)
         entry = await versioning.set_rate(
             self.sheet_repo, sheet_id, cell,
             amount=row.amount, per_unit=row.per_unit,

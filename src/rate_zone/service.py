@@ -122,19 +122,28 @@ class RateZoneService:
         self, zone_id: int, payload: RateZoneUpdateRequest, actor_user_id: int | None = None
     ) -> RateZoneResponseSchema:
         data = payload.model_dump(exclude_unset=True)
+        current = await self.repo.get_header(zone_id)
+        if not current:
+            raise NotFoundException(_LABEL)
         if "rate_group_id" in data:
             await self._validate_group(data["rate_group_id"])
-        # kind 변경은 멤버가 비어있을 때만 — 멤버가 있으면 원자 타입과 어긋남
-        if "kind" in data:
-            current = await self.repo.get_header(zone_id)
-            if current and data["kind"] != current.kind:
+            # 스코프 이동(그룹↔그룹/글로벌) 시 대상 스코프에서도 "원자당 존 1개" 불변식 유지
+            if data["rate_group_id"] != current.rate_group_id:
                 existing_members = await self.repo.list_members(zone_id)
-                if existing_members:
-                    raise AppException(
-                        code="ZONE_KIND_LOCKED",
-                        message="멤버가 있는 존의 종류는 변경할 수 없습니다 — 멤버를 비운 뒤 변경하세요.",
-                        status_code=409,
-                    )
+                members_data = [
+                    {"zip_code": m.zip_code, "city": m.city, "state": m.state}
+                    for m in existing_members
+                ]
+                await self._check_atom_conflicts(zone_id, data["rate_group_id"], members_data)
+        # kind 변경은 멤버가 비어있을 때만 — 멤버가 있으면 원자 타입과 어긋남
+        if "kind" in data and data["kind"] != current.kind:
+            existing_members = await self.repo.list_members(zone_id)
+            if existing_members:
+                raise AppException(
+                    code="ZONE_KIND_LOCKED",
+                    message="멤버가 있는 존의 종류는 변경할 수 없습니다 — 멤버를 비운 뒤 변경하세요.",
+                    status_code=409,
+                )
         zone = await self.repo.update_header(zone_id, data, actor_user_id=actor_user_id)
         if not zone:
             raise NotFoundException(_LABEL)

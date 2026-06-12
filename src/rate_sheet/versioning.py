@@ -13,10 +13,59 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from common.exceptions.base import AppException, NotFoundException
 from rate_sheet.repository import RateSheetRepository
 from rate_sheet.model import RateEntryModel
 from rate_sheet.lane import normalize_cell
-from rate_sheet.const.status import RateEntrySource, RateEntryAction
+from rate_sheet.const.status import RateEntrySource, RateEntryAction, SheetKind
+
+
+async def validate_cell_zone_refs(
+    db: AsyncSession, team_id: int, cell: dict, *,
+    sheet_kind: SheetKind, rate_group_id: int,
+) -> None:
+    """셀 좌표의 from_zone_id/to_zone_id 참조 검증 — set_rate 진입 전 가드.
+
+    (a) 존재 + (b) 같은 팀(team 스코프 repo 가 강제) + (c) 시트 kind 와 존 kind 일치
+    (ZIP 시트=ZIP존 / CITY 시트=도시존 — kind 강제 3층의 entry 좌표 레이어) +
+    (d) 스코프 일치(글로벌 또는 해당 그룹 전용 존). 위반 시 404/422 — 해석기가
+    영원히 매칭하지 못하는 죽은 셀이 만들어지는 것을 차단한다.
+    """
+    zone_ids = [v for v in (cell.get("from_zone_id"), cell.get("to_zone_id")) if v is not None]
+    if not zone_ids:
+        return
+    # ste 규약: 다른 도메인 Repository 직접 주입 (지연 import — 순환참조 회피)
+    from rate_zone.repository import RateZoneRepository
+    from rate_zone.const.status import ZoneKind
+
+    if sheet_kind not in (SheetKind.ZIP, SheetKind.CITY):
+        raise AppException(
+            code="ZONE_KIND_MISMATCH",
+            message="MILE/HOURLY 시트 셀에는 존 좌표를 사용할 수 없습니다.",
+            status_code=422,
+        )
+    expected_kind = ZoneKind.ZIP if sheet_kind == SheetKind.ZIP else ZoneKind.CITY
+    zone_repo = RateZoneRepository(db, team_id)
+    for zid in zone_ids:
+        zone = await zone_repo.get_header(zid)
+        if zone is None:
+            raise NotFoundException("Rate Zone", detail={"zone_id": zid})
+        if zone.kind != expected_kind:
+            raise AppException(
+                code="ZONE_KIND_MISMATCH",
+                message=f"존 '{zone.name}'(id={zid}) 의 종류({zone.kind.value})가 "
+                        f"시트 방식({sheet_kind.value})과 맞지 않습니다.",
+                status_code=422,
+            )
+        if zone.rate_group_id is not None and zone.rate_group_id != rate_group_id:
+            raise AppException(
+                code="ZONE_SCOPE_MISMATCH",
+                message=f"존 '{zone.name}'(id={zid}) 은(는) 다른 그룹 전용 존입니다 — "
+                        "글로벌 존 또는 이 그룹 스코프 존만 셀 좌표로 쓸 수 있습니다.",
+                status_code=422,
+            )
 
 
 async def set_rate(

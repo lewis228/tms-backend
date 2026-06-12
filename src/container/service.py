@@ -25,6 +25,7 @@ class ContainerService:
 
     def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
+        self.team_id = team_id
         self.repo = ContainerRepository(db, team_id)
 
     # ── Create ──
@@ -128,7 +129,10 @@ class ContainerService:
             for did, name in (await self.db.execute(
                 select(DriverModel.id, func.coalesce(UserModel.name, UserModel.email))
                 .outerjoin(UserModel, UserModel.id == DriverModel.user_id)
-                .where(DriverModel.id.in_(driver_ids))
+                .where(
+                    DriverModel.team_id == self.team_id,
+                    DriverModel.id.in_(driver_ids),
+                )
             )).all():
                 driver_name_map[did] = name or ""
 

@@ -205,3 +205,46 @@ async def test_zone_member_csv_respects_kind(db_session):
     bad = "zip_code,city,state\n90731,Fontana,CA\n,Ontario,\n"
     report3 = await imp.import_zone_members(cz.id, bad, dry_run=True, actor_user_id=None)
     assert report3.ok is False and len(report3.errors) == 2
+
+
+@pytest.mark.asyncio
+async def test_atom_conflict_enforced_on_csv_import_and_scope_change(db_session):
+    """CSV import / 헤더 스코프 변경도 '같은 스코프 원자당 존 1개'(409) 를 우회 못 한다."""
+    from common.exceptions.base import AppException
+    from rate_group.model import RateGroupModel
+    from rate_group.const.status import RateMethod
+    from rate_zone.service import RateZoneService
+    from rate_zone.schemas.request import (
+        RateZoneCreateRequest, RateZoneMemberItem, RateZoneUpdateRequest,
+    )
+    from rate_import.service import RateImportService
+
+    team = await make_team(db_session)
+    svc = RateZoneService(db_session, team.id)
+    imp = RateImportService(db_session, team.id)
+    group = RateGroupModel(team_id=team.id, name="RF", method=RateMethod.ZIP)
+    db_session.add(group)
+    await db_session.flush()
+
+    await svc.create(RateZoneCreateRequest(
+        name="Port", members=[RateZoneMemberItem(zip_code="90731")]))
+    other = await svc.create(RateZoneCreateRequest(
+        name="IE", members=[RateZoneMemberItem(zip_code="92335")]))
+
+    # CSV 로 같은 글로벌 스코프의 다른 존에 90731 을 넣으면 409 (단건 추가 경로와 동일)
+    with pytest.raises(AppException) as e1:
+        await imp.import_zone_members(other.id, "zip_code,city,state\n90731,,\n",
+                                      dry_run=True, actor_user_id=None)
+    assert e1.value.code == "ZONE_MEMBER_CONFLICT"
+
+    # 그룹 스코프 존(같은 zip 허용)을 글로벌로 이동하면 글로벌의 Port 와 충돌 → 409
+    scoped = await svc.create(RateZoneCreateRequest(
+        name="Port Cold", rate_group_id=group.id,
+        members=[RateZoneMemberItem(zip_code="90731")]))
+    with pytest.raises(AppException) as e2:
+        await svc.update(scoped.id, RateZoneUpdateRequest(rate_group_id=None))
+    assert e2.value.code == "ZONE_MEMBER_CONFLICT"
+
+    # 충돌 없는 스코프 이동은 정상 수행 (IE 존 → 그룹 스코프)
+    moved = await svc.update(other.id, RateZoneUpdateRequest(rate_group_id=group.id))
+    assert moved.rate_group_id == group.id

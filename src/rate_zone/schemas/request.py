@@ -49,7 +49,7 @@ class RateZoneUpdateRequest(RequestSchema):
     kind: ZoneKind | None = None  # 멤버 0일 때만 변경 가능 (서비스 검증)
     code: str | None = Field(default=None, max_length=32)
     color: str | None = Field(default=None, max_length=16)
-    rate_group_id: int | None = None  # 스코프 변경 (None 전달 시 무시 — 글로벌화는 미지원)
+    rate_group_id: int | None = None  # 스코프 변경 — 명시적 null 전달 시 글로벌화 (미전달이면 유지)
     geojson: dict | None = None
     description: str | None = Field(default=None, max_length=3000)
 

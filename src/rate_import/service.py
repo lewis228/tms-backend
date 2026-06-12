@@ -17,7 +17,7 @@ from decimal import Decimal, InvalidOperation
 from typing import List, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from common.exceptions.base import NotFoundException
+from common.exceptions.base import AppException, NotFoundException
 from realtime.emit import emit_entity_event
 from rate_sheet.repository import RateSheetRepository
 from rate_sheet import versioning
@@ -95,8 +95,18 @@ class RateImportService:
         if not sheet:
             raise NotFoundException("Rate Sheet")
         rows, errors = self._parse_entries(csv_text)
+        total = len(rows) + len(errors)
+        if not errors:
+            # 존 좌표 검증(존재/팀/kind/스코프) — 단건 set_entry 경로와 동일 가드, 행별 오류 보고
+            for i, r in enumerate(rows, start=1):
+                try:
+                    await versioning.validate_cell_zone_refs(
+                        self.db, self.team_id, r["cell"],
+                        sheet_kind=sheet.kind, rate_group_id=sheet.rate_group_id)
+                except AppException as e:
+                    errors.append(ImportRowError(row=i, message=str(e.message)))
         if errors:
-            return CsvImportReport(ok=False, total=len(rows) + len(errors), applied=0, dry_run=dry_run, errors=errors)
+            return CsvImportReport(ok=False, total=total, applied=0, dry_run=dry_run, errors=errors)
         if dry_run:
             return CsvImportReport(ok=True, total=len(rows), applied=0, dry_run=True)
         for r in rows:
@@ -214,7 +224,6 @@ class RateImportService:
         return rows, errors
 
     async def import_zone_members(self, zone_id: int, csv_text: str, dry_run: bool, actor_user_id: int | None) -> CsvImportReport:
-        from common.exceptions.base import AppException
         from rate_zone.const.status import ZoneKind
         zone = await self.zone_repo.get_header(zone_id)
         if not zone:
@@ -229,6 +238,19 @@ class RateImportService:
                                message="도시존에는 zip 멤버를 임포트할 수 없습니다.", status_code=422)
         if errors:
             return CsvImportReport(ok=False, total=len(rows) + len(errors), applied=0, dry_run=dry_run, errors=errors)
+        # 같은 스코프 내 원자당 존 1개 — 단건/replace 경로(_check_atom_conflicts)와 동일 검사 (409)
+        conflicts = await self.zone_repo.list_conflicting_atoms(
+            zone_id, zone.rate_group_id,
+            [r["zip_code"] for r in rows if r.get("zip_code")],
+            [(r["city"], r.get("state")) for r in rows if r.get("city")],
+        )
+        if conflicts:
+            detail = ", ".join(f"{atom} → '{zname}'" for atom, zname in conflicts[:10])
+            raise AppException(
+                code="ZONE_MEMBER_CONFLICT",
+                message=f"같은 스코프의 다른 존에 이미 속한 멤버가 있습니다: {detail}",
+                status_code=409,
+            )
         if dry_run:
             return CsvImportReport(ok=True, total=len(rows), applied=0, dry_run=True)
         await self.zone_repo.replace_members(zone_id, rows, actor_user_id=actor_user_id)

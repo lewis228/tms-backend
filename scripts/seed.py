@@ -27,6 +27,27 @@ LOGIN_PW = "1234"
 NOW = datetime(2026, 6, 9, 10, 0, tzinfo=timezone.utc)
 TODAY = date(2026, 6, 9)
 
+# ── 영업권역 zip 19개 — (zip, 항만 기준 거리지수) ─────────────
+# 동네 이름은 zip 마스터가 제공
+# (90731=San Pedro, 90744=Wilmington, 90802=Long Beach, 90745=Carson, 90220=Compton,
+#  90001/21/40=LA, 92805=Anaheim, 92701=Santa Ana, 92335=Fontana, 91761=Ontario,
+#  92408=San Bernardino, 93030=Oxnard, 93001=Ventura, 92392=Victorville, 92345=Hesperia,
+#  92101/92154=San Diego)
+# ⚠️ 불변식: §2 마스터(터미널/야드/거래처)가 쓰는 zip 은 전부 이 목록에 있어야 한다
+#    — 디폴트 매트릭스가 풀로 채워지므로 Lookup 이 어떤 조합이든 해석된다.
+#    또한 import_zips._FALLBACK 도 이 19개를 전부 포함해야 한다 (오프라인 폴백 시
+#    zmap 누락 → 마스터 zip_id NULL 방지). seed() 가 zmap 구성 직후 fail-fast 단언.
+ZIP_POINTS = [
+    ("90731", 0), ("90744", 2), ("90802", 4),
+    ("90745", 6), ("90220", 14),
+    ("90001", 24), ("90021", 25), ("90040", 27),
+    ("92805", 34), ("92701", 36),
+    ("92335", 58), ("91761", 60), ("92408", 63),
+    ("93030", 64), ("93001", 66),
+    ("92392", 93), ("92345", 95),
+    ("92101", 118), ("92154", 122),
+]
+
 
 def _hash(pw: str) -> str:
     return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
@@ -178,6 +199,13 @@ async def seed(db: AsyncSession):
     await db.flush()
     _zrows = (await db.execute(text("SELECT zip, id FROM zip_code"))).all()
     zmap = {z: i for z, i in _zrows}  # zip → zip_code.id
+    # fail-fast: ZIP_POINTS zip 이 zip 마스터에 빠지면 마스터 zip_id 가 조용히 NULL 이 되고
+    # Rate Lookup 불변식(§2/§4)이 무경고로 깨진다 — 즉시 중단.
+    _missing = [z for z, _ in ZIP_POINTS if z not in zmap]
+    if _missing:
+        raise RuntimeError(
+            f"zip_code 마스터에 ZIP_POINTS zip 누락: {_missing} "
+            "— import_zips._FALLBACK / GeoNames 적재 확인")
 
     # ── 2. 마스터 데이터 ──────────────────────────────────────
     # ⚠️ 핵심 불변식: 여기서 쓰는 모든 zip 은 §4 의 ZIP_POINTS 에 반드시 포함.
@@ -354,23 +382,7 @@ async def seed(db: AsyncSession):
     #   커스텀 그룹 = 디폴트 상속(+자기 스코프 존으로 묶어서 오버라이드) 또는 빈 그룹(백지).
     #   존은 "요율이 같은 원자 묶음" 입력 도구 — 쓰는 그룹에만 존재.
 
-    # 영업권역 zip 19개 — (zip, 항만 기준 거리지수). 동네 이름은 zip 마스터가 제공
-    # (90731=San Pedro, 90744=Wilmington, 90802=Long Beach, 90745=Carson, 90220=Compton,
-    #  90001/21/40=LA, 92805=Anaheim, 92701=Santa Ana, 92335=Fontana, 91761=Ontario,
-    #  92408=San Bernardino, 93030=Oxnard, 93001=Ventura, 92392=Victorville, 92345=Hesperia,
-    #  92101/92154=San Diego)
-    # ⚠️ 불변식: §2 마스터(터미널/야드/거래처)가 쓰는 zip 은 전부 이 목록에 있어야 한다
-    #    — 디폴트 매트릭스가 풀로 채워지므로 Lookup 이 어떤 조합이든 해석된다.
-    ZIP_POINTS = [
-        ("90731", 0), ("90744", 2), ("90802", 4),
-        ("90745", 6), ("90220", 14),
-        ("90001", 24), ("90021", 25), ("90040", 27),
-        ("92805", 34), ("92701", 36),
-        ("92335", 58), ("91761", 60), ("92408", 63),
-        ("93030", 64), ("93001", 66),
-        ("92392", 93), ("92345", 95),
-        ("92101", 118), ("92154", 122),
-    ]
+    # 영업권역 zip 19개 = 모듈 상수 ZIP_POINTS (파일 상단) — zmap fail-fast 단언과 공유.
 
     # 그룹 — 방식별 디폴트 1 + 다양한 커스텀(상속+스코프존 / 상속+글로벌존 / 빈)
     def _grp(name, method, desc, default=False, inherits=True):
@@ -634,27 +646,38 @@ async def seed(db: AsyncSession):
     # ── 7. 레그 + add-on + segment ───────────────────────────
     banner("레그 · leg add-on · 세그먼트")
 
-    def make_leg(do, cont, frm, to, mt, st, status, mc, completed=False, drv=None):
+    def make_leg(do, cont, frm, to, mt, st, status, mc, lane, completed=False, drv=None):
+        """lane=(origin_zip, origin_city, dest_zip, dest_city, miles) — from/to 포인트의 실제 zip 과 일치."""
+        o_zip, o_city, d_zip, d_city, miles = lane
         return LegModel(
             team_id=tid, delivery_order_id=do.id, container_id=cont.id, step=DeliveryStatus.DISPATCHED,
             move_type=mt, service_type=st, from_point_id=frm.id, to_point_id=to.id,
             from_location_type=frm.point_type, to_location_type=to.point_type, move_code=mc,
-            origin_zip="90731", origin_city="San Pedro", origin_state="CA",
-            dest_zip="92335", dest_city="Fontana", dest_state="CA",
-            rate_miles=D("58.0"), status=status, driver_id=(drv.id if drv else None),
+            origin_zip=o_zip, origin_city=o_city, origin_state="CA",
+            dest_zip=d_zip, dest_city=d_city, dest_state="CA",
+            rate_miles=D(miles), status=status, driver_id=(drv.id if drv else None),
             truck_id=(trucks[0].id if drv else None), chassis_id=cont.chassis_id,
             pickup_date=NOW, completed_at=(NOW if completed else None), is_settled=completed,
             created_by_user_id=aid,
         )
 
+    # 레인 = 각 from/to 포인트의 실제 zip/도시 (term1=90731 San Pedro, loc_cust=92335 Fontana,
+    # loc_yard=90745 Carson, cust(ACME)=90021 LA, term2=90802 Long Beach).
+    # leg_imp1 의 90731→92335 는 payroll 정합(285→310 버전 데모)이므로 유지.
     leg_imp1 = make_leg(do_imp, cont_imp, imp_stops[0], imp_stops[1], MoveType.LOADED, ServiceType.LIVE,
-                        LegStatus.COMPLETED, LegMoveCode.PPU, completed=True, drv=drivers[0])
+                        LegStatus.COMPLETED, LegMoveCode.PPU,
+                        ("90731", "San Pedro", "92335", "Fontana", "58.0"),
+                        completed=True, drv=drivers[0])
     leg_imp2 = make_leg(do_imp, cont_imp, imp_stops[1], imp_stops[2], MoveType.EMPTY, ServiceType.DROP,
-                        LegStatus.COMPLETED, LegMoveCode.PRE, completed=True, drv=drivers[0])
+                        LegStatus.COMPLETED, LegMoveCode.PRE,
+                        ("92335", "Fontana", "90745", "Carson", "52.0"),
+                        completed=True, drv=drivers[0])
     leg_exp1 = make_leg(do_exp, cont_exp, exp_stops[0], exp_stops[1], MoveType.LOADED, ServiceType.LIVE,
-                        LegStatus.PENDING, LegMoveCode.PPU)
+                        LegStatus.PENDING, LegMoveCode.PPU,
+                        ("90745", "Carson", "90021", "Los Angeles", "19.0"))
     leg_exp2 = make_leg(do_exp, cont_exp, exp_stops[1], exp_stops[2], MoveType.EMPTY, ServiceType.NONE,
-                        LegStatus.PENDING, LegMoveCode.PRE)
+                        LegStatus.PENDING, LegMoveCode.PRE,
+                        ("90021", "Los Angeles", "90802", "Long Beach", "21.0"))
     db.add_all([leg_imp1, leg_imp2, leg_exp1, leg_exp2])
     await db.flush()
 
@@ -705,7 +728,8 @@ async def seed(db: AsyncSession):
         # leg_imp1(LOADED/LIVE, port→IE) work_date 2026-06-09 → 유효요율 310(2026-06-01부) 과 일치.
         PayrollLineModel(team_id=tid, settlement_id=settle.id, leg_id=leg_imp1.id, work_date=date(2026, 6, 9),
                          base_amount=D("310.00"), source=PayrollLineSource.RESOLVED, created_by_user_id=aid),
-        # leg_imp2(EMPTY/DROP) 는 해당 시트 미존재 → 실제 정산이면 unresolved. 데모용 수기값.
+        # leg_imp2(EMPTY/DROP, 92335→90745) 는 디폴트 매트릭스(9조합 풀)로 해석 가능하지만,
+        # 수기 입력(MANUAL) 데모를 위해 의도적으로 매트릭스값과 다른 180 을 직접 기입.
         PayrollLineModel(team_id=tid, settlement_id=settle.id, leg_id=leg_imp2.id, work_date=date(2026, 6, 9),
                          base_amount=D("180.00"), source=PayrollLineSource.MANUAL, created_by_user_id=aid),
     ])

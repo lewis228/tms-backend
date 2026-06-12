@@ -101,7 +101,7 @@ class RateResolveResultSchema(ResponseSchema):
     rate_group_id: int | None = None
     rate_sheet_id: int | None = None
     rate_entry_id: int | None = None
-    zone_id: int | None = None
+    zone_id: int | None = None           # 매칭에 실제 사용된 존 (①ATOM_ATOM/UNIT 은 None)
     amount: Decimal | None = None        # 매트릭스 셀 원단가
     per_unit: Decimal | None = None      # MILE/HOURLY 단가
     quantity: Decimal | None = None      # miles / hours

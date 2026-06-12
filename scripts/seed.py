@@ -150,10 +150,17 @@ async def seed(db: AsyncSession):
                       role=RolesEnum.ADMIN, name="Test Admin", phone="+1-310-000-0001")
     dispatcher = UserModel(email="dispatch@test.com", password=_hash(LOGIN_PW), auth_provider="EMAIL",
                            role=RolesEnum.DISPATCHER, name="Dana Dispatcher", phone="+1-310-000-0002")
+    # 기사 12명 — 그룹 칩/배정 화면 데모용으로 그룹마다 여러 명씩 배정한다 (§4).
+    # 이메일은 driver{i}@test.com 그대로 유지 (모바일 OTP 로그인 데모 호환).
+    DRIVER_NAMES = [
+        "Mike Johnson", "Carlos Ramirez", "Dave Kim", "Tony Nguyen",
+        "Sam Park", "Luis Garcia", "Pete Wilson", "Jay Lee",
+        "Chris Brown", "Alex Torres", "Ryan Choi", "Omar Hassan",
+    ]
     duser = [
         UserModel(email=f"driver{i}@test.com", password=_hash(LOGIN_PW), auth_provider="EMAIL",
-                  role=RolesEnum.DRIVER, name=f"Driver {i}", phone=f"+1-310-000-01{i:02d}")
-        for i in (1, 2, 3)
+                  role=RolesEnum.DRIVER, name=_name, phone=f"+1-310-000-01{i:02d}")
+        for i, _name in enumerate(DRIVER_NAMES, start=1)
     ]
     db.add_all([admin, dispatcher, *duser])
     await db.flush()
@@ -318,15 +325,17 @@ async def seed(db: AsyncSession):
     await db.flush()
 
     # 드라이버 (user 링크) — default_truck/chassis 는 나중에 update (순환 FK)
+    # 마지막 2명(11·12)은 외부 캐리어 소속(매출 비율 정산), 나머지는 자사 기사.
     drivers = []
     for i, u in enumerate(duser, start=1):
+        is_carrier = i > 10
         drv = DriverModel(
             team_id=tid, user_id=u.id, license_number=f"CDL-{1000 + i}", license_state="CA",
-            duty_status=DutyStatus.ON_DUTY if i == 1 else DutyStatus.OFF_DUTY,
-            employment_kind=EmploymentKind.IN_HOUSE if i < 3 else EmploymentKind.CARRIER_DRIVER,
-            carrier_id=carrier.id if i == 3 else None,
-            payment_terms_kind=PaymentTermsKind.PER_LEG if i < 3 else PaymentTermsKind.PERCENT_OF_REVENUE,
-            payment_terms_value=D("150") if i < 3 else D("0.72"),
+            duty_status=DutyStatus.ON_DUTY if i <= 3 else DutyStatus.OFF_DUTY,
+            employment_kind=EmploymentKind.CARRIER_DRIVER if is_carrier else EmploymentKind.IN_HOUSE,
+            carrier_id=carrier.id if is_carrier else None,
+            payment_terms_kind=PaymentTermsKind.PERCENT_OF_REVENUE if is_carrier else PaymentTermsKind.PER_LEG,
+            payment_terms_value=D("0.72") if is_carrier else D("150"),
             license_expires_at=date(2028, 5, 31), hire_date=date(2024, 1, 15), created_by_user_id=aid,
         )
         db.add(drv)
@@ -357,7 +366,7 @@ async def seed(db: AsyncSession):
         drv.default_chassis_id = chs.id
     await db.flush()
     print(f"  customer×{4 + len(more_custs)}, terminal×{2 + len(more_terms)}, vessel×2, "
-          f"location×{4 + len(more_yards) + len(more_cust_locs)}, pool×2, driver×3, truck×3, chassis×3")
+          f"location×{4 + len(more_yards) + len(more_cust_locs)}, pool×2, driver×{len(drivers)}, truck×3, chassis×3")
 
     # ── 3. Add-on 마스터 (시스템 시드 + per-driver override) ───
     banner("Add-on 마스터")
@@ -565,11 +574,25 @@ async def seed(db: AsyncSession):
     await ucell(grp_hour_dt, "120.00")
     await ucell(grp_hour_tm, "150.00")
 
-    # 드라이버 배정 — driver0=ZIP 디폴트(payroll 정합), driver1=Reefer(상속 데모), driver2=MILE.
-    # CITY/HOURLY 디폴트는 미배정 — 조회 화면 '기사 미지정' 폴백 데모는 driver 없이도 가능.
-    for _drv, _grp in [(drivers[0], grp_zip), (drivers[1], grp_zip_rf), (drivers[2], grp_mile)]:
+    # 드라이버 배정 — 그룹마다 여러 명 (그룹 칩/배정 화면 데모).
+    #   drivers[0]=ZIP 디폴트(payroll 정합 — 변경 금지), drivers[1]=Reefer, drivers[2]=MILE 유지.
+    #   drivers[11](Omar)은 의도적으로 미배정 — ZIP 디폴트 자동 폴백 데모.
+    ASSIGNMENTS = [
+        (drivers[0], grp_zip, JAN),                    # Mike — ZIP 디폴트 (payroll 정합)
+        (drivers[3], grp_zip, JAN),                    # Tony
+        (drivers[4], grp_zip, date(2026, 3, 1)),       # Sam — 중도 합류 (유효일 다름)
+        (drivers[1], grp_zip_rf, JAN),                 # Carlos — Reefer
+        (drivers[5], grp_zip_rf, JAN),                 # Luis
+        (drivers[10], grp_zip_rf, date(2026, 4, 1)),   # Ryan — 중도 합류
+        (drivers[6], grp_zip_ow, JAN),                 # Pete — Overweight
+        (drivers[7], grp_zip_ow, JAN),                 # Jay
+        (drivers[2], grp_mile, JAN),                   # Dave — MILE 표준
+        (drivers[8], grp_mile, JAN),                   # Chris
+        (drivers[9], grp_hour, JAN),                   # Alex — HOURLY 표준
+    ]
+    for _drv, _grp, _eff in ASSIGNMENTS:
         db.add(DriverRateAssignmentModel(team_id=tid, driver_id=_drv.id, rate_group_id=_grp.id,
-                                         effective_from=JAN, created_by_user_id=aid))
+                                         effective_from=_eff, created_by_user_id=aid))
     await db.flush()
 
     # 영업권역(Service Area) — STATE=CA(데모 zip 전부 커버) + ZIP3 2건(종류 다양화)
@@ -585,7 +608,8 @@ async def seed(db: AsyncSession):
     print(f"  ZIP 디폴트 = zip↔zip 양방향 풀({_np * (_np + 1) // 2}구간(셀프 포함)×9) + 285→310 버전 / "
           "Reefer(상속+전용존 2) · Overweight(상속+공용존 2) · Spot(빈) / "
           f"CITY 디폴트 풀({len(CITIES)}도시) + Express(상속+도시존) / MILE·HOURLY 각 3그룹 / "
-          "배정 3 (ZIP·Reefer·MILE) / 권역 STATE CA + ZIP3 907·923")
+          f"배정 {len(ASSIGNMENTS)} (ZIP×3·Reefer×3·OW×2·MILE×2·HOURLY×1, 미배정 1) / "
+          "권역 STATE CA + ZIP3 907·923")
 
     # ── 5. Load Type 템플릿 (시스템 시드) ─────────────────────
     banner("Load Type 템플릿")

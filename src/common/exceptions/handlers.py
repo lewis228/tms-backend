@@ -248,6 +248,8 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
     # 1205: Lock wait timeout → 409
     # 1213: Deadlock found → 409
     # 1317: Query interrupted → 504 (또는 499로도 운영 가능)
+    # 1062: Duplicate entry (유니크 제약 위반) → 409 — 동시 중복 생성 레이스가
+    #       사전 중복체크를 통과한 경우 500 대신 사용자가 이해할 수 있는 409 로.
     if code in (3024, 1317):
         http_status = status.HTTP_504_GATEWAY_TIMEOUT
         err_code = "DB_TIMEOUT"
@@ -256,6 +258,10 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
         http_status = status.HTTP_409_CONFLICT
         err_code = "DB_LOCK_CONFLICT"
         message = "데이터베이스 잠금 경합이 발생했습니다. 잠시 후 다시 시도해주세요."
+    elif code == 1062:
+        http_status = status.HTTP_409_CONFLICT
+        err_code = "DUPLICATE_ENTRY"
+        message = "이미 존재하는 데이터입니다 (중복)."
     else:
         http_status = status.HTTP_500_INTERNAL_SERVER_ERROR
         err_code = "DB_ERROR"

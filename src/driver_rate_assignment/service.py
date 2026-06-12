@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.exceptions.base import NotFoundException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
+from realtime.emit import emit_entity_event
 from driver_rate_assignment.repository import DriverRateAssignmentRepository
 from driver_rate_assignment.schemas.request import (
     DriverRateAssignmentCreateRequest, DriverRateAssignmentUpdateRequest,
@@ -26,6 +27,7 @@ class DriverRateAssignmentService:
     """
     def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
+        self.team_id = team_id
         self.repo = DriverRateAssignmentRepository(db, team_id)
 
     # ── Create ──────────────────────────────────────────────────
@@ -33,6 +35,8 @@ class DriverRateAssignmentService:
         self, payload: DriverRateAssignmentCreateRequest, actor_user_id: int | None = None
     ) -> DriverRateAssignmentResponseSchema:
         row = await self.repo.create(payload.model_dump(), actor_user_id=actor_user_id)
+        await emit_entity_event("driver_rate_assignment.created", self.team_id,
+                                {"assignmentId": row.id, "driverId": row.driver_id}, actor_user_id)
         return DriverRateAssignmentResponseSchema.model_validate(row)
 
     # ── Read ────────────────────────────────────────────────────
@@ -74,6 +78,8 @@ class DriverRateAssignmentService:
         row = await self.repo.update(assignment_id, data, actor_user_id=actor_user_id)
         if not row:
             raise NotFoundException(_LABEL)
+        await emit_entity_event("driver_rate_assignment.updated", self.team_id,
+                                {"assignmentId": assignment_id, "driverId": row.driver_id}, actor_user_id)
         return DriverRateAssignmentResponseSchema.model_validate(row)
 
     # ── Delete ──────────────────────────────────────────────────
@@ -84,4 +90,6 @@ class DriverRateAssignmentService:
         if not row:
             raise NotFoundException(_LABEL)
         await self.repo.soft_deactivate_by_id(assignment_id, actor_user_id=actor_user_id)
+        await emit_entity_event("driver_rate_assignment.deleted", self.team_id,
+                                {"assignmentId": assignment_id, "driverId": row.driver_id}, actor_user_id)
         return DriverRateAssignmentDeleteResponseSchema(id=assignment_id, deleted=True, soft_deleted=True)

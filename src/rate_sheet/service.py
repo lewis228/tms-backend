@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.exceptions.base import NotFoundException, ConflictException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
+from realtime.emit import emit_entity_event
 from rate_sheet.repository import RateSheetRepository, _CELL_KEYS
 from rate_sheet import versioning, lookup
 from rate_sheet.const.status import SheetStatus
@@ -31,6 +32,7 @@ class RateSheetService:
 
     def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
+        self.team_id = team_id
         self.repo = RateSheetRepository(db, team_id)
 
     # ── 슬롯 status 계산 ─────────────────────────────────────────
@@ -58,6 +60,9 @@ class RateSheetService:
         if existing is not None:
             raise ConflictException("이미 같은 슬롯의 Rate Sheet 가 존재합니다.")
         sheet = await self.repo.create_sheet(payload.model_dump(), actor_user_id=actor_user_id)
+        await emit_entity_event("rate_sheet.created", self.team_id,
+                                {"rateSheetId": sheet.id, "rateGroupId": sheet.rate_group_id},
+                                actor_user_id)
         return await self._to_response(sheet)
 
     async def get_sheet(self, sheet_id: int) -> RateSheetDetailResponseSchema:
@@ -83,6 +88,9 @@ class RateSheetService:
         sheet = await self.repo.update_sheet(sheet_id, payload.model_dump(exclude_unset=True), actor_user_id=actor_user_id)
         if not sheet:
             raise NotFoundException(_LABEL)
+        await emit_entity_event("rate_sheet.updated", self.team_id,
+                                {"rateSheetId": sheet_id, "rateGroupId": sheet.rate_group_id},
+                                actor_user_id)
         return await self._to_response(sheet)
 
     async def delete_sheet(
@@ -92,6 +100,9 @@ class RateSheetService:
         if not sheet:
             raise NotFoundException(_LABEL)
         await self.repo.soft_deactivate_sheet(sheet_id, actor_user_id=actor_user_id)
+        await emit_entity_event("rate_sheet.deleted", self.team_id,
+                                {"rateSheetId": sheet_id, "rateGroupId": sheet.rate_group_id},
+                                actor_user_id)
         return RateSheetDeleteResponseSchema(id=sheet_id, deleted=True, soft_deleted=True)
 
     async def sync_delta(self, since_str: str):
@@ -113,6 +124,9 @@ class RateSheetService:
             effective_from=payload.effective_from, source=payload.source,
             reason=payload.reason, actor_user_id=actor_user_id,
         )
+        await emit_entity_event("rate_sheet.updated", self.team_id,
+                                {"rateSheetId": sheet_id, "rateGroupId": sheet.rate_group_id},
+                                actor_user_id)
         return RateEntryResponseSchema.model_validate(entry)
 
     async def set_rate_bulk(
@@ -130,6 +144,9 @@ class RateSheetService:
                 reason=item.reason, actor_user_id=actor_user_id,
             )
             out.append(RateEntryResponseSchema.model_validate(entry))
+        await emit_entity_event("rate_sheet.updated", self.team_id,
+                                {"rateSheetId": sheet_id, "rateGroupId": sheet.rate_group_id},
+                                actor_user_id)
         return out
 
     async def list_entries(

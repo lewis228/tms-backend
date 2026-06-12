@@ -97,6 +97,23 @@ def _prepare_test_db() -> None:
         )
 
 
+@pytest.fixture(autouse=True)
+def _mute_realtime_publish(monkeypatch):
+    """테스트에서 WS 이벤트 발행 무력화.
+
+    realtime.service.publish 는 전역 redis 클라이언트를 쓰는데, pytest-asyncio 가
+    테스트마다 새 이벤트 루프를 만들므로 발행이 만든 커넥션이 죽은 루프에 귀속되어
+    이후 테스트의 redis 사용(세션 미들웨어 등)을 오염시킨다. emit_entity_event 는
+    모듈 전역 publish 를 호출 시점에 조회하므로 여기를 패치하면 전부 무력화된다.
+    """
+    import realtime.emit as _emit_mod
+
+    async def _noop(event, *, db=None):  # noqa: ARG001
+        return 0
+
+    monkeypatch.setattr(_emit_mod, "publish", _noop)
+
+
 @pytest_asyncio.fixture
 async def db_session() -> AsyncIterator[AsyncSession]:
     """함수 스코프 — 테스트마다 신규 엔진 + 테이블 truncate."""

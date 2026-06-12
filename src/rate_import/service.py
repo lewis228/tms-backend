@@ -18,6 +18,7 @@ from typing import List, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.exceptions.base import NotFoundException
+from realtime.emit import emit_entity_event
 from rate_sheet.repository import RateSheetRepository
 from rate_sheet import versioning
 from rate_sheet.const.status import RateEntrySource, RateMoveType, RateServiceType
@@ -105,6 +106,9 @@ class RateImportService:
                 effective_from=r["effective_from"], source=RateEntrySource.IMPORT,
                 reason="CSV import", actor_user_id=actor_user_id,
             )
+        await emit_entity_event("rate_sheet.updated", self.team_id,
+                                {"rateSheetId": sheet_id, "rateGroupId": sheet.rate_group_id},
+                                actor_user_id)
         return CsvImportReport(ok=True, total=len(rows), applied=len(rows), dry_run=False)
 
     async def export_sheet_entries(self, sheet_id: int) -> str:
@@ -169,7 +173,9 @@ class RateImportService:
             return CsvImportReport(ok=True, total=len(rows), applied=0, dry_run=True)
         svc = RateGroupEntryService(self.db, self.team_id)
         for row in rows:
-            await svc.set_entry(group_id, row, actor_user_id=actor_user_id)
+            await svc.set_entry(group_id, row, actor_user_id=actor_user_id, emit=False)
+        await emit_entity_event("rate_sheet.updated", self.team_id,
+                                {"rateGroupId": group_id}, actor_user_id)
         return CsvImportReport(ok=True, total=len(rows), applied=len(rows), dry_run=False)
 
     async def export_group_entries(self, group_id: int) -> str:
@@ -217,6 +223,8 @@ class RateImportService:
         if dry_run:
             return CsvImportReport(ok=True, total=len(rows), applied=0, dry_run=True)
         await self.zone_repo.replace_members(zone_id, rows, actor_user_id=actor_user_id)
+        await emit_entity_event("rate_zone.updated", self.team_id,
+                                {"rateZoneId": zone_id}, actor_user_id)
         return CsvImportReport(ok=True, total=len(rows), applied=len(rows), dry_run=False)
 
     async def export_zone_members(self, zone_id: int) -> str:

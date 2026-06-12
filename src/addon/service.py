@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.exceptions.base import NotFoundException, ConflictException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
+from realtime.emit import emit_entity_event
 from addon.repository import AddonRepository
 from addon.const.status import AddonCategory, AddonUnit
 from addon.schemas.request import (
@@ -40,6 +41,7 @@ class AddonService:
 
     def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
+        self.team_id = team_id
         self.repo = AddonRepository(db, team_id)
 
     async def create(self, payload: AddonCreateRequest, actor_user_id: int | None = None) -> AddonResponseSchema:
@@ -47,6 +49,7 @@ class AddonService:
         if dup is not None:
             raise ConflictException(f"이미 존재하는 부가요금 코드: {payload.code}")
         row = await self.repo.create(payload.model_dump(), actor_user_id=actor_user_id)
+        await emit_entity_event("addon.created", self.team_id, {"addonId": row.id}, actor_user_id)
         return AddonResponseSchema.model_validate(row)
 
     async def get(self, acc_id: int) -> AddonResponseSchema:
@@ -68,6 +71,7 @@ class AddonService:
         row = await self.repo.update(acc_id, payload.model_dump(exclude_unset=True), actor_user_id=actor_user_id)
         if not row:
             raise NotFoundException(_LABEL)
+        await emit_entity_event("addon.updated", self.team_id, {"addonId": acc_id}, actor_user_id)
         return AddonResponseSchema.model_validate(row)
 
     async def delete(self, acc_id: int, actor_user_id: int | None = None) -> AddonDeleteResponseSchema:
@@ -75,6 +79,7 @@ class AddonService:
         if not row:
             raise NotFoundException(_LABEL)
         await self.repo.soft_deactivate_by_id(acc_id, actor_user_id=actor_user_id)
+        await emit_entity_event("addon.deleted", self.team_id, {"addonId": acc_id}, actor_user_id)
         return AddonDeleteResponseSchema(id=acc_id, deleted=True, soft_deleted=True)
 
     async def seed_defaults(self, actor_user_id: int | None = None) -> AddonSeedResultSchema:
@@ -90,6 +95,8 @@ class AddonService:
                 "is_system": True, "is_billable_to_customer": True, "is_payable_to_driver": True,
             }, actor_user_id=actor_user_id)
             created += 1
+        if created:
+            await emit_entity_event("addon.created", self.team_id, None, actor_user_id)
         return AddonSeedResultSchema(created=created, skipped=skipped)
 
     async def sync_delta(self, since_str: str):
@@ -116,6 +123,8 @@ class AddonService:
             amount=payload.amount, percent=payload.percent, note=payload.note,
             actor_user_id=actor_user_id,
         )
+        await emit_entity_event("addon.updated", self.team_id,
+                                {"addonId": addon_id, "driverId": driver_id}, actor_user_id)
         return AddonDriverRateResponseSchema.model_validate(row)
 
     async def delete_driver_rate(
@@ -124,4 +133,6 @@ class AddonService:
         ok = await self.repo.delete_driver_rate(addon_id, driver_id, actor_user_id=actor_user_id)
         if not ok:
             raise NotFoundException("Addon Driver Rate")
+        await emit_entity_event("addon.updated", self.team_id,
+                                {"addonId": addon_id, "driverId": driver_id}, actor_user_id)
         return AddonDriverRateDeleteResponseSchema(addon_id=addon_id, driver_id=driver_id, deleted=True)

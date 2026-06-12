@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.exceptions.base import NotFoundException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
+from realtime.emit import emit_entity_event
 from rate_group.repository import RateGroupRepository
 from rate_group.schemas.request import (
     RateGroupCreateRequest, RateGroupUpdateRequest, PaginateRateGroupRequest,
@@ -25,6 +26,7 @@ class RateGroupService:
     """
     def __init__(self, db: AsyncSession, team_id: int):
         self.db = db
+        self.team_id = team_id
         self.repo = RateGroupRepository(db, team_id)
 
     # ── Create ──────────────────────────────────────────────────
@@ -35,6 +37,8 @@ class RateGroupService:
         if data.get("is_default"):
             await self.repo.clear_default_for_method(payload.method)
         row = await self.repo.create(data, actor_user_id=actor_user_id)
+        await emit_entity_event("rate_group.created", self.team_id,
+                                {"rateGroupId": row.id}, actor_user_id)
         return RateGroupResponseSchema.model_validate(row)
 
     # ── Read ────────────────────────────────────────────────────
@@ -75,6 +79,8 @@ class RateGroupService:
         row = await self.repo.update(group_id, data, actor_user_id=actor_user_id)
         if not row:
             raise NotFoundException(_LABEL)
+        await emit_entity_event("rate_group.updated", self.team_id,
+                                {"rateGroupId": group_id}, actor_user_id)
         return RateGroupResponseSchema.model_validate(row)
 
     # ── Delete ──────────────────────────────────────────────────
@@ -85,4 +91,6 @@ class RateGroupService:
         if not row:
             raise NotFoundException(_LABEL)
         await self.repo.soft_deactivate_by_id(group_id, actor_user_id=actor_user_id)
+        await emit_entity_event("rate_group.deleted", self.team_id,
+                                {"rateGroupId": group_id}, actor_user_id)
         return RateGroupDeleteResponseSchema(id=group_id, deleted=True, soft_deleted=True)

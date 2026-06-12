@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.exceptions.base import NotFoundException, AppException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
+from realtime.emit import emit_entity_event
 from service_area.repository import ServiceAreaRepository
 from service_area.schemas.request import ServiceAreaCreateRequest, PaginateServiceAreaRequest
 from service_area.schemas.response import ServiceAreaResponseSchema, ServiceAreaDeleteResponseSchema
@@ -37,11 +38,15 @@ class ServiceAreaService:
                 existing.updated_by_user_id = actor_user_id
             await self.db.flush()
             await self.db.refresh(existing)
+            await emit_entity_event("service_area.updated", self.team_id,
+                                    {"serviceAreaId": existing.id}, actor_user_id)
             return ServiceAreaResponseSchema.model_validate(existing)
         row = await self.repo.create(
             {"kind": payload.kind, "state": payload.state, "value": payload.value},
             actor_user_id=actor_user_id,
         )
+        await emit_entity_event("service_area.updated", self.team_id,
+                                {"serviceAreaId": row.id}, actor_user_id)
         return ServiceAreaResponseSchema.model_validate(row)
 
     async def list_paginated(
@@ -64,4 +69,6 @@ class ServiceAreaService:
         if not row:
             raise NotFoundException(_LABEL)
         await self.repo.soft_deactivate_by_id(area_id, actor_user_id=actor_user_id)
+        await emit_entity_event("service_area.updated", self.team_id,
+                                {"serviceAreaId": area_id}, actor_user_id)
         return ServiceAreaDeleteResponseSchema(id=area_id, deleted=True, soft_deleted=True)

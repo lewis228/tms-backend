@@ -283,64 +283,81 @@ async def seed(db: AsyncSession):
 
     # ── 4. 요율 서브시스템 ────────────────────────────────────
     banner("요율 (rate_*)")
-    # 원자+존 레이어 모델: 글로벌 존 7개(zip 묶음) + 사다리 데모(원자 예외/혼합 셀)
-    # + 상속/빈 그룹 + 그룹 스코프 존 + 도시존. 항만 기준 거리지수(idx)로 가격 생성.
-    def _zone(name, code, color, desc, group_id=None):
-        z = RateZoneModel(team_id=tid, name=name, code=code, color=color,
-                          rate_group_id=group_id, description=desc, created_by_user_id=aid)
-        db.add(z)
-        return z
+    # 확정 모델 (컨플루언스 v16):
+    #   디폴트 그룹 = 존 없이 zip↔zip(도시↔도시) 양방향 풀 매트릭스 — 좌표는 원자 그대로.
+    #   커스텀 그룹 = 디폴트 상속(+자기 스코프 존으로 묶어서 오버라이드) 또는 빈 그룹(백지).
+    #   존은 "요율이 같은 원자 묶음" 입력 도구 — 쓰는 그룹에만 존재.
 
-    z_port = _zone("Port / Harbor", "PORT", "#0ea5e9", "San Pedro / Long Beach 항만")
-    z_la = _zone("Los Angeles", "LA", "#8b5cf6", "LA Basin / Commerce")
-    z_oc = _zone("Orange County", "OC", "#f59e0b", "Anaheim / Santa Ana")
-    z_ie = _zone("Inland Empire", "IE", "#3b82f6", "Fontana / Ontario / San Bernardino")
-    z_ven = _zone("Ventura", "VEN", "#ec4899", "Oxnard / Ventura")
-    z_hd = _zone("High Desert", "HD", "#a855f7", "Victorville / Hesperia")
-    z_sd = _zone("San Diego", "SD", "#10b981", "San Diego 항만권")
-    await db.flush()
-    _members = {
-        z_port: ["90731", "90802", "90744"],
-        z_la: ["90001", "90021", "90040"],
-        z_oc: ["92805", "92701"],
-        z_ie: ["92335", "91761", "92408"],
-        z_ven: ["93030", "93001"],
-        z_hd: ["92392", "92345"],
-        z_sd: ["92101", "92154"],
-    }
-    for _z, _zips in _members.items():
-        for _zc in _zips:
-            db.add(RateZoneMemberModel(team_id=tid, zone_id=_z.id, zip_code=_zc, created_by_user_id=aid))
-    ZIDX = {z_port: 0, z_la: 25, z_oc: 35, z_ie: 60, z_ven: 65, z_hd: 95, z_sd: 120}
-    ZONES = [z_port, z_la, z_oc, z_ie, z_ven, z_hd, z_sd]
+    # 영업권역 zip 17개 — (zip, 항만 기준 거리지수). 동네 이름은 zip 마스터가 제공
+    # (90731=San Pedro, 90744=Wilmington, 90802=Long Beach, 90001/21/40=LA,
+    #  92805=Anaheim, 92701=Santa Ana, 92335=Fontana, 91761=Ontario, 92408=San Bernardino,
+    #  93030=Oxnard, 93001=Ventura, 92392=Victorville, 92345=Hesperia, 92101/92154=San Diego)
+    ZIP_POINTS = [
+        ("90731", 0), ("90744", 2), ("90802", 4),
+        ("90001", 24), ("90021", 25), ("90040", 27),
+        ("92805", 34), ("92701", 36),
+        ("92335", 58), ("91761", 60), ("92408", 63),
+        ("93030", 64), ("93001", 66),
+        ("92392", 93), ("92345", 95),
+        ("92101", 118), ("92154", 122),
+    ]
 
-    # 그룹 — 방식별 디폴트 1 + 상속 커스텀 + 빈 그룹 (해석 사다리 ④/⑤ 데모)
+    # 그룹 — 방식별 디폴트 1 + 다양한 커스텀(상속+스코프존 / 상속+글로벌존 / 빈)
     def _grp(name, method, desc, default=False, inherits=True):
         g = RateGroupModel(team_id=tid, name=name, method=method, is_default=default,
                            inherits_default=inherits, description=desc, created_by_user_id=aid)
         db.add(g)
         return g
 
-    grp_zip = _grp("Default ZIP Rates", RateMethod.ZIP, "ZIP 방식 기본 요율 (존↔존 + 원자 예외)", default=True)
-    grp_zip_rf = _grp("Reefer ZIP Rates", RateMethod.ZIP, "리퍼(냉동) — 디폴트 상속, 할증 구간만 오버라이드")
-    grp_zip_empty = _grp("Standalone ZIP Rates", RateMethod.ZIP, "빈 그룹 — 상속 없음(독립 요율)", inherits=False)
-    grp_city = _grp("Default City Rates", RateMethod.CITY, "CITY 방식 기본 요율 (도시↔도시 + 도시존)", default=True)
-    grp_city_ex = _grp("Express City Rates", RateMethod.CITY, "익스프레스 — 디폴트 상속, 주요 구간만 할증")
+    grp_zip = _grp("Default ZIP Rates", RateMethod.ZIP,
+                   "ZIP 디폴트 — 존 없이 zip↔zip 양방향 풀 매트릭스", default=True)
+    grp_zip_rf = _grp("Reefer ZIP Rates", RateMethod.ZIP,
+                      "리퍼 — 디폴트 상속 + 전용 존으로 묶어 할증 구간만 오버라이드")
+    grp_zip_ow = _grp("Overweight ZIP Rates", RateMethod.ZIP,
+                      "오버웨이트 — 디폴트 상속 + 팀 공용 존 사용")
+    grp_zip_spot = _grp("Spot ZIP Rates", RateMethod.ZIP,
+                        "스팟 — 빈 그룹(상속 없음), 계약 구간만 직접 입력", inherits=False)
+    grp_city = _grp("Default City Rates", RateMethod.CITY,
+                    "CITY 디폴트 — 존 없이 도시↔도시 양방향 풀 매트릭스", default=True)
+    grp_city_ex = _grp("Express City Rates", RateMethod.CITY,
+                       "익스프레스 — 디폴트 상속 + 도시존(항만권) 할증")
     grp_mile = _grp("Standard Mileage", RateMethod.MILE, "표준 마일 단가", default=True)
     grp_mile_pr = _grp("Premium Mileage", RateMethod.MILE, "프리미엄 마일 단가")
+    grp_mile_lo = _grp("Local Mileage", RateMethod.MILE, "로컬(단거리) 마일 단가")
     grp_hour = _grp("Standard Hourly", RateMethod.HOURLY, "표준 시간 단가", default=True)
     grp_hour_dt = _grp("Detention Hourly", RateMethod.HOURLY, "디텐션 시간 단가")
+    grp_hour_tm = _grp("Team Driver Hourly", RateMethod.HOURLY, "팀 드라이버 시간 단가")
     await db.flush()
 
-    # 그룹 스코프 존 — Reefer 그룹 전용 (해석 시 글로벌 존보다 우선)
-    z_rf_cold = _zone("IE Cold Chain", "IECOLD", "#22d3ee",
-                      "리퍼 전용: 냉동창고 밀집 zip 만 묶음", group_id=grp_zip_rf.id)
+    # ── 존 — 묶음이 필요한 그룹에만 ──────────────────────────────
+    def _zone(name, code, color, desc, group_id=None):
+        z = RateZoneModel(team_id=tid, name=name, code=code, color=color,
+                          rate_group_id=group_id, description=desc, created_by_user_id=aid)
+        db.add(z)
+        return z
+
+    # 팀 공용(글로벌) 존 2개 — Overweight 그룹이 사용 (다른 그룹도 쓸 수 있음)
+    z_g_port = _zone("Harbor Area", "HBR", "#0ea5e9",
+                     "항만권 zip 묶음 (San Pedro·Wilmington·Long Beach)")
+    z_g_ie = _zone("Inland Empire", "IE", "#3b82f6",
+                   "내륙권 zip 묶음 (Fontana·Ontario·San Bernardino)")
+    # Reefer 전용 스코프 존 2개 — 같은 zip 이라도 글로벌 존과 별개 스코프라 공존 가능
+    z_rf_cold = _zone("Cold Chain Inland", "COLD", "#22d3ee",
+                      "리퍼 전용: 냉동창고 밀집 내륙 zip", group_id=grp_zip_rf.id)
+    z_rf_pick = _zone("Reefer Harbor Pickup", "RHPU", "#06b6d4",
+                      "리퍼 전용: 항만 픽업 zip", group_id=grp_zip_rf.id)
+    # Express City 전용 도시존 — 도시 멤버 (디폴트 CITY 매트릭스 축을 오염시키지 않음)
+    z_city_port = _zone("Harbor Cities", "HARBC", "#0284c7",
+                        "항만권 도시존 (San Pedro·Long Beach)", group_id=grp_city_ex.id)
     await db.flush()
-    for _zc in ["92335", "91761"]:
-        db.add(RateZoneMemberModel(team_id=tid, zone_id=z_rf_cold.id, zip_code=_zc, created_by_user_id=aid))
-    # 도시존 — CITY 방식 묶기 데모 (항만권 3도시)
-    z_city_port = _zone("Harbor Cities", "HARBOR", "#0284c7", "항만권 도시존 (도시 멤버)")
-    await db.flush()
+    for _z, _zips in [
+        (z_g_port, ["90731", "90744", "90802"]),
+        (z_g_ie, ["92335", "91761", "92408"]),
+        (z_rf_cold, ["92335", "91761"]),
+        (z_rf_pick, ["90731", "90744", "90802"]),
+    ]:
+        for _zc in _zips:
+            db.add(RateZoneMemberModel(team_id=tid, zone_id=_z.id, zip_code=_zc, created_by_user_id=aid))
     for _c in ["San Pedro", "Long Beach"]:
         db.add(RateZoneMemberModel(team_id=tid, zone_id=z_city_port.id, city=_c, state="CA", created_by_user_id=aid))
 
@@ -356,28 +373,28 @@ async def seed(db: AsyncSession):
     async def zcell(grp, mv, sv, fz, tz, amt, eff=JAN):
         await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
             move_type=mv, service_type=sv, from_zone_id=fz.id, to_zone_id=tz.id,
-            amount=D(amt), effective_from=eff), actor_user_id=aid)
+            amount=D(amt), effective_from=eff), actor_user_id=aid, emit=False)
 
     async def azcell(grp, mv, sv, fzip, tzip, amt, eff=JAN):
         """원자(zip)↔원자(zip) 예외 셀 — 사다리 ①."""
         await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
             move_type=mv, service_type=sv, from_zip=fzip, to_zip=tzip,
-            amount=D(amt), effective_from=eff), actor_user_id=aid)
+            amount=D(amt), effective_from=eff), actor_user_id=aid, emit=False)
 
     async def mxcell(grp, mv, sv, fzip, tz, amt, eff=JAN):
         """원자(zip)↔존 혼합 셀 — 사다리 ②."""
         await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
             move_type=mv, service_type=sv, from_zip=fzip, to_zone_id=tz.id,
-            amount=D(amt), effective_from=eff), actor_user_id=aid)
+            amount=D(amt), effective_from=eff), actor_user_id=aid, emit=False)
 
     async def ccell(grp, mv, sv, fc, tc, amt, eff=JAN):
         await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
             move_type=mv, service_type=sv, from_city=fc, from_state="CA", to_city=tc, to_state="CA",
-            amount=D(amt), effective_from=eff), actor_user_id=aid)
+            amount=D(amt), effective_from=eff), actor_user_id=aid, emit=False)
 
     async def ucell(grp, per_unit, eff=JAN):
         await rate_svc.set_entry(grp.id, FlatRateEntryRequest(
-            per_unit=D(per_unit), effective_from=eff), actor_user_id=aid)
+            per_unit=D(per_unit), effective_from=eff), actor_user_id=aid, emit=False)
 
     # 모든 (move, service) 9조합 → 어떤 선택이든 매트릭스가 꽉 차게.
     N_M, N_S = RateMoveType.NONE, RateServiceType.NONE
@@ -387,32 +404,40 @@ async def seed(db: AsyncSession):
         (N_M, LV, 0.35), (N_M, DR, 0.30), (N_M, N_S, 0.25),
     ]
 
-    async def fill_zone_matrix(grp, group_mult):
-        """그룹의 모든 (move,service)×존 무순서 쌍을 채움 — 양방향(↔)이라 삼각이면 충분."""
+    # ── ZIP 디폴트: 존 없이 zip↔zip 양방향 풀 매트릭스 ──────────
+    # 무순서 쌍(삼각)이면 충분 — 양방향이라 역방향은 같은 셀. 17개 zip → 136구간 × 9조합.
+    async def fill_zip_matrix(grp, group_mult):
         for mv, sv, ms in ALL_COMBOS:
-            for i, fz in enumerate(ZONES):
-                for tz in ZONES[i + 1:]:
-                    dist = abs(ZIDX[tz] - ZIDX[fz])
-                    await zcell(grp, mv, sv, fz, tz,
-                                _round5((90 + dist * 2.6) * group_mult * ms))
+            for i, (fz, fi) in enumerate(ZIP_POINTS):
+                for tz, ti in ZIP_POINTS[i + 1:]:
+                    dist = abs(ti - fi)
+                    await azcell(grp, mv, sv, fz, tz,
+                                 _round5((90 + dist * 2.6) * group_mult * ms))
 
-    # ── ZIP 방식 ──
-    # 디폴트 그룹: 존↔존 풀 매트릭스 + 사다리 데모 + 285→310 버전
-    await fill_zone_matrix(grp_zip, 1.00)
-    # PORT↔IE LOAD/LIVE = 285→310 버전 2개 (payroll/e2e 정합 — leg 90731↔92335 가 ③존↔존 매칭)
-    await zcell(grp_zip, L, LV, z_port, z_ie, "285")
-    await zcell(grp_zip, L, LV, z_port, z_ie, "310", eff=date(2026, 6, 1))
-    # 사다리 ① 원자 예외: 90802↔91761 만 존 금액($310)을 뚫고 $350
-    await azcell(grp_zip, L, LV, "90802", "91761", "350")
-    # 사다리 ② 혼합: 90744↔IE존 = $330 (한쪽만 원자)
-    await mxcell(grp_zip, L, LV, "90744", z_ie, "330")
-    # Reefer(상속 커스텀): 할증 구간만 오버라이드 — 나머지는 디폴트로 폴백(④)
-    await zcell(grp_zip_rf, L, LV, z_port, z_ie, "430")
-    # Reefer 그룹 스코프 존 셀: PORT↔IE Cold Chain (스코프 존이 글로벌 IE 존보다 우선)
-    await zcell(grp_zip_rf, L, LV, z_port, z_rf_cold, "455")
-    # grp_zip_empty: 셀 없음(빈 그룹 — 미해석 데모)
+    await fill_zip_matrix(grp_zip, 1.00)
+    # San Pedro(90731)↔Fontana(92335) LOAD/LIVE = 285→310 버전 2개 (유효일자 버전 데모 + payroll 정합)
+    await azcell(grp_zip, L, LV, "90731", "92335", "285")
+    await azcell(grp_zip, L, LV, "90731", "92335", "310", eff=date(2026, 6, 1))
 
-    # ── CITY 방식 — 대표 도시 6개(zip 마스터 표기와 일치), 양방향 삼각 충진 ──
+    # Reefer(상속 + 전용 존): 할증 구간만 — 나머지 전부 디폴트 폴백(사다리 ④)
+    #   존↔존(③) / 존 내부 self-lane / 존↔zip 혼합(②) 세 형태 데모
+    await zcell(grp_zip_rf, L, LV, z_rf_pick, z_rf_cold, "430")
+    await zcell(grp_zip_rf, E, DR, z_rf_pick, z_rf_cold, "210")
+    await zcell(grp_zip_rf, L, DR, z_rf_cold, z_rf_cold, "150")   # 존 내부 운행
+    await mxcell(grp_zip_rf, L, LV, "90001", z_rf_cold, "395")    # LA zip↔Cold존 혼합
+
+    # Overweight(상속 + 팀 공용 존): 글로벌 존으로 묶어 오버라이드
+    await zcell(grp_zip_ow, L, LV, z_g_port, z_g_ie, "480")
+    await zcell(grp_zip_ow, L, DR, z_g_port, z_g_ie, "445")
+    await mxcell(grp_zip_ow, L, LV, "90001", z_g_ie, "420")
+
+    # Spot(빈 그룹): 계약된 구간만 백지에서 직접 입력 — 그 외는 미해석(사다리 ⑤)
+    await azcell(grp_zip_spot, L, LV, "90731", "92101", "410")
+    await azcell(grp_zip_spot, L, LV, "90802", "93030", "295")
+    await azcell(grp_zip_spot, L, LV, "90001", "92392", "320")
+    await azcell(grp_zip_spot, E, DR, "92701", "92154", "185")
+
+    # ── CITY 디폴트: 존 없이 도시↔도시 양방향 풀 매트릭스 ────────
     CITIES = [("San Pedro", 0), ("Long Beach", 10), ("Los Angeles", 25),
               ("Anaheim", 35), ("Santa Ana", 40), ("Fontana", 60)]
 
@@ -424,36 +449,40 @@ async def seed(db: AsyncSession):
                                 _round5((95 + abs(ti - fi) * 3.0) * group_mult * ms))
 
     await fill_city_matrix(grp_city, 1.00)
-    # 도시존 셀: Harbor Cities(도시존)↔Fontana — 사다리 ② (CITY 방식 묶기 데모)
-    await rate_svc.set_entry(grp_city.id, FlatRateEntryRequest(
+    # Express(상속 + 도시존): Harbor Cities존↔도시 혼합 + 도시↔도시 오버라이드
+    await rate_svc.set_entry(grp_city_ex.id, FlatRateEntryRequest(
         move_type=L, service_type=LV, from_zone_id=z_city_port.id,
-        to_city="Ontario", to_state="CA", amount=D("320"), effective_from=JAN), actor_user_id=aid)
-    # Express(상속 커스텀): 주요 구간만 할증 오버라이드
-    await ccell(grp_city_ex, L, LV, "San Pedro", "Fontana", "395")
+        to_city="Fontana", to_state="CA", amount=D("395"), effective_from=JAN), actor_user_id=aid, emit=False)
+    await ccell(grp_city_ex, L, LV, "Santa Ana", "Fontana", "360")
 
     # ── MILE / HOURLY per_unit (좌표 없는 단일 셀) ──
     await ucell(grp_mile, "2.75")
     await ucell(grp_mile_pr, "3.25")
+    await ucell(grp_mile_lo, "2.40")
     await ucell(grp_hour, "85.00")
     await ucell(grp_hour_dt, "120.00")
+    await ucell(grp_hour_tm, "150.00")
 
-    # 드라이버 배정 — driver0=ZIP 디폴트(payroll/e2e 정합), 1명 이상은 미배정으로 남겨
-    # ZIP 디폴트 그룹 폴백(assignment_fallback) 데모
-    for _drv, _grp in [(drivers[0], grp_zip), (drivers[1], grp_mile), (drivers[2], grp_hour)]:
+    # 드라이버 배정 — driver0=ZIP 디폴트(payroll 정합), driver1=Reefer(상속 데모), driver2=MILE.
+    # CITY/HOURLY 디폴트는 미배정 — 조회 화면 '기사 미지정' 폴백 데모는 driver 없이도 가능.
+    for _drv, _grp in [(drivers[0], grp_zip), (drivers[1], grp_zip_rf), (drivers[2], grp_mile)]:
         db.add(DriverRateAssignmentModel(team_id=tid, driver_id=_drv.id, rate_group_id=_grp.id,
                                          effective_from=JAN, created_by_user_id=aid))
     await db.flush()
 
-    # 영업권역(Service Area) — SoCal 드레이 데모: 3자리 ZIP prefix 4건 (설계 §8 방어 1)
+    # 영업권역(Service Area) — STATE=CA(데모 zip 전부 커버) + ZIP3 2건(종류 다양화)
     from service_area.model import ServiceAreaModel
     from service_area.const.status import ServiceAreaKind
-    for _prefix in ["902", "907", "917", "923"]:
+    db.add(ServiceAreaModel(team_id=tid, kind=ServiceAreaKind.STATE,
+                            state="CA", value="CA", created_by_user_id=aid))
+    for _prefix in ["907", "923"]:
         db.add(ServiceAreaModel(team_id=tid, kind=ServiceAreaKind.ZIP3,
                                 state="CA", value=_prefix, created_by_user_id=aid))
     await db.flush()
-    print("  글로벌 존×7 + 스코프 존(Reefer)×1 + 도시존×1, 그룹×9 (방식별 디폴트 + 상속/빈), "
-          "양방향 삼각 충진 + 사다리 ①/② 데모 셀, assignment×3 (+미배정 폴백 데모), "
-          "영업권역 ZIP3×4 (902/907/917/923)")
+    print("  ZIP 디폴트 = zip↔zip 양방향 풀(136구간×9) + 285→310 버전 / "
+          "Reefer(상속+전용존 2) · Overweight(상속+공용존 2) · Spot(빈) / "
+          "CITY 디폴트 풀 + Express(상속+도시존) / MILE·HOURLY 각 3그룹 / "
+          "배정 3 (ZIP·Reefer·MILE) / 권역 STATE CA + ZIP3 907·923")
 
     # ── 5. Load Type 템플릿 (시스템 시드) ─────────────────────
     banner("Load Type 템플릿")
@@ -679,7 +708,7 @@ async def verify(db: AsyncSession):
     if empty:
         print(f"  ❌ 빈 테이블 {len(empty)}개: {', '.join(empty)}")
     else:
-        print(f"  ✅ 빈 테이블 0개 — 모든 테이블에 데이터 존재")
+        print("  ✅ 빈 테이블 0개 — 모든 테이블에 데이터 존재")
 
     # 로그인 검증
     row = (await db.execute(text("SELECT password, role FROM user WHERE email=:e"), {"e": LOGIN_EMAIL})).first()

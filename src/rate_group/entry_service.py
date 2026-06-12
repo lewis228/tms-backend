@@ -10,6 +10,7 @@ from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.exceptions.base import NotFoundException, BadRequestException
+from realtime.emit import emit_entity_event
 from rate_group.repository import RateGroupRepository
 from rate_group.const.status import RateMethod
 from rate_group.schemas.request import FlatRateEntryRequest, BulkFlatRateEntryRequest
@@ -81,7 +82,8 @@ class RateGroupEntryService:
             })
         return sheet.id
 
-    async def set_entry(self, group_id: int, row: FlatRateEntryRequest, actor_user_id: int | None = None) -> FlatRateEntrySchema:
+    async def set_entry(self, group_id: int, row: FlatRateEntryRequest, actor_user_id: int | None = None,
+                        emit: bool = True) -> FlatRateEntrySchema:
         _, _method, kind = await self._resolve_kind(group_id)
         sheet_id = await self._ensure_sheet(group_id, kind, row)
         cell = _cell_from_flat(row, kind)
@@ -91,6 +93,9 @@ class RateGroupEntryService:
             effective_from=row.effective_from, source=row.source,
             reason=row.reason, actor_user_id=actor_user_id,
         )
+        if emit:  # bulk/import/seed 는 건별 발행 대신 호출부에서 1회 발행
+            await emit_entity_event("rate_sheet.updated", self.team_id,
+                                    {"rateGroupId": group_id, "rateSheetId": sheet_id}, actor_user_id)
         return FlatRateEntrySchema(
             rate_entry_id=entry.id, rate_sheet_id=sheet_id, kind=kind,
             move_type=row.move_type if kind in (SheetKind.ZIP, SheetKind.CITY) else None,
@@ -106,7 +111,9 @@ class RateGroupEntryService:
     async def set_entries_bulk(self, group_id: int, payload: BulkFlatRateEntryRequest, actor_user_id: int | None = None) -> List[FlatRateEntrySchema]:
         out: List[FlatRateEntrySchema] = []
         for row in payload.items:
-            out.append(await self.set_entry(group_id, row, actor_user_id=actor_user_id))
+            out.append(await self.set_entry(group_id, row, actor_user_id=actor_user_id, emit=False))
+        await emit_entity_event("rate_sheet.updated", self.team_id,
+                                {"rateGroupId": group_id}, actor_user_id)
         return out
 
     async def list_entries(self, group_id: int) -> RateGroupEntriesResponse:

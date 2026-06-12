@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.exceptions.base import NotFoundException, AppException
 from common.pagination.schemas.pagination_response import CursorPaginationResult
+from realtime.emit import emit_entity_event
 from rate_zone.repository import RateZoneRepository
 from zip_code.repository import ZipCodeRepository
 from rate_zone.schemas.request import (
@@ -65,6 +66,8 @@ class RateZoneService:
         members = [m.model_dump() for m in payload.members]
         await self._check_atom_conflicts(None, payload.rate_group_id, members)
         zone = await self.repo.create(header, members, actor_user_id=actor_user_id)
+        await emit_entity_event("rate_zone.created", self.team_id,
+                                {"rateZoneId": zone.id}, actor_user_id)
         return RateZoneResponseSchema.model_validate(zone)
 
     # ── Read ────────────────────────────────────────────────────
@@ -106,6 +109,8 @@ class RateZoneService:
         zone = await self.repo.update_header(zone_id, data, actor_user_id=actor_user_id)
         if not zone:
             raise NotFoundException(_LABEL)
+        await emit_entity_event("rate_zone.updated", self.team_id,
+                                {"rateZoneId": zone_id}, actor_user_id)
         return RateZoneResponseSchema.model_validate(zone)
 
     async def replace_members(
@@ -118,6 +123,8 @@ class RateZoneService:
         await self._check_atom_conflicts(zone_id, zone.rate_group_id, members_data)
         rows = await self.repo.replace_members(zone_id, members_data, actor_user_id=actor_user_id)
         members = [RateZoneMemberResponseSchema.model_validate(r) for r in rows]
+        await emit_entity_event("rate_zone.updated", self.team_id,
+                                {"rateZoneId": zone_id}, actor_user_id)
         return RateZoneMembersResponseSchema(zone_id=zone_id, members=members, count=len(members))
 
     async def add_members_by_city(
@@ -147,6 +154,8 @@ class RateZoneService:
         await self._check_atom_conflicts(zone_id, zone.rate_group_id, members_data)
         rows = await self.repo.replace_members(zone_id, members_data, actor_user_id=actor_user_id)
         members = [RateZoneMemberResponseSchema.model_validate(r) for r in rows]
+        await emit_entity_event("rate_zone.updated", self.team_id,
+                                {"rateZoneId": zone_id}, actor_user_id)
         return RateZoneMembersResponseSchema(zone_id=zone_id, members=members, count=len(members))
 
     # ── Delete ──────────────────────────────────────────────────
@@ -157,4 +166,6 @@ class RateZoneService:
         if not zone:
             raise NotFoundException(_LABEL)
         await self.repo.soft_deactivate_by_id(zone_id, actor_user_id=actor_user_id)
+        await emit_entity_event("rate_zone.deleted", self.team_id,
+                                {"rateZoneId": zone_id}, actor_user_id)
         return RateZoneDeleteResponseSchema(id=zone_id, deleted=True, soft_deleted=True)
